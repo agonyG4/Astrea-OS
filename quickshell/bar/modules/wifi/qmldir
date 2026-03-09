@@ -1,0 +1,3 @@
+module wifi
+WifiProcess 1.0 WifiProcess.qml
+BluetoothProcess 1.0 BluetoothProcess.qml

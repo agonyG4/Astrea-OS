@@ -1,0 +1,5 @@
+module bar.right
+BarRight 1.0 BarRight.qml
+VolumeIndicator 1.0 VolumeIndicator.qml
+WifiIndicator 1.0 WifiIndicator.qml
+BluetoothIndicator 1.0 BluetoothIndicator.qml
