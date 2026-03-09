@@ -1,0 +1,8 @@
+/* macOS inspired color palette */
+@define-color bg_bar rgba(24, 24, 27, 0.6);
+@define-color fg_bar #f4f4f5;
+@define-color apple_blue #007aff;
+@define-color apple_red #ff3b30;
+@define-color apple_green #34c759;
+@define-color apple_gray #a1a1aa;
+@define-color border_color rgba(255, 255, 255, 0.1);

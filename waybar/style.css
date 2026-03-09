@@ -1,0 +1,219 @@
+@import "colors.css";
+
+* {
+    border: none;
+    border-radius: 0;
+    font-family: "Inter", "Font Awesome 6 Free";
+    font-size: 13px;
+    font-weight: 400;
+    min-height: 0;
+    padding: 0;
+    margin: 0;
+}
+
+window#waybar {
+    background: transparent;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+window#waybar.hidden {
+    opacity: 0;
+}
+
+.modules-right {
+    background: rgba(28, 28, 30, 0.75);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    margin: 6px 4px;
+    padding: 0 4px;
+}
+
+.modules-center {
+    background: rgba(28, 28, 30, 0.85);
+    border-radius: 0 0 16px 16px;
+    /* arredonda só embaixo */
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-top: none;
+    margin: 0;
+    /* centraliza */
+    padding: 0 12px;
+    min-width: 300px;
+}
+
+.modules-right {
+    background: rgba(28, 28, 30, 0.75);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    margin: 6px 4px;
+    padding: 0 4px;
+}
+
+tooltip {
+    background: rgba(44, 44, 46, 0.96);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 10px;
+    padding: 5px 10px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+#image {
+    padding: 0 10px 0 12px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+#image:hover {
+    color: #0a84ff;
+}
+
+#workspaces {
+    padding: 0 4px;
+}
+
+#workspaces button {
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.22);
+    padding: 0 5px;
+    border-radius: 50%;
+    margin: 0 2px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    transition: color 0.12s ease;
+}
+
+#workspaces button:hover {
+    color: rgba(255, 255, 255, 0.55);
+    background: transparent;
+}
+
+#workspaces button.active {
+    color: rgba(255, 255, 255, 0.90);
+}
+
+#workspaces button.urgent {
+    color: #ff375f;
+}
+
+#mpris {
+    color: rgba(255, 255, 255, 0.55);
+    font-size: 12.5px;
+    letter-spacing: 0.01em;
+}
+
+#mpris.playing {
+    color: rgba(255, 255, 255, 0.78);
+}
+
+#mpris.paused {
+    color: rgba(255, 255, 255, 0.28);
+}
+
+#tray,
+#network,
+#bluetooth,
+#pulseaudio,
+#battery,
+#custom-control-center,
+#clock {
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 14px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    margin: 6px 1px;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+
+#tray {
+    font-size: 13px;
+    padding: 3px 5px;
+}
+
+#network:hover,
+#bluetooth:hover,
+#pulseaudio:hover,
+#battery:hover,
+#custom-control-center:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.90);
+}
+
+#battery {
+    font-size: 15px;
+}
+
+#battery.charging,
+#battery.plugged {
+    color: #30d158;
+}
+
+#battery.warning:not(.charging) {
+    color: #ff9f0a;
+}
+
+#battery.critical:not(.charging) {
+    color: #ff375f;
+    animation: blink 1s linear infinite alternate;
+}
+
+@keyframes blink {
+    from {
+        opacity: 1.0;
+    }
+
+    to {
+        opacity: 0.25;
+    }
+}
+
+#pulseaudio.muted {
+    color: rgba(255, 255, 255, 0.18);
+}
+
+#network.disconnected {
+    color: #ff375f;
+}
+
+#bluetooth.connected {
+    color: #0a84ff;
+}
+
+#bluetooth.disabled,
+#bluetooth.off {
+    color: rgba(255, 255, 255, 0.18);
+}
+
+#custom-control-center {
+    font-size: 15px;
+    margin-right: 3px;
+}
+
+#clock {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    padding: 0 14px 0 6px;
+}
+
+#tray menu {
+    background: rgba(44, 44, 46, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 10px;
+    padding: 4px;
+}
+
+#tray menu menuitem {
+    border-radius: 6px;
+    padding: 4px 10px;
+    color: rgba(255, 255, 255, 0.82);
+}
+
+#tray menu menuitem:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+#image.album-art {
+    padding: 0 4px 0 8px;
+    border-radius: 4px;
+    margin: 4px 0;
+}
