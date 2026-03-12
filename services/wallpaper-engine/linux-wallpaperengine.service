@@ -1,0 +1,13 @@
+[Unit]
+Description=Linux Wallpaper Engine Service
+After=graphical-session.target
+
+[Service]
+Type=simple
+Environment="XDG_SESSION_TYPE=wayland"
+Environment="XDG_CURRENT_DESKTOP=Hyprland"
+Environment="__GL_THREADED_OPTIMIZATIONS=0"
+ExecStart=/usr/bin/linux-wallpaperengine --screen-root DP-1 --bg [ID] --scaling fill --fps 30 --silent --disable-particles --disable-mouse --disable-parallax --no-audio-processing
+
+[Install]
+WantedBy=default.target
