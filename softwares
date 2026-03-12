@@ -1,0 +1,29 @@
+# KERNEL
+linux
+
+#Desktop
+hyprland
+
+# SYSTEM
+Quickshell
+systemd-boot
+SDDM
+iwd
+pipewire
+wireplumber
+xdg-desktop-portal-hyprland
+ImageMagick
+playerctl
+
+# SECURITY
+hyprpolkitagent
+
+# BROWSER
+Zen Browser
+
+# TERMINAL
+kitty
+
+# FILES
+Dolphin
+

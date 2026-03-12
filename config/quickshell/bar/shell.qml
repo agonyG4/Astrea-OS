@@ -1,0 +1,132 @@
+import Quickshell
+import Quickshell.Wayland
+import Quickshell.Io
+import QtQuick
+import "ui/left"
+import "ui/right"
+import "modules/network"
+import "ui/components"
+
+PanelWindow {
+    id: bar
+    anchors { top: true; left: true; right: true }
+    implicitWidth:  screen.width
+    implicitHeight: 48
+    color:          "transparent"
+
+    WlrLayershell.namespace:     "bar"
+    WlrLayershell.layer:         WlrLayer.Top
+    WlrLayershell.exclusiveZone: 48
+
+    // ─── Public API ───────────────────────────────────────────────
+    property var    volPopupRef:   null
+    property bool   netConnected:  false
+    property string netType:       "none"
+    property string netSsid:       ""
+    property string netDownload:   "0 B/s"
+    property string netUpload:     "0 B/s"
+    property var    netPopupRef:   null
+    property bool   btOn:          false
+    property int    volLevel:      50
+    property bool   volMuted:      false
+    property var    astreaPopupRef: null
+    property int    _tick:         0
+
+    BarLeft {
+        anchors.left:           parent.left
+        anchors.leftMargin:     8
+        anchors.verticalCenter: parent.verticalCenter
+        astreaPopupRef:         bar.astreaPopupRef
+    }
+
+    BarRight {
+        id:                     barRight
+        anchors.right:          parent.right
+        anchors.rightMargin:    6
+        anchors.verticalCenter: parent.verticalCenter
+        netConnected:  bar.netConnected
+        netType:       bar.netType
+        netPopupRef:   bar.netPopupRef
+        btOn:          bar.btOn
+        volLevel:      bar.volLevel
+        volMuted:      bar.volMuted
+        volPopupRef:   bar.volPopupRef
+        onVolChangeRequested: function(v) {
+            bar.volLevel       = v
+            volSetProc.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", v + "%"]
+            volSetProc.running = false
+            volSetProc.running = true
+        }
+    }
+    // ─── Processes ────────────────────────────────────────────────
+    Process {
+        id: volSetProc
+        command: ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", "50%"]
+        running: false
+    }
+
+    Process {
+        id: volumeProc
+        command: ["bash", "-c", "wpctl get-volume @DEFAULT_AUDIO_SINK@"]
+        running: false
+        stdout: SplitParser {
+            onRead: function(data) {
+                bar.volMuted = data.indexOf("[MUTED]") !== -1
+                var m = data.match(/[\d.]+/)
+                if (m) bar.volLevel = Math.round(parseFloat(m[0]) * 100)
+            }
+        }
+    }
+
+    NetworkProcess {
+        id: netData
+        onConnectedChanged: bar.netConnected = netData.connected
+        onSsidChanged:      bar.netSsid      = netData.ssid
+        onTypeChanged:      bar.netType      = netData.type
+        onDownloadChanged:  bar.netDownload  = netData.download
+        onUploadChanged:    bar.netUpload    = netData.upload
+    }
+
+    BluetoothProcess {
+        id: btData
+        onPoweredChanged: bar.btOn = btData.powered
+    }
+
+    Timer {
+        interval: 1000; running: true; repeat: true; triggeredOnStart: true
+        onTriggered: {
+            barRight.tick()
+            volumeProc.running = false
+            volumeProc.running = true
+            if (++bar._tick % 5 === 0) {
+                netData.refresh()
+                btData.refresh()
+            }
+        }
+    }
+
+    VolumePopup {
+        id: volPopup
+        masterVol:   bar.volLevel
+        masterMuted: bar.volMuted
+        onVolumeChangeHandled: (v) => bar.volLevel = v
+    }
+
+    NetworkPopup {
+        id: netPopup
+        netType:      bar.netType
+        ssid:         bar.netSsid
+        downloadText: bar.netDownload
+        uploadText:   bar.netUpload
+    }
+
+    AstreaPopup {
+        id: astreaPopup
+    }
+
+    Component.onCompleted: {
+        bar.volPopupRef    = volPopup
+        bar.netPopupRef    = netPopup
+        bar.astreaPopupRef = astreaPopup
+    }
+}
