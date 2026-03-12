@@ -32,7 +32,7 @@ Item {
     Process {
         id: dominantColor
         property string imagePath: ""
-        command: ["/home/agony/.config/quickshell/island/scripts/get-dominant-color.sh", imagePath]
+        command: [Qt.resolvedUrl("scripts/get-dominant-color.sh").toString().replace("file://", ""), imagePath]
         running: false
         stdout: SplitParser {
             onRead: data => {
@@ -48,7 +48,7 @@ Item {
     // Sink do CAVA
     Process {
         id: spotifySink
-        command: ["bash", "/home/agony/.config/quickshell/island/scripts/spotify-sink.sh"]
+        command: ["bash", Qt.resolvedUrl("scripts/spotify-sink.sh").toString().replace("file://", "")]
         running: false
         stdout: SplitParser {
             onRead: _ => {
@@ -61,7 +61,7 @@ Item {
     // CAVA
     Process {
         id: cavaProcess
-        command: ["cava", "-p", "/home/agony/.config/quickshell/island/config/cava.conf"]
+        command: ["cava", "-p", Qt.resolvedUrl("config/cava.conf").toString().replace("file://", "")]
         running: island.cavaActive
         stdout: SplitParser {
             splitMarker: "\n"

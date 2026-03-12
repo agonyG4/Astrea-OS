@@ -74,7 +74,7 @@ Item {
             }
 
             Image {
-                source: "file:///home/agony/.config/quickshell/bar/assets/astrea.png"
+                source: "../../assets/astrea.png"
                 width: 18; height: 18
                 anchors.centerIn: parent
                 fillMode: Image.PreserveAspectFit

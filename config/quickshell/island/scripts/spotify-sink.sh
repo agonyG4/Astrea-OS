@@ -1,5 +1,5 @@
 #!/bin/bash
-CAVA_CONF="/home/agony/.config/quickshell/island/config/cava.conf"
+CAVA_CONF="$(dirname "$0")/../config/cava.conf"
 SPOTIFY_SERIAL=""
 
 for i in {1..15}; do
