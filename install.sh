@@ -2,98 +2,133 @@
 # Astrea Shell — instalador de dependências e dotfiles
 # Rode: bash install.sh
 
-set -e
+set -euo pipefail
+
+# ── Cores ────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+info()    { echo -e "${CYAN}==>${RESET} ${BOLD}$*${RESET}"; }
+success() { echo -e "${GREEN} ✓${RESET} $*"; }
+warn()    { echo -e "${YELLOW} !${RESET} $*"; }
+die()     { echo -e "${RED}ERRO:${RESET} $*" >&2; exit 1; }
+
+# ── Sanidade ─────────────────────────────────────────────
+[[ $EUID -eq 0 ]] && die "Não rode como root. O script usa sudo quando precisa."
+[[ -z "${USER:-}" ]] && die "Variável \$USER não definida."
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-USER_HOME="/home/$USER"
+USER_HOME="$HOME"
 
-echo "==> Usuário detectado: $USER"
-echo "==> Diretório base: $SCRIPT_DIR"
+info "Usuário detectado: $USER"
+info "Diretório base:    $SCRIPT_DIR"
+echo
 
 # ── Dependências de build ─────────────────────────────────
-echo "==> Instalando dependências de build..."
+info "Instalando dependências de build..."
 sudo pacman -S --needed --noconfirm git base-devel
+success "git + base-devel prontos"
 
-# ── yay ───────────────────────────────────────────────────
-echo "==> Clonando o yay em ./aur/yay..."
-mkdir -p "$SCRIPT_DIR/aur"
-cd "$SCRIPT_DIR/aur"
-
-if [ ! -d "yay" ]; then
-  git clone https://aur.archlinux.org/yay.git
+# ── yay ──────────────────────────────────────────────────
+if command -v yay &>/dev/null; then
+    warn "yay já instalado ($(yay --version | head -1)), pulando..."
 else
-  echo "    Pasta yay já existe, pulando clone."
-fi
+    info "Instalando yay..."
+    mkdir -p "$SCRIPT_DIR/aur"
+    pushd "$SCRIPT_DIR/aur" > /dev/null
 
-cd yay
-makepkg -si --noconfirm
-cd "$SCRIPT_DIR"
+    if [[ ! -d "yay" ]]; then
+        git clone https://aur.archlinux.org/yay.git
+    else
+        warn "Pasta yay já existe, pulando clone."
+    fi
+
+    cd yay
+    makepkg -si --noconfirm
+    popd > /dev/null
+    success "yay instalado"
+fi
 
 # ── Pacotes do sistema ────────────────────────────────────
-echo "==> Instalando dependências do sistema..."
-sudo pacman -S --needed --noconfirm \
-  python \
-  python-pip \
-  python-numpy \
-  python-pillow \
-  bash \
-  curl \
-  grep \
-  sed \
-  gawk \
-  coreutils \
-  iproute2 \
-  networkmanager \
-  bluez \
-  bluez-utils \
-  wireplumber \
-  rofi-wayland \
-  wlogout \
-  hyprlock \
-  gamemode \
-  inter-font \
-  ttf-jetbrains-mono-nerd \
-  swaync \
-  dolphin \
-  ark \
-  kde-cli-tools \
-  ffmpegthumbs \
-  kdegraphics-thumbnailers
+info "Instalando pacotes do sistema via pacman..."
+
+PACMAN_PKGS=(
+    # Python
+    python python-pip python-numpy python-pillow
+    # Shell utils
+    bash curl grep sed gawk coreutils
+    # Rede / BT / Áudio
+    iproute2 networkmanager bluez bluez-utils wireplumber
+    # Wayland / DE
+    rofi-wayland wlogout hyprlock gamemode swaync
+    # Fontes
+    inter-font ttf-jetbrains-mono-nerd
+    # Dolphin + extras
+    dolphin ark kde-cli-tools ffmpegthumbs kdegraphics-thumbnailers
+)
+
+sudo pacman -S --needed --noconfirm "${PACMAN_PKGS[@]}"
+success "Pacotes do sistema instalados"
 
 # ── Pacotes do AUR ────────────────────────────────────────
-echo "==> Instalando pacotes do AUR..."
-yay -S --needed --noconfirm \
-  quickshell-git \
-  hyprpolkitagent \
-  swww
+info "Instalando pacotes do AUR via yay..."
 
-# ── Deploy das pastas ─────────────────────────────────────
-echo "==> Copiando arquivos..."
+AUR_PKGS=(
+    quickshell-git
+    hyprpolkitagent
+    swww
+)
 
-# Astrea → /opt/Astrea
-if [ -d "$SCRIPT_DIR/Astrea" ]; then
-  sudo mkdir -p /opt/Astrea
-  sudo cp -r "$SCRIPT_DIR/Astrea/." /opt/Astrea/
-  sudo chown -R "$USER":"$USER" /opt/Astrea
-  echo "    Astrea → /opt/Astrea"
+yay -S --needed --noconfirm "${AUR_PKGS[@]}"
+success "Pacotes AUR instalados"
+
+# ── Função auxiliar de deploy ─────────────────────────────
+# Uso: deploy_dir <origem> <destino> [sudo]
+deploy_dir() {
+    local src="$1"
+    local dst="$2"
+    local use_sudo="${3:-}"
+
+    if [[ ! -d "$src" ]]; then
+        warn "Pasta '$src' não encontrada, pulando."
+        return
+    fi
+
+    if [[ -n "$use_sudo" ]]; then
+        sudo mkdir -p "$dst"
+        sudo cp -r "$src/." "$dst/"
+        sudo chown -R "$USER":"$USER" "$dst"
+    else
+        mkdir -p "$dst"
+        # rsync-style: não sobrescreve configs existentes sem avisar
+        cp -rn "$src/." "$dst/" 2>/dev/null || true
+        # arquivos que já existem ficam intactos; use --force se quiser sobrescrever
+    fi
+
+    success "$(basename "$src") → $dst"
+}
+
+# ── Deploy ────────────────────────────────────────────────
+info "Copiando arquivos..."
+
+deploy_dir "$SCRIPT_DIR/Astrea"   "/opt/Astrea"         sudo
+deploy_dir "$SCRIPT_DIR/config"   "$USER_HOME/.config"
+deploy_dir "$SCRIPT_DIR/scripts"  "$USER_HOME/.local/bin"  # bônus, se existir
+
+# ── Serviços do usuário ───────────────────────────────────
+if [[ -d "$SCRIPT_DIR/services" ]]; then
+    mkdir -p "$USER_HOME/.config/systemd/user"
+    cp -r "$SCRIPT_DIR/services/." "$USER_HOME/.config/systemd/user/"
+    systemctl --user daemon-reload
+    success "services → $USER_HOME/.config/systemd/user (daemon recarregado)"
 fi
 
-# config → ~/.config
-if [ -d "$SCRIPT_DIR/config" ]; then
-  mkdir -p "$USER_HOME/.config"
-  cp -r "$SCRIPT_DIR/config/." "$USER_HOME/.config/"
-  echo "    config → $USER_HOME/.config"
-fi
-
-# services → ~/.config/systemd/user (serviços do usuário)
-#           + reload do systemd
-if [ -d "$SCRIPT_DIR/services" ]; then
-  mkdir -p "$USER_HOME/.config/systemd/user"
-  cp -r "$SCRIPT_DIR/services/." "$USER_HOME/.config/systemd/user/"
-  systemctl --user daemon-reload
-  echo "    services → $USER_HOME/.config/systemd/user"
-fi
-
-echo ""
-echo "==> AstreaOS v1.2 Instalado."
-echo "    Reinicia o Hyprland ou loga de novo pra aplicar tudo."
+# ── Fim ───────────────────────────────────────────────────
+echo
+echo -e "${GREEN}${BOLD}  AstreaOS v1.2 instalado com sucesso!${RESET}"
+echo -e "  Reinicia o Hyprland ou faz logout/login pra aplicar tudo."
+echo
