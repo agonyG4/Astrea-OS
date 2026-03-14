@@ -31,15 +31,15 @@ ShellRoot {
         property string musicArtistText: ""
         property string artSource:       ""
         property bool   isPlaying:       false
-        property int    cavaMinHeight:          4
-        property int    cavaMaxHeightExpanded:  32
-        property int    cavaMaxHeightCompact:   18
+        property int    cavaMinHeight:         4
+        property int    cavaMaxHeightExpanded: 32
+        property int    cavaMaxHeightCompact:  18
 
-        property bool hasMusic:       musicTitleText !== ""
-        property bool isExpanded:     hasMusic && islandContent.isMouseOver
-        property bool cavaActive:     hasMusic && !showGamemodeNotify
+        property bool hasMusic:           musicTitleText !== ""
+        property bool isExpanded:         hasMusic && islandContent.isMouseOver
+        property bool cavaActive:         hasMusic && !showGamemodeNotify
 
-        property bool gamemodeActive:    false
+        property bool gamemodeActive:     false
         property bool showGamemodeNotify: false
 
         // ── Flip state ────────────────────────────────────────────────
@@ -79,7 +79,7 @@ ShellRoot {
             if (newSource === artSource) return
             pendingArtSource = newSource
             artFlipPhase = 1
-            flipAnim.hide()
+            flipAnim.triggerFlip()  // corrigido: era .hide()
             if (localPath !== "") procs.setDominantColor(localPath)
         }
 

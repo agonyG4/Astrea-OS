@@ -7,3 +7,4 @@ NetworkPopup 1.0 NetworkPopup.qml
 VolumePopup 1.0 VolumePopup.qml
 Tray 1.0 Tray.qml
 AstreaPopup 1.0 AstreaPopup.qml
+BluetoothPopup 1.0 BluetoothPopup.qml

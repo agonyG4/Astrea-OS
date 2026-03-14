@@ -12,6 +12,7 @@ Item {
     property string netType:     "none"
     property var  netPopupRef:   null
     property bool btOn:          false
+    property var  btPopupRef:    null
     property int  volLevel:      50
     property bool volMuted:      false
     property var  volPopupRef:   null
@@ -121,7 +122,7 @@ Item {
             netType:      root.netType
             netPopupRef:  root.netPopupRef
         }
-        BluetoothIndicator { btOn: root.btOn }
+        BluetoothIndicator { btOn: root.btOn; btPopupRef: root.btPopupRef }
 
         VolumeIndicator {
             volLevel:    root.volLevel

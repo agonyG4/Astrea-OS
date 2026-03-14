@@ -5,6 +5,7 @@ import QtQuick
 import "ui/left"
 import "ui/right"
 import "modules/network"
+import "modules/bluetooth"
 import "ui/components"
 
 PanelWindow {
@@ -19,18 +20,22 @@ PanelWindow {
     WlrLayershell.exclusiveZone: 48
 
     // ─── Public API ───────────────────────────────────────────────
-    property var    volPopupRef:   null
-    property bool   netConnected:  false
-    property string netType:       "none"
-    property string netSsid:       ""
-    property string netDownload:   "0 B/s"
-    property string netUpload:     "0 B/s"
-    property var    netPopupRef:   null
-    property bool   btOn:          false
-    property int    volLevel:      50
-    property bool   volMuted:      false
+    property var    volPopupRef:    null
+    property bool   netConnected:   false
+    property string netType:        "none"
+    property string netSsid:        ""
+    property string netDownload:    "0 B/s"
+    property string netUpload:      "0 B/s"
+    property var    netPopupRef:    null
+    property bool   btOn:           false
+    property string btDevicesJson:  "[]"
+    property string btScannedJson:  "[]"
+    property bool   btScanning:     false
+    property var    btPopupRef:     null
+    property int    volLevel:       50
+    property bool   volMuted:       false
     property var    astreaPopupRef: null
-    property int    _tick:         0
+    property int    _tick:          0
 
     BarLeft {
         anchors.left:           parent.left
@@ -48,6 +53,7 @@ PanelWindow {
         netType:       bar.netType
         netPopupRef:   bar.netPopupRef
         btOn:          bar.btOn
+        btPopupRef:    bar.btPopupRef
         volLevel:      bar.volLevel
         volMuted:      bar.volMuted
         volPopupRef:   bar.volPopupRef
@@ -58,6 +64,7 @@ PanelWindow {
             volSetProc.running = true
         }
     }
+
     // ─── Processes ────────────────────────────────────────────────
     Process {
         id: volSetProc
@@ -89,7 +96,10 @@ PanelWindow {
 
     BluetoothProcess {
         id: btData
-        onPoweredChanged: bar.btOn = btData.powered
+        onPoweredChanged:     bar.btOn          = btData.powered
+        onDevicesJsonChanged: bar.btDevicesJson  = btData.devicesJson
+        onScannedJsonChanged: bar.btScannedJson  = btData.scannedJson
+        onScanningChanged:    bar.btScanning     = btData.scanning
     }
 
     Timer {
@@ -120,6 +130,15 @@ PanelWindow {
         uploadText:   bar.netUpload
     }
 
+    BluetoothPopup {
+        id: btPopup
+        btOn:        bar.btOn
+        devicesJson: bar.btDevicesJson
+        scannedJson: bar.btScannedJson
+        scanning:    bar.btScanning
+        btProcess:   btData
+    }
+
     AstreaPopup {
         id: astreaPopup
     }
@@ -127,6 +146,7 @@ PanelWindow {
     Component.onCompleted: {
         bar.volPopupRef    = volPopup
         bar.netPopupRef    = netPopup
+        bar.btPopupRef     = btPopup
         bar.astreaPopupRef = astreaPopup
     }
 }
