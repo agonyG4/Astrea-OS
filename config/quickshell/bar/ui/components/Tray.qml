@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Services.SystemTray
+import "../.."
 
 Row {
     id: root
@@ -14,8 +15,8 @@ Row {
             id: trayItem
             width: 28
             height: 28
-            radius: 8
-            color: trayHover.hovered ? (trayArea.pressed ? Qt.rgba(1, 1, 1, 0.2) : Qt.rgba(1, 1, 1, 0.1)) : (trayArea.pressed ? Qt.rgba(1, 1, 1, 0.2) : "transparent")
+            radius: Theme.radiusMedium
+            color: trayHover.hovered ? (trayArea.pressed ? Qt.rgba(1, 1, 1, 0.2) : Theme.separator) : (trayArea.pressed ? Qt.rgba(1, 1, 1, 0.2) : "transparent")
             anchors.verticalCenter: parent.verticalCenter
             Behavior on color { ColorAnimation { duration: 150 } }
 

@@ -3,6 +3,7 @@ import Quickshell.Wayland
 import Quickshell.Io
 import QtQuick
 import QtQuick.Effects
+import "../.."
 
 PanelWindow {
     id: root
@@ -129,13 +130,13 @@ PanelWindow {
             id: cardBg
             width:  parent.width
             height: innerCol.implicitHeight + 36
-            radius: 18
+            radius: Theme.radiusLarge
             color:  "transparent"
 
             Rectangle {
                 anchors.fill: parent
                 radius: parent.radius
-                color: Qt.rgba(0.08, 0.09, 0.12, 0.55)
+                color: Theme.background
             }
 
             Rectangle {
@@ -143,7 +144,7 @@ PanelWindow {
                 radius: parent.radius
                 color: "transparent"
                 border.width: 1
-                border.color: Qt.rgba(1, 1, 1, 0.13)
+                border.color: Theme.border
             }
 
 
@@ -178,11 +179,13 @@ PanelWindow {
                     anchors.left:           parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text:  root.deviceName
-                    color: Qt.rgba(1, 1, 1, 0.85)
+                    color: Theme.textActive
+                    opacity: 0.85
                     font {
-                        pixelSize:     13
+                        pixelSize:     Theme.fontSizeBody
                         weight:        Font.DemiBold
                         letterSpacing: 0.3
+                       
                     }
                     elide: Text.ElideRight
                     width: parent.width - mutePill.width - 8
@@ -196,7 +199,7 @@ PanelWindow {
 
                     color: root.masterMuted
                         ? Qt.rgba(1, 0.23, 0.19, 0.25)
-                        : (muteArea.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.07))
+                        : (muteArea.containsMouse ? Theme.separator : Qt.rgba(1, 1, 1, 0.07))
 
                     border.width: 1
                     border.color: root.masterMuted
@@ -209,8 +212,8 @@ PanelWindow {
                     Text {
                         anchors.centerIn: parent
                         text:  root.volIcon(root.masterVol, root.masterMuted)
-                        color: root.masterMuted ? "#ff6b6b" : Qt.rgba(1, 1, 1, 0.65)
-                        font.pixelSize: 13
+                        color: root.masterMuted ? Theme.iconWarning : Theme.iconMain
+                        font.pixelSize: Theme.fontSizeBody
                         Behavior on color { ColorAnimation { duration: 150 } }
                     }
 

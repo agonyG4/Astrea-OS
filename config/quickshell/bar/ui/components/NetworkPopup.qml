@@ -3,6 +3,7 @@ import Quickshell.Wayland
 import Quickshell.Io
 import QtQuick
 import QtQuick.Effects
+import "../.."
 
 PanelWindow {
     id: root
@@ -71,13 +72,13 @@ PanelWindow {
             id: cardBg
             width:  parent.width
             height: innerCol.implicitHeight + 36
-            radius: 18
+            radius: Theme.radiusLarge
             color:  "transparent"
 
             Rectangle {
                 anchors.fill: parent
                 radius: parent.radius
-                color: Qt.rgba(0.08, 0.09, 0.12, 0.55)
+                color: Theme.background
             }
 
             Rectangle {
@@ -85,7 +86,7 @@ PanelWindow {
                 radius: parent.radius
                 color: "transparent"
                 border.width: 1
-                border.color: Qt.rgba(1, 1, 1, 0.13)
+                border.color: Theme.border
             }
 
 
@@ -115,11 +116,13 @@ PanelWindow {
                     anchors.left:           parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text:  root.ssid !== "" ? root.ssid : (root.netType === 'wifi' ? "Wi-Fi" : "Ethernet")
-                    color: Qt.rgba(1, 1, 1, 0.85)
+                    color: Theme.textActive
+                    opacity: 0.85
                     font {
-                        pixelSize:     13
+                        pixelSize:     Theme.fontSizeBody
                         weight:        Font.DemiBold
                         letterSpacing: 0.3
+                        family:        Theme.fontFamily
                     }
                     elide: Text.ElideRight
                     width: parent.width - headerIcon.width - 8
@@ -130,8 +133,8 @@ PanelWindow {
                     anchors.right:          parent.right
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.netType === "wifi" ? "󰖩" : "󰈀"
-                    color: Qt.rgba(1, 1, 1, 0.65)
-                    font.pixelSize: 18
+                    color: Theme.textDim
+                    font.pixelSize: Theme.fontSizeIcon
                 }
             }
 
@@ -148,11 +151,12 @@ PanelWindow {
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Column {
-                        Text { text: "Download"; color: Qt.rgba(1, 1, 1, 0.40); font.pixelSize: 10 }
+                        Text { text: "Download"; color: Theme.textSecondary; font { pixelSize: 10 } }
                         Text {
                             text: root.downloadText
-                            color: Qt.rgba(1, 1, 1, 0.85)
-                            font { pixelSize: 13; weight: Font.Medium }
+                            color: Theme.textActive
+                            opacity: 0.85
+                            font { pixelSize: Theme.fontSizeBody; weight: Font.Medium }
                         }
                     }
                 }
@@ -165,11 +169,12 @@ PanelWindow {
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Column {
-                        Text { text: "Upload"; color: Qt.rgba(1, 1, 1, 0.40); font.pixelSize: 10 }
+                        Text { text: "Upload"; color: Theme.textSecondary; font { pixelSize: 10 } }
                         Text {
                             text: root.uploadText
-                            color: Qt.rgba(1, 1, 1, 0.85)
-                            font { pixelSize: 13; weight: Font.Medium }
+                            color: Theme.textActive
+                            opacity: 0.85
+                            font { pixelSize: Theme.fontSizeBody; weight: Font.Medium }
                         }
                     }
                 }

@@ -3,6 +3,7 @@ import Quickshell.Wayland
 import Quickshell.Io
 import QtQuick
 import QtQuick.Effects
+import "../.."
 
 PanelWindow {
     id: root
@@ -118,18 +119,18 @@ PanelWindow {
             id: cardBg
             width:  parent.width
             height: innerCol.implicitHeight + 36
-            radius: 18
+            radius: Theme.radiusLarge
             color:  "transparent"
 
             Rectangle {
                 anchors.fill: parent; radius: parent.radius
-                color: Qt.rgba(0.08, 0.09, 0.12, 0.55)
+                color: Theme.background
             }
             Rectangle {
                 anchors.fill: parent; radius: parent.radius
                 color: "transparent"
                 border.width: 1
-                border.color: Qt.rgba(1, 1, 1, 0.13)
+                border.color: Theme.border
             }
 
             layer.enabled: true
@@ -158,8 +159,9 @@ PanelWindow {
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     text: "Bluetooth"
-                    color: Qt.rgba(1, 1, 1, 0.85)
-                    font { pixelSize: 13; weight: Font.DemiBold; letterSpacing: 0.3 }
+                    color: Theme.textActive
+                    opacity: 0.85
+                    font { pixelSize: Theme.fontSizeBody; weight: Font.DemiBold; letterSpacing: 0.3 }
                 }
 
                 Rectangle {
@@ -169,7 +171,7 @@ PanelWindow {
 
                     color: root.btOn
                         ? Qt.rgba(0.20, 0.60, 1.0, 0.30)
-                        : (powerArea.containsMouse ? Qt.rgba(1,1,1,0.12) : Qt.rgba(1,1,1,0.07))
+                        : (powerArea.containsMouse ? Theme.separator : Qt.rgba(1,1,1,0.07))
                     border.width: 1
                     border.color: root.btOn
                         ? Qt.rgba(0.20, 0.60, 1.0, 0.50)
@@ -181,7 +183,7 @@ PanelWindow {
                     Text {
                         anchors.centerIn: parent
                         text: "󰂯"
-                        color: root.btOn ? "#60aaff" : Qt.rgba(1,1,1,0.35)
+                        color: root.btOn ? Theme.iconAccent : Theme.iconMuted
                         font.pixelSize: 13
                         Behavior on color { ColorAnimation { duration: 150 } }
                     }
@@ -199,7 +201,7 @@ PanelWindow {
                 }
             }
 
-            Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.08) }
+            Rectangle { width: parent.width; height: 1; color: Theme.separator }
 
             // ── Pareados ──────────────────────────────────────
             Column {
@@ -210,8 +212,8 @@ PanelWindow {
                     visible: root.parsedDevices.length === 0
                     width: parent.width; height: 36
                     text:  root.btOn ? "No paired devices" : "Bluetooth off"
-                    color: Qt.rgba(1,1,1,0.35)
-                    font.pixelSize: 12
+                    color: Theme.textSecondary
+                    font { pixelSize: 12; family: Theme.fontFamily }
                     verticalAlignment:   Text.AlignVCenter
                     horizontalAlignment: Text.AlignHCenter
                 }
@@ -240,7 +242,7 @@ PanelWindow {
 
             Rectangle {
                 visible: root.btOn
-                width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.08)
+                width: parent.width; height: 1; color: Theme.separator
             }
 
             // ── Botão Procurar ────────────────────────────────
@@ -250,7 +252,7 @@ PanelWindow {
 
                 color: root.scanning
                     ? Qt.rgba(0.20, 0.60, 1.0, 0.10)
-                    : (scanBtnArea.containsMouse ? Qt.rgba(1,1,1,0.08) : "transparent")
+                    : (scanBtnArea.containsMouse ? Theme.separator : "transparent")
                 border.width: root.scanning ? 1 : 0
                 border.color: Qt.rgba(0.20, 0.60, 1.0, 0.25)
 
@@ -262,8 +264,8 @@ PanelWindow {
 
                     Text {
                         text:  root.scanning ? "󰑐" : "󰍉"
-                        color: root.scanning ? "#60aaff" : Qt.rgba(1,1,1,0.45)
-                        font.pixelSize: 13
+                        color: root.scanning ? "#60aaff" : Theme.textSecondary
+                        font.pixelSize: Theme.fontSizeIcon
                         anchors.verticalCenter: parent.verticalCenter
 
                         RotationAnimation on rotation {
@@ -276,7 +278,7 @@ PanelWindow {
 
                     Text {
                         text:  root.scanning ? "Searching…" : "Search for devices"
-                        color: root.scanning ? "#60aaff" : Qt.rgba(1,1,1,0.50)
+                        color: root.scanning ? "#60aaff" : Theme.textDim
                         font { pixelSize: 12; weight: Font.Medium; letterSpacing: 0.2 }
                         anchors.verticalCenter: parent.verticalCenter
                     }
@@ -303,7 +305,7 @@ PanelWindow {
                 Text {
                     visible: root.parsedScanned.length > 0
                     text:  "Available"
-                    color: Qt.rgba(1,1,1,0.35)
+                    color: Theme.textSecondary
                     font { pixelSize: 11; weight: Font.DemiBold; letterSpacing: 0.5 }
                     bottomPadding: 2
                 }
@@ -313,7 +315,7 @@ PanelWindow {
                     visible: root.scanning && root.parsedScanned.length === 0
                     width: parent.width; height: 30
                     text:  "Waiting for devices…"
-                    color: Qt.rgba(1,1,1,0.25)
+                    color: Theme.textSecondary
                     font { pixelSize: 12; italic: true }
                     verticalAlignment: Text.AlignVCenter
                 }
@@ -344,23 +346,23 @@ PanelWindow {
                 }
             }
 
-            Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.08) }
+            Rectangle { width: parent.width; height: 1; color: Theme.separator }
 
             // ── Footer ────────────────────────────────────────
             Rectangle {
                 width: parent.width; height: 32; radius: 10
-                color: settingsArea.containsMouse ? Qt.rgba(1,1,1,0.08) : "transparent"
+                color: settingsArea.containsMouse ? Theme.separator : "transparent"
                 Behavior on color { ColorAnimation { duration: 150 } }
 
                 Row {
                     anchors.centerIn: parent; spacing: 6
                     Text {
-                        text: "󰒓"; color: Qt.rgba(1,1,1,0.45); font.pixelSize: 13
+                        text: "󰒓"; color: Theme.textSecondary; font.pixelSize: Theme.fontSizeIcon
                         anchors.verticalCenter: parent.verticalCenter
                     }
                     Text {
                         text: "Bluetooth Settings"
-                        color: Qt.rgba(1,1,1,0.50)
+                        color: Theme.textDim
                         font { pixelSize: 12; weight: Font.Medium; letterSpacing: 0.2 }
                         anchors.verticalCenter: parent.verticalCenter
                     }
@@ -392,7 +394,7 @@ PanelWindow {
 
         color: isConnected
             ? Qt.rgba(0.20, 0.60, 1.0, 0.12)
-            : (hovered ? Qt.rgba(1,1,1,0.08) : "transparent")
+            : (hovered ? Theme.separator : "transparent")
         border.width: 1
         border.color: isConnected ? Qt.rgba(0.20, 0.60, 1.0, 0.25) : "transparent"
 
@@ -405,8 +407,8 @@ PanelWindow {
 
             Text {
                 text:  rowRoot.isPaired ? "󰂱" : "󰂴"
-                color: rowRoot.isConnected ? "#60aaff" : Qt.rgba(1,1,1,0.45)
-                font.pixelSize: 16
+                color: rowRoot.isConnected ? Theme.iconAccent : Theme.iconMain
+                font.pixelSize: Theme.fontSizeIcon
                 anchors.verticalCenter: parent.verticalCenter
                 Behavior on color { ColorAnimation { duration: 150 } }
             }

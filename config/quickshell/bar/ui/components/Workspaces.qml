@@ -1,5 +1,6 @@
 import Quickshell.Hyprland
 import QtQuick
+import "../.."
 Row {
     spacing: 6
     Repeater {
@@ -8,10 +9,10 @@ Row {
         delegate: Rectangle {
             required property HyprlandWorkspace modelData
             property bool isActive: modelData.active
-            width: isActive ? 32 : 10
-            height: 10
-            radius: 5
-            color: isActive ? "white" : Qt.rgba(1,1,1,0.22)
+            width: isActive ? Theme.workspaceActiveWidth : Theme.workspaceDotSize
+            height: Theme.workspaceDotSize
+            radius: Theme.workspaceDotSize / 2
+            color: isActive ? Theme.workspaceActive : Theme.workspaceInactive
             anchors.verticalCenter: parent.verticalCenter
             Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutExpo } }
             Behavior on color { ColorAnimation  { duration: 180 } }

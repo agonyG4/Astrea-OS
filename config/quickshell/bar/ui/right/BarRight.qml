@@ -3,6 +3,7 @@ import QtQuick.Effects
 import Quickshell.Io
 import "../components"
 import "../../modules/network"
+import "../.."
 
 Item {
     id: root
@@ -21,6 +22,8 @@ Item {
     // ─── Layout ───────────────────────────────────────────────────
     height: 36
     width:  rightRow.implicitWidth + 20
+
+    HoverHandler { id: rightRootHover }
 
     // ─── Clock tick ───────────────────────────────────────────────
     function tick() {
@@ -41,14 +44,14 @@ Item {
     Rectangle {
         id: glassBase
         anchors.fill: parent
-        radius: 14
+        radius: Theme.radiusLarge - 2
         color: "transparent"
 
         // Camada de cor principal
         Rectangle {
             anchors.fill: parent
             radius: parent.radius
-            color: Qt.rgba(0.08, 0.09, 0.12, 0.55)
+            color: Theme.background
         }
 
         // Borda com gradiente sutil (topo mais brilhante)
@@ -57,7 +60,7 @@ Item {
             radius: parent.radius
             color: "transparent"
             border.width: 1
-            border.color: Qt.rgba(1, 1, 1, 0.13)
+            border.color: Theme.border
         }
 
         // Reflexo interno no topo (efeito vidro)
@@ -135,7 +138,7 @@ Item {
 Rectangle {
     width: 1
     height: 16
-    color: Qt.rgba(1, 1, 1, 0.12)
+    color: Theme.separator
     anchors.verticalCenter: parent.verticalCenter
 }
 
@@ -147,7 +150,7 @@ Rectangle {
             Text {
                 id: dateLabel
                 anchors.centerIn: parent
-                color: Qt.rgba(1, 1, 1, 0.45)
+                color: Theme.textSecondary
                 font {
                     pixelSize: 12
                     letterSpacing: 0.3
@@ -172,7 +175,7 @@ Rectangle {
             Text {
                 id: clockLabel
                 anchors.centerIn: parent
-                color: "white"
+                color: Theme.textActive
                 font {
                     pixelSize: 14
                     weight:    Font.Medium
@@ -194,21 +197,13 @@ Rectangle {
 Rectangle {
     id: hoverGlow
     anchors.fill: parent
-    radius: 14
+    radius: glassBase.radius
     color: "transparent"
     border.width: 1
-    border.color: Qt.rgba(1, 1, 1, hoverDetect.containsMouse ? 0.28 : 0.13)
+    border.color: rightRootHover.hovered ? Theme.barBorderHover : Theme.border
 
     Behavior on border.color {
         ColorAnimation { duration: 200 }
-    }
-
-    MouseArea {
-        id: hoverDetect
-        anchors.fill: parent
-        hoverEnabled: true
-        propagateComposedEvents: true
-        onPressed: (e) => e.accepted = false
     }
 }
 }
@@ -219,7 +214,7 @@ Rectangle {
 Rectangle {
     width: 1
     height: 16
-    color: Qt.rgba(1, 1, 1, 0.12)
+    color: Theme.separator
     anchors.verticalCenter: parent.verticalCenter
 }
 */

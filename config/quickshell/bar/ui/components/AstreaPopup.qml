@@ -3,6 +3,7 @@ import Quickshell.Wayland
 import Quickshell.Io
 import QtQuick
 import QtQuick.Effects
+import "../.."
 
 PanelWindow {
     id: root
@@ -72,11 +73,11 @@ PanelWindow {
             id: cardBg
             width:  parent.width
             height: menuColumn.implicitHeight + 24
-            radius: 16
-            color:  Qt.rgba(0.08, 0.09, 0.12, 0.55) // Mesma opacidade dos outros popups
+            radius: Theme.radiusLarge
+            color:  Theme.background
 
             border.width: 1
-            border.color: Qt.rgba(1, 1, 1, 0.13)
+            border.color: Theme.border
 
             layer.enabled: true
             layer.effect: MultiEffect {
@@ -104,14 +105,18 @@ PanelWindow {
             Rectangle {
                 width: parent.width - 16
                 height: 1
-                color: Qt.rgba(1, 1, 1, 0.08)
+                color: Theme.separator
                 anchors.horizontalCenter: parent.horizontalCenter
             }
 
             MenuItem {
                 icon: "󰋖"
                 text: "About this PC"
-                onClicked: { root.shown = false; shellAbout.running = true }
+                onClicked: { 
+                    root.shown = false; 
+                    shellAbout.running = false
+                    Qt.callLater(() => { shellAbout.running = true })
+                }
             }
 
             MenuItem {
@@ -187,8 +192,8 @@ PanelWindow {
         id: itemRoot
         width: parent.width
         height: 36
-        radius: 8
-        color: mouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent"
+        radius: Theme.radiusMedium
+        color: mouse.containsMouse ? Theme.separator : "transparent"
         
         Behavior on color { ColorAnimation { duration: 150 } }
 
@@ -199,17 +204,17 @@ PanelWindow {
 
             Text {
                 text: itemRoot.icon
-                font.pixelSize: 18
-                color: mouse.containsMouse ? "#fff" : Qt.rgba(1, 1, 1, 0.7)
+                font.pixelSize: Theme.fontSizeIcon
+                color: mouse.containsMouse ? Theme.iconActive : Theme.iconMain
                 anchors.verticalCenter: parent.verticalCenter
                 Behavior on color { ColorAnimation { duration: 150 } }
             }
 
             Text {
                 text: itemRoot.text
-                font.pixelSize: 13
+                font.pixelSize: Theme.fontSizeBody
                 font.weight: Font.Medium
-                color: mouse.containsMouse ? "#fff" : Qt.rgba(1, 1, 1, 0.8)
+                color: mouse.containsMouse ? Theme.textActive : Qt.rgba(1, 1, 1, 0.8)
                 anchors.verticalCenter: parent.verticalCenter
                 Behavior on color { ColorAnimation { duration: 150 } }
             }

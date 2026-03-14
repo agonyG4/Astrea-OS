@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Effects
 import "../components"
+import "../.."
 
 Item {
     id: root
@@ -11,18 +12,20 @@ Item {
     height: 36
     width:  leftRow.implicitWidth + 20
 
+    HoverHandler { id: rootHover }
+
     // ─── Glass background ─────────────────────────────────────────
     Rectangle {
         id: glassBase
         anchors.fill: parent
-        radius: 14
+        radius: Theme.radiusLarge - 2 // proportional adjustment
         color: "transparent"
 
         // Camada de cor principal
         Rectangle {
             anchors.fill: parent
             radius: parent.radius
-            color: Qt.rgba(0.08, 0.09, 0.12, 0.55)
+            color: Theme.background
         }
 
         // Borda sutil
@@ -31,7 +34,7 @@ Item {
             radius: parent.radius
             color: "transparent"
             border.width: 1
-            border.color: Qt.rgba(1, 1, 1, 0.13)
+            border.color: Theme.border
         }
     }
     // ─── Animação de entrada ──────────────────────────────────────
@@ -59,9 +62,9 @@ Item {
         Rectangle {
             width: 28
             height: 28
-            radius: 8
+            radius: Theme.radiusMedium
             anchors.verticalCenter: parent.verticalCenter
-            color: "transparent"
+            color: logoArea.containsMouse ? Theme.separator : "transparent"
 
             // Glow no hover
             layer.enabled: false
@@ -100,20 +103,13 @@ Item {
     }
 
     // ─── Hover glow (borda) ───────────────────────────────────────
-    MouseArea {
+    Rectangle {
         anchors.fill: parent
-        hoverEnabled: true
-        propagateComposedEvents: true
-        onPressed: (e) => e.accepted = false
+        radius: glassBase.radius
+        color: "transparent"
+        border.width: 1
+        border.color: rootHover.hovered ? Theme.barBorderHover : Theme.border
 
-        Rectangle {
-            anchors.fill: parent
-            radius: 14
-            color: "transparent"
-            border.width: 1
-            border.color: Qt.rgba(1, 1, 1, parent.parent.containsMouse ? 0.28 : 0.13)
-
-            Behavior on border.color { ColorAnimation { duration: 200 } }
-        }
+        Behavior on border.color { ColorAnimation { duration: 200 } }
     }
 }

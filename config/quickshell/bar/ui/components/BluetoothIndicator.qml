@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../.."
 
 Item {
     id: root
@@ -8,7 +9,7 @@ Item {
     property var    btPopupRef:     null
     property bool   isActive:       root.btPopupRef ? root.btPopupRef.shown : false
     property bool   isScanning:     root.btPopupRef ? root.btPopupRef.scanning : false
-    property int    connectedCount: root.btPopupRef ? root.btPopupRef.connectedModel.count : 0
+    property int    connectedCount: root.btPopupRef ? root.btPopupRef.parsedDevices.filter(d => d.connected).length : 0
 
     width:  btRow.implicitWidth + 16
     height: 34
@@ -17,12 +18,12 @@ Item {
     Rectangle {
         anchors.fill:    parent
         anchors.margins: 3
-        radius:          6
+        radius:          Theme.radiusMedium - 2
         color: root.isActive
             ? Qt.rgba(1, 1, 1, 0.15)
             : (btArea.pressed
                 ? Qt.rgba(1, 1, 1, 0.12)
-                : (btHover.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent"))
+                : (btHover.hovered ? Theme.separator : "transparent"))
         Behavior on color { ColorAnimation { duration: 100 } }
     }
 
@@ -68,10 +69,10 @@ Item {
                 text: root.btOn ? "󰂯" : "󰂲"
                 font.pixelSize: 16
                 color: !root.btOn
-                    ? Qt.rgba(1, 1, 1, 0.35)
+                    ? Theme.iconMuted
                     : (root.connectedCount > 0
-                        ? Qt.rgba(0.35, 0.65, 1, 0.95)
-                        : Qt.rgba(1, 1, 1, 0.70))
+                        ? Theme.iconAccent
+                        : Theme.iconMain)
                 Behavior on color { ColorAnimation { duration: 150 } }
             }
         }
@@ -80,10 +81,10 @@ Item {
         Text {
             anchors.verticalCenter: parent.verticalCenter
             visible: root.btOn && root.connectedCount > 0
-            text: (root.btPopupRef && root.btPopupRef.connectedModel.count > 0)
-                ? root.btPopupRef.connectedModel.get(0).name.split(" ")[0]
+            text: (root.btPopupRef && root.btPopupRef.parsedDevices.filter(d => d.connected).length > 0)
+                ? root.btPopupRef.parsedDevices.filter(d => d.connected)[0].name.split(" ")[0]
                 : ""
-            color: Qt.rgba(1, 1, 1, 0.60)
+            color: Theme.textDim
             font { pixelSize: 11; weight: Font.Medium }
             elide: Text.ElideRight
             width: Math.min(implicitWidth, 80)

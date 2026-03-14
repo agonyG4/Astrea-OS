@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../.."
 
 Item {
     id: root
@@ -16,8 +17,8 @@ Item {
     Rectangle {
         anchors.fill: parent
         anchors.margins: 3
-        radius: 6
-        color: root.isActive ? Qt.rgba(1, 1, 1, 0.15) : (netArea.pressed ? Qt.rgba(1, 1, 1, 0.12) : (netHover.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent"))
+        radius: Theme.radiusMedium - 2
+        color: root.isActive ? Qt.rgba(1, 1, 1, 0.15) : (netArea.pressed ? Qt.rgba(1, 1, 1, 0.12) : (netHover.hovered ? Theme.separator : "transparent"))
         Behavior on color { ColorAnimation { duration: 100 } }
     }
 
@@ -35,8 +36,8 @@ Item {
                 : root.netType === "wifi" ? "󰖩"
                 : "󰈀"
             color: !root.netConnected
-                ? "#ff375f"
-                : Qt.rgba(1, 1, 1, 0.62)
+                ? Theme.iconWarning
+                : Theme.iconMain
             font.pixelSize: 16
             anchors.verticalCenter: parent.verticalCenter
             Behavior on color { ColorAnimation { duration: 150 } }

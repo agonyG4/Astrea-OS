@@ -1,5 +1,6 @@
 import QtQuick
 import Qt5Compat.GraphicalEffects
+import "../bar"
 
 Item {
     id: musicView
@@ -44,7 +45,7 @@ Item {
                         maskSource: Rectangle {
                             width: artImage.width
                             height: artImage.height
-                            radius: 14
+                            radius: Theme.radiusLarge - 2
                         }
                     }
                 }
@@ -61,12 +62,12 @@ Item {
 
             Text {
                 text: island.musicTitleText
-                color: "white"; font.pixelSize: 15; font.weight: Font.DemiBold
+                color: Theme.textActive; font { pixelSize: 15; weight: Font.DemiBold }
                 elide: Text.ElideRight; width: parent.width
             }
             Text {
                 text: island.musicArtistText
-                color: "#aaaaaa"; font.pixelSize: 13
+                color: Theme.textSecondary; font { pixelSize: 13 }
                 elide: Text.ElideRight; width: parent.width
             }
         }
@@ -112,7 +113,7 @@ Item {
             id: currentTimeLabel
             anchors { left: parent.left; top: parent.top; topMargin: 4 }
             text: island.formatTime(island.smoothPosition)
-            color: "#aaaaaa"; font.pixelSize: 12
+            color: Theme.textSecondary; font { pixelSize: 12 }
         }
 
         Rectangle {
@@ -122,7 +123,7 @@ Item {
                 right: totalTimeLabel.left; rightMargin: 6
             }
             height: 5; radius: 2.5
-            color: Qt.rgba(1, 1, 1, 0.2)
+            color: Theme.separator
 
             Rectangle {
                 width: parent.width * (island.musicLength > 0
@@ -138,7 +139,7 @@ Item {
             id: totalTimeLabel
             anchors { right: parent.right; top: parent.top; topMargin: 4 }
             text: island.formatTime(island.musicLength)
-            color: "#aaaaaa"; font.pixelSize: 12
+            color: Theme.textSecondary; font { pixelSize: 12 }
         }
     }
 

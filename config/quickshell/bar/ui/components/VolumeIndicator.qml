@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import "../.."
 
 Item {
     id: root
@@ -18,8 +19,8 @@ Item {
     Rectangle {
         anchors.fill: parent
         anchors.margins: 3
-        radius: 6
-        color: root.isActive ? Qt.rgba(1, 1, 1, 0.15) : (volArea.pressed ? Qt.rgba(1, 1, 1, 0.12) : (volHover.hovered ? Qt.rgba(1, 1, 1, 0.08) : "transparent"))
+        radius: Theme.radiusMedium - 2 // proportional adjustment
+        color: root.isActive ? Qt.rgba(1, 1, 1, 0.15) : (volArea.pressed ? Qt.rgba(1, 1, 1, 0.12) : (volHover.hovered ? Theme.separator : "transparent"))
         Behavior on color { ColorAnimation { duration: 100 } }
     }
 
@@ -38,8 +39,8 @@ Item {
                 : root.volLevel < 67 ? "󰖀"
                 :                      "󰕾"
             color: root.volMuted
-                ? Qt.rgba(1, 1, 1, 0.22)
-                : Qt.rgba(1, 1, 1, 0.62)
+                ? Theme.iconMuted
+                : Theme.iconMain
             font.pixelSize: 16
             anchors.verticalCenter: parent.verticalCenter
             Behavior on color { ColorAnimation { duration: 150 } }

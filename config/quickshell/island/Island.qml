@@ -14,7 +14,8 @@ ShellRoot {
         color: "transparent"
 
         WlrLayershell.namespace: "dynamic-island"
-        WlrLayershell.layer: WlrLayer.Overlay
+        // WlrLayershell.layer: WlrLayer.Overlay
+        WlrLayershell.layer: WlrLayer.Top
         WlrLayershell.exclusiveZone: -1
         WlrLayershell.keyboardFocus: WlrLayershell.None
 
@@ -36,7 +37,7 @@ ShellRoot {
         property int    cavaMaxHeightCompact:  18
 
         property bool hasMusic:           musicTitleText !== ""
-        property bool isExpanded:         hasMusic && islandContent.isMouseOver
+        property bool isExpanded:         islandContent.isMouseOver
         property bool cavaActive:         hasMusic && !showGamemodeNotify
 
         property bool gamemodeActive:     false

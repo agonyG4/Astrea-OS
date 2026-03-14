@@ -1,5 +1,6 @@
 import QtQuick
 import Qt5Compat.GraphicalEffects
+import "../bar"
 Rectangle {
     id: islandContent
     readonly property bool isGamemodeNotify: island.showGamemodeNotify
@@ -29,7 +30,7 @@ Rectangle {
     Rectangle {
         anchors.fill: parent
         radius: parent.currentRadius
-        color: "#000000"
+        color: Theme.islandBackground
     }
     MouseArea {
         id: mouseArea
@@ -44,7 +45,7 @@ Rectangle {
         Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
         Rectangle {
             width: 20; height: 20; radius: 10
-            color: "#000000"
+            color: Theme.islandBackground
             anchors { left: parent.left; leftMargin: 8; verticalCenter: parent.verticalCenter }
             Item {
                 anchors.fill: parent
