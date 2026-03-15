@@ -1,4 +1,0 @@
-module modules.network
-BluetoothProcess 1.0 BluetoothProcess.qml
-WifiProcess 1.0 WifiProcess.qml
-NetworkProcess 1.0 NetworkProcess.qml

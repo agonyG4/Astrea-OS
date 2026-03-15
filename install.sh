@@ -115,20 +115,25 @@ deploy_dir() {
 # ── Deploy ────────────────────────────────────────────────
 info "Copiando arquivos..."
 
-deploy_dir "$SCRIPT_DIR/Astrea"   "/opt/Astrea"         sudo
-deploy_dir "$SCRIPT_DIR/config"   "$USER_HOME/.config"
-deploy_dir "$SCRIPT_DIR/scripts"  "$USER_HOME/.local/bin"  # bônus, se existir
+# System/Global
+deploy_dir "$SCRIPT_DIR/opt/Astrea"                      "/opt/Astrea"                  sudo
+deploy_dir "$SCRIPT_DIR/system/sddm/themes/Borealis"     "/usr/share/sddm/themes/Borealis" sudo
+
+# User/Local
+deploy_dir "$SCRIPT_DIR/.config"                         "$USER_HOME/.config"
+deploy_dir "$SCRIPT_DIR/.local"                          "$USER_HOME/.local"
+deploy_dir "$SCRIPT_DIR/scripts"                         "$USER_HOME/.local/bin" 
 
 # ── Serviços do usuário ───────────────────────────────────
-if [[ -d "$SCRIPT_DIR/services" ]]; then
+if [[ -d "$SCRIPT_DIR/system/services" ]]; then
     mkdir -p "$USER_HOME/.config/systemd/user"
-    cp -r "$SCRIPT_DIR/services/." "$USER_HOME/.config/systemd/user/"
+    cp -r "$SCRIPT_DIR/system/services/." "$USER_HOME/.config/systemd/user/"
     systemctl --user daemon-reload
     success "services → $USER_HOME/.config/systemd/user (daemon recarregado)"
 fi
 
 # ── Fim ───────────────────────────────────────────────────
 echo
-echo -e "${GREEN}${BOLD}  AstreaOS v1.2 instalado com sucesso!${RESET}"
+echo -e "${GREEN}${BOLD}  AstreaOS v1.3 instalado com sucesso!${RESET}"
 echo -e "  Reinicia o Hyprland ou faz logout/login pra aplicar tudo."
 echo
