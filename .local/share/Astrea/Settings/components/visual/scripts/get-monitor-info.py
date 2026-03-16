@@ -8,7 +8,7 @@ AVAILABLE_SCALES    = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
 AVAILABLE_BITDEPTHS = [6, 8, 10]
 
 CONF_PATH = os.path.expanduser(
-    "~/.local/Astrea/Settings/components/visual/monitor-settings.conf"
+    "~/.local/share/Astrea/Settings/components/visual/monitor-settings.conf"
 )
 
 
