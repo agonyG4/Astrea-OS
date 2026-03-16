@@ -111,8 +111,8 @@ PanelWindow {
 
     // ─── Processos ────────────────────────────────────────────────
     Process { id: shellLauncher;  command: ["rofi", "-show", "drun"] }
-    Process { id: shellAbout;     command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/Astrea/about.qml"] }
-    Process { id: shellSettings;  command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/Astrea/Settings/main.qml"] }
+    Process { id: shellAbout;    command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/about.qml"] }
+    Process { id: shellSettings; command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/Settings/main.qml"] }
     Process { id: shellForceQuit; command: ["bash", "-c", "hyprctl kill"] }
     Process { id: shellLock;      command: ["hyprlock"] }
     Process { id: shellPower;     command: ["wlogout"] }
