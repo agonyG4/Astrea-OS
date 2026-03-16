@@ -17,9 +17,9 @@ Item {
     readonly property color popupBg:       Qt.rgba(0.13, 0.13, 0.14, 0.97)
 
     // ── Paths ─────────────────────────────────────────────────────────────
-    readonly property string scriptPath:  Quickshell.env("HOME") + "/.local/Astrea/Settings/components/visual/scripts/get-monitor-info.py"
-    readonly property string confPath:    Quickshell.env("HOME") + "/.local/Astrea/Settings/components/visual/monitor-settings.conf"
-    readonly property string applyScript: Quickshell.env("HOME") + "/.local/Astrea/Settings/components/visual/scripts/monitor_apply.sh"
+    readonly property string scriptPath:  Quickshell.env("HOME") + "/.local/share/Astrea/Settings/components/visual/scripts/get-monitor-info.py"
+    readonly property string confPath:    Quickshell.env("HOME") + "/.local/share/Astrea/Settings/components/visual/monitor-settings.conf"
+    readonly property string applyScript: Quickshell.env("HOME") + "/.local/share/Astrea/Settings/components/visual/scripts/monitor_apply.sh"
 
     // ── Monitor state ─────────────────────────────────────────────────────
     property var    monitors:      []
