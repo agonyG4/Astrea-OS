@@ -1,0 +1,14 @@
+NAME="AstreaOS"
+PRETTY_NAME="AstreaOS"
+VERSION="1.0"
+V_NAME="Exodus"
+ID=astrea
+ID_LIKE=arch
+BUILD_ID=Exodus-Alpha
+ANSI_COLOR="38;2;23;147;209"
+HOME_URL="https://github.com/aritsuyu/Astrea-OS"
+DOCUMENTATION_URL="https://wiki.archlinux.org/"
+SUPPORT_URL="https://bbs.archlinux.org/"
+BUG_REPORT_URL="https://github.com/aritsuyu/Astrea-OS/issues"
+PRIVACY_POLICY_URL="https://astreaos.org/privacy"
+LOGO=astrea
