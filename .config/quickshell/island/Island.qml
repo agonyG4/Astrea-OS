@@ -4,8 +4,7 @@ import Quickshell.Io
 import QtQuick
 import "."
 
-ShellRoot {
-    PanelWindow {
+PanelWindow {
         id: island
 
         anchors.top: true
@@ -117,5 +116,4 @@ ShellRoot {
         IslandProcesses  { id: procs }
         IslandAnimations { id: flipAnim }
         IslandContent    { id: islandContent }
-    }
 }
