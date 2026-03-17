@@ -1,9 +1,0 @@
-[Unit]
-Description=Reiniciar Linux Wallpaper Engine para limpar memory leak
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/bash %h/.config/hypr/scripts/restart_wallpaper.sh
-
-[Install]
-WantedBy=default.target
