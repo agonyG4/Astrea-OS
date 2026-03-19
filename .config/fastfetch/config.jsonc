@@ -7,7 +7,7 @@
     }
   },
   "logo": {
-    "source": "~/.local/share/fastfetch/logos/astrea.txt",
+    "source": "~/.local/share/Astrea/ASCII/astrea.txt",
     "type": "file"
   },
   "modules": [
