@@ -16,6 +16,7 @@ from pathlib import Path
 
 # ── WirePlumber config path ───────────────────────────────────────────────────
 WP_CONF = Path.home() / ".config/wireplumber/wireplumber.conf.d/50-astrea-audio.conf"
+ALIASES_CONF = Path.home() / ".local/share/Astrea/System/audio-aliases.json"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def run(cmd: list) -> str:
@@ -26,6 +27,49 @@ def run(cmd: list) -> str:
 
 def eprint(msg):
     print(msg, file=sys.stderr)
+
+def get_aliases():
+    if not ALIASES_CONF.exists():
+        return {}
+    try:
+        c = ALIASES_CONF.read_text()
+        return json.loads(c) if c else {}
+    except Exception:
+        return {}
+
+def save_alias(name, custom_name):
+    aliases = get_aliases()
+    if custom_name.strip() == "":
+        if name in aliases:
+            del aliases[name]
+    else:
+        aliases[name] = custom_name.strip()
+    ALIASES_CONF.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        ALIASES_CONF.write_text(json.dumps(aliases, ensure_ascii=False))
+    except Exception:
+        pass
+    update_wp_aliases_file()
+
+def update_wp_aliases_file():
+    aliases = get_aliases()
+    conf = Path.home() / ".config/wireplumber/wireplumber.conf.d/51-astrea-aliases.conf"
+    if not aliases:
+        if conf.exists():
+            conf.unlink()
+        return
+
+    out = []
+    for k, v in aliases.items():
+        out.append(f"""  {{
+    matches = [ {{ node.name = "{k}" }} ]
+    actions = {{ update-props = {{ node.description = "{v}" }} }}
+  }}""")
+    rules_str = ",\n".join(out)
+    content = f"monitor.alsa.rules = [\n{rules_str}\n]\n\n"
+    content += f"monitor.bluez.rules = [\n{rules_str}\n]\n\n"
+    conf.parent.mkdir(parents=True, exist_ok=True)
+    conf.write_text(content)
 
 # ── Resolve path do ícone no tema ─────────────────────────────────────────────
 def resolve_icon_path(icon_name: str) -> str:
@@ -94,14 +138,18 @@ def get_sinks() -> list:
     except Exception:
         return []
     result = []
+    aliases = get_aliases()
     for s in sinks:
         props = s.get("properties", {})
         desc  = (props.get("device.description")
                  or props.get("node.description")
                  or s.get("description")
                  or s.get("name", ""))
+        name = s.get("name", "")
+        if name in aliases:
+            desc = aliases[name]
         result.append({
-            "name":        s.get("name", ""),
+            "name":        name,
             "description": desc,
             "default":     False,
         })
@@ -239,6 +287,8 @@ def apply_config(cfg: dict):
         run(["pactl", "set-card-profile", cfg["card"], cfg["profile"]])
     if "set_default_sink" in cfg:
         run(["pactl", "set-default-sink", cfg["set_default_sink"]])
+    if "rename" in cfg and "name" in cfg:
+        save_alias(cfg["name"], cfg["rename"])
     if "sample_rate" in cfg or "buffer_size" in cfg:
         wp = get_wp_config()
         if "sample_rate" in cfg:

@@ -5,6 +5,7 @@ import Quickshell.Io
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "../bar"
 
 ShellRoot {
     id: root
@@ -90,6 +91,7 @@ ShellRoot {
                             Layout.alignment: Qt.AlignVCenter
 
                             placeholderText: "Spotlight Search"
+                            font.family: Theme.fontFamily
                             font.pixelSize: 22
                             font.weight: Font.Light
                             color: "white"
@@ -159,6 +161,7 @@ ShellRoot {
 
                                     Text {
                                         text: modelData ? modelData.name : ""
+                                        font.family: Theme.fontFamily
                                         font.pixelSize: 17
                                         color: "white"
                                         Layout.fillWidth: true
@@ -200,16 +203,24 @@ ShellRoot {
             if (typeof DesktopEntries !== "undefined") {
                 let apps = DesktopEntries.applications.values
                 let searchTerms = q.split(/[\s-]+/)
+                let seenNames = new Set()
+
                 for (let entry of apps) {
                     if (!entry || entry.noDisplay) continue
+                    
                     let searchableName = (entry.name || "").toLowerCase()
+                    if (seenNames.has(searchableName)) continue
+
                     let searchableExec = (entry.exec || entry.execString || "").toLowerCase()
 
                     let matches = searchTerms.every(term =>
                         searchableName.includes(term) || searchableExec.includes(term)
                     )
 
-                    if (matches) items.push(entry)
+                    if (matches) {
+                        items.push(entry)
+                        seenNames.add(searchableName)
+                    }
                     if (items.length >= 6) break
                 }
             }

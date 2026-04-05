@@ -1,10 +1,10 @@
 NAME="AstreaOS"
 PRETTY_NAME="AstreaOS"
-VERSION="1.0"
-V_NAME="Exodus"
+VERSION="2.0A"
+V_NAME="Midnight"
 ID=astrea
 ID_LIKE=arch
-BUILD_ID=Exodus-Alpha
+BUILD_ID=Midnight-Alpha
 ANSI_COLOR="38;2;23;147;209"
 HOME_URL="https://github.com/aritsuyu/Astrea-OS"
 DOCUMENTATION_URL="https://wiki.archlinux.org/"

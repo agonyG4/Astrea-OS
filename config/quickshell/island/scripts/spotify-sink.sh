@@ -4,20 +4,29 @@ SPOTIFY_SERIAL=""
 
 for i in {1..15}; do
     SPOTIFY_SERIAL=$(pw-dump 2>/dev/null | jq -r '
-        .[] | select(
-            .info.props["media.class"] == "Stream/Output/Audio" and
-            (
-                (.info.props["node.name"] // "" | ascii_downcase | contains("spotify")) or
-                (.info.props["application.name"] // "" | ascii_downcase | contains("spotify"))
-            )
-        ) | .info.props["object.serial"] // empty' 2>/dev/null | head -1)
+        .[]
+        | select(.info.props["media.class"] == "Stream/Output/Audio")
+        | .info.props as $p
+        | select(
+            [
+                ($p["application.name"] // ""),
+                ($p["application.process.binary"] // ""),
+                ($p["application.process.name"] // ""),
+                ($p["node.name"] // ""),
+                ($p["node.description"] // ""),
+                ($p["media.name"] // "")
+            ]
+            | map(ascii_downcase | contains("spotify"))
+            | any
+        )
+        | ($p["object.serial"] // empty)' 2>/dev/null | head -1)
 
     [ -n "$SPOTIFY_SERIAL" ] && break
     sleep 0.3
 done
 
-SOURCE_LINE="${SPOTIFY_SERIAL:+source = $SPOTIFY_SERIAL}"
-SOURCE_LINE="${SOURCE_LINE:-source = spotify}"
+SOURCE_LINE=""
+[ -n "$SPOTIFY_SERIAL" ] && SOURCE_LINE="source = $SPOTIFY_SERIAL"
 
 cat > "$CAVA_CONF" << EOF
 [general]

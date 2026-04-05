@@ -12,6 +12,7 @@ PanelWindow {
     property int    masterVol:   50
     property bool   masterMuted: false
     property string deviceName:  "Volume"
+    property real   anchorX:     screen.width - 158  // fallback: below volume icon
 
     signal volumeChangeHandled(int v)
 
@@ -67,7 +68,7 @@ PanelWindow {
     Process {
         id: deviceProc
         command: ["bash", "-c", "wpctl inspect @DEFAULT_AUDIO_SINK@ 2>/dev/null | grep 'node.nick\\|node.description\\|device.description' | head -1 | sed 's/.*= \"//;s/\".*//;s/^ *//'"]
-        running: true
+        running: false
         stdout: SplitParser {
             onRead: data => {
                 var name = data.trim()
@@ -99,10 +100,9 @@ PanelWindow {
     // ─── Card ─────────────────────────────────────────────────────
     Item {
         id: card
-        anchors.top:         parent.top
-        anchors.right:       parent.right
-        anchors.topMargin:   54
-        anchors.rightMargin: 8
+        anchors.top:       parent.top
+        anchors.topMargin: 54
+        x:      Math.max(8, Math.min(parent.width - width - 8, root.anchorX - width / 2))
         width:  300
         height: cardBg.height
         z: 1

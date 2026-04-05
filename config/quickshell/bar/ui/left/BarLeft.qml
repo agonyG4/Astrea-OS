@@ -12,9 +12,21 @@ Item {
     width:   leftRow.implicitWidth + 20
     opacity: 0
 
+    function updateAstreaAnchor() {
+        if (!root.astreaPopupRef) return
+        const point = logoButton.mapToItem(null, logoButton.width / 2, logoButton.height / 2)
+        root.astreaPopupRef.anchorX = point.x
+    }
+
     HoverHandler { id: rootHover }
 
-    Component.onCompleted: appearAnim.start()
+    Component.onCompleted: {
+        updateAstreaAnchor()
+        appearAnim.start()
+    }
+    onXChanged: updateAstreaAnchor()
+    onWidthChanged: updateAstreaAnchor()
+    onAstreaPopupRefChanged: updateAstreaAnchor()
 
     // ─── Animação de entrada ──────────────────────────────────────
     NumberAnimation {
@@ -54,6 +66,7 @@ Item {
         spacing: 8
 
         Rectangle {
+            id: logoButton
             anchors.verticalCenter: parent.verticalCenter
             width: 28; height: 28
             radius: Theme.radiusMedium
@@ -71,7 +84,11 @@ Item {
                 id: logoArea
                 anchors.fill: parent
                 hoverEnabled: true
-                onClicked: if (astreaPopupRef) astreaPopupRef.shown = !astreaPopupRef.shown
+                onClicked: {
+                    if (!astreaPopupRef) return
+                    root.updateAstreaAnchor()
+                    astreaPopupRef.shown = !astreaPopupRef.shown
+                }
             }
         }
 

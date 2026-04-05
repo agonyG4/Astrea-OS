@@ -1,92 +1,74 @@
 import QtQuick
 import Qt5Compat.GraphicalEffects
-import "../bar"
+import "../bar" as Bar
 
 Item {
     id: musicView
 
-    readonly property real flipScale: Math.abs(Math.cos(island.artFlipAngle * Math.PI / 180))
+    readonly property bool shouldShow: island.isExpanded && !island.showGamemodeNotify && island.hasMusic && island.activeTab === "home"
+    property bool isDraggingSeek: false
+    property real dragSeekPosUs:  0
 
     anchors.fill: parent
-    opacity: (island.isExpanded && !island.showGamemodeNotify && island.hasMusic) ? 1 : 0
-    Behavior on opacity {
-        NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
-    }
+    opacity: shouldShow ? 1 : 0
     visible: opacity > 0.01
 
-    // ── Topo: capa + título/artista + waveform ────────────────────────
-    Item {
-        anchors {
-            top: parent.top; left: parent.left; right: parent.right
-            topMargin: 18; leftMargin: 18; rightMargin: 18
+    Behavior on opacity { NumberAnimation { duration: shouldShow ? flipAnim.contentFadeInDuration : flipAnim.contentFadeOutDuration; easing.type: Easing.OutCubic } }
+    transform: Translate {
+        y: musicView.shouldShow ? 0 : -flipAnim.contentSlideDistance
+        Behavior on y { NumberAnimation { duration: musicView.shouldShow ? flipAnim.contentSlideInDuration : flipAnim.contentSlideDuration; easing.type: Easing.OutExpo } }
+    }
+
+    // ── Helper: ícone de controle ─────────────────────────────────
+    component CtrlIcon: Image {
+        id: ctrlIconBase
+        property color tint: island.dominantCol
+        property int   sz:   18
+
+        width: sz; height: sz
+        fillMode: Image.PreserveAspectFit
+        smooth: true; mipmap: true
+        anchors.verticalCenter: parent?.verticalCenter
+        layer.enabled: true; layer.smooth: true
+        layer.effect: ColorOverlay {
+            color: ctrlIconBase.tint
+            Behavior on color { ColorAnimation { duration: 250 } }
         }
+    }
+
+    // ── Helper: label de tempo ────────────────────────────────────
+    component TimeLabel: Text {
+        color: Bar.Theme.textSecondary
+        font { family: Bar.Theme.fontFamilyText; pixelSize: Bar.Theme.fontSizeBody - 1; weight: Font.Medium; letterSpacing: 0.2 }
+        width: 35
+        antialiasing: true
+        renderType: Text.NativeRendering
+    }
+
+    // ── Topo: arte + título + waveform ────────────────────────────
+    Item {
+        anchors { top: parent.top; left: parent.left; right: parent.right; topMargin: 18; leftMargin: 18; rightMargin: 18 }
         height: 60
 
-        Item {
-            id: artRect
-            width: 60; height: 60
-            anchors { left: parent.left; top: parent.top }
-
-            scale: 1.0 + (0.04 * (1.0 - musicView.flipScale))
-            Behavior on scale {
-                NumberAnimation { duration: 80; easing.type: Easing.OutQuad }
-            }
-
-            Rectangle {
-                id: artMask
-                width: 60
-                height: 60
-                radius: Theme.radiusLarge - 2
-                visible: false
-                antialiasing: true
-            }
-
-            Item {
-                anchors.fill: parent
-                transform: Scale {
-                    origin.x: artRect.width / 2
-                    xScale: musicView.flipScale
-                }
-
-                Image {
-                    id: artImage
-                    anchors.fill: parent
-                    source: island.artSource
-                    fillMode: Image.PreserveAspectCrop
-                    smooth: true
-                    mipmap: true
-                    cache: false
-                    asynchronous: true
-                    opacity: source === "" ? 0 : 1
-                    Behavior on opacity {
-                        NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
-                    }
-
-                    layer.enabled: true
-                    layer.effect: OpacityMask {
-                        maskSource: artMask
-                    }
-                }
-            }
-        }
+        Item { id: artRect; width: 60; height: 60; anchors { left: parent.left; top: parent.top } }
 
         Column {
-            anchors {
-                left: artRect.right; leftMargin: 14
-                right: waveform.left; rightMargin: 14
-                top: parent.top; topMargin: 10
-            }
-            spacing: 2
+            anchors { left: artRect.right; leftMargin: 14; right: waveform.left; rightMargin: 14; top: parent.top; topMargin: 10 }
+            spacing: 0
 
             Text {
                 text: island.musicTitleText
-                color: Theme.textActive; font { pixelSize: 15; weight: Font.DemiBold }
+                color: Bar.Theme.textActive
+                font { family: Bar.Theme.fontFamilyDisplay; pixelSize: Bar.Theme.fontSizeTitle; weight: Font.DemiBold; letterSpacing: -0.3 }
                 elide: Text.ElideRight; width: parent.width
+                antialiasing: true; renderType: Text.NativeRendering
             }
             Text {
                 text: island.musicArtistText
-                color: Theme.textSecondary; font { pixelSize: 13 }
+                color: Bar.Theme.textSecondary
+                font { family: Bar.Theme.fontFamilyText; pixelSize: Bar.Theme.fontSizeBody; weight: Font.Medium; letterSpacing: -0.1 }
                 elide: Text.ElideRight; width: parent.width
+                antialiasing: true; renderType: Text.NativeRendering
             }
         }
 
@@ -94,195 +76,166 @@ Item {
             id: waveform
             width: 36; spacing: 3
             anchors { right: parent.right; top: parent.top; topMargin: 12 }
-
             Repeater {
                 model: 6
                 Item {
                     width: 3; height: 36
                     Rectangle {
-                        width: 3
-                        height: Math.min(
-                            island.cavaMaxHeightExpanded,
-                            Math.max(island.cavaMinHeight, (island.cavaBars[index] / 100) * 34)
-                        )
-                        radius: 2
+                        width: 3; radius: 2
+                        height: Math.min(island.cavaMaxHeightExpanded, Math.max(island.cavaMinHeight, island.cavaBars[index] / 100 * 34))
                         anchors.centerIn: parent
                         color: island.dominantCol
-                        Behavior on height {
-                            enabled: island.isExpanded
-                            NumberAnimation { duration: 60; easing.type: Easing.OutSine }
-                        }
-                        Behavior on color { ColorAnimation { duration: 300 } }
+                        Behavior on height { enabled: island.isExpanded; NumberAnimation { duration: 60; easing.type: Easing.OutSine } }
+                        Behavior on color  { ColorAnimation { duration: 300 } }
                     }
                 }
             }
         }
     }
 
-    // ── Barra de progresso ────────────────────────────────────────────
+    // ── Barra de progresso ────────────────────────────────────────
     Item {
-        anchors {
-            top: parent.top; left: parent.left; right: parent.right
-            topMargin: 90; leftMargin: 20; rightMargin: 20
-        }
+        id: seekBar
+        anchors { top: parent.top; left: parent.left; right: parent.right; topMargin: 90; leftMargin: 20; rightMargin: 20 }
         height: 22
 
-        Text {
+        readonly property real seekPos: isDraggingSeek ? dragSeekPosUs : island.smoothPosition
+        readonly property real ratio:   island.musicLength > 0 ? Math.min(seekPos / island.musicLength, 1.0) : 0
+
+        TimeLabel {
             id: currentTimeLabel
-            anchors { left: parent.left; top: parent.top; topMargin: 4 }
-            text: island.formatTime(island.smoothPosition)
-            color: Theme.textSecondary; font { pixelSize: 12 }
+            anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+            horizontalAlignment: Text.AlignRight
+            text: island.formatTime(seekBar.seekPos)
         }
 
         Rectangle {
-            anchors {
-                top: parent.top; topMargin: 8
-                left: currentTimeLabel.right; leftMargin: 6
-                right: totalTimeLabel.left; rightMargin: 6
-            }
+            id: progressBarBg
+            anchors { verticalCenter: parent.verticalCenter; left: currentTimeLabel.right; leftMargin: 10; right: totalTimeLabel.left; rightMargin: 10 }
             height: 5; radius: 2.5
-            color: Theme.separator
+            color: Bar.Theme.separator
 
             Rectangle {
-                width: parent.width * (island.musicLength > 0
-                    ? Math.min(island.smoothPosition / island.musicLength, 1.0)
-                    : 0)
+                width: parent.width * seekBar.ratio
                 height: parent.height; radius: 2.5
                 color: island.dominantCol
                 Behavior on color { ColorAnimation { duration: 300 } }
             }
+
+            Rectangle {
+                width: 10; height: 10; radius: 5
+                anchors.verticalCenter: parent.verticalCenter
+                x: parent.width * seekBar.ratio - 5
+                color: Bar.Theme.textActive
+                opacity: isDraggingSeek ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: 150 } }
+            }
+
+            MouseArea {
+                anchors { fill: parent; topMargin: -10; bottomMargin: -10 }
+                cursorShape: Qt.PointingHandCursor
+
+                function posFromMouse(mouse) {
+                    return Math.max(0, Math.min(1, mouse.x / width)) * island.musicLength
+                }
+
+                onPressed:         (mouse) => { isDraggingSeek = true; dragSeekPosUs = posFromMouse(mouse) }
+                onPositionChanged: (mouse) => { if (isDraggingSeek) dragSeekPosUs = posFromMouse(mouse) }
+                onReleased:        (mouse) => {
+                    if (!isDraggingSeek) return
+                    dragSeekPosUs = posFromMouse(mouse)
+                    procs.setPosition(dragSeekPosUs)
+                    island.smoothPosition = dragSeekPosUs
+                    isDraggingSeek = false
+                }
+            }
         }
 
-        Text {
+        TimeLabel {
             id: totalTimeLabel
-            anchors { right: parent.right; top: parent.top; topMargin: 4 }
+            anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+            horizontalAlignment: Text.AlignLeft
             text: island.formatTime(island.musicLength)
-            color: Theme.textSecondary; font { pixelSize: 12 }
         }
     }
 
-    // ── Controles de playback ─────────────────────────────────────────
+    // ── Controles ─────────────────────────────────────────────────
     Row {
         y: 120
         anchors.horizontalCenter: parent.horizontalCenter
         spacing: 28
 
-        // Shuffle
-        Image {
+        CtrlIcon {
             source: "./assets/shuffle_icon.png"
-            width: 18; height: 18
-            fillMode: Image.PreserveAspectFit
-            smooth: true; mipmap: true
-            anchors.verticalCenter: parent.verticalCenter
+            tint:    island.isShuffle ? island.dominantCol : Bar.Theme.textSecondary
             opacity: island.isShuffle ? 1.0 : 0.35
             Behavior on opacity { NumberAnimation { duration: 150 } }
-
-            layer.enabled: true; layer.smooth: true
-            layer.effect: ColorOverlay {
-                color: island.isShuffle ? island.dominantCol : Theme.textSecondary
-                Behavior on color { ColorAnimation { duration: 200 } }
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: island.toggleShuffle()
-            }
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: procs.toggleShuffle() }
         }
 
-        // Skip back
-        Image {
+        CtrlIcon {
             source: "./assets/skip-back.png"
-            width: 18; height: 18
-            fillMode: Image.PreserveAspectFit
-            smooth: true; mipmap: true
-            anchors.verticalCenter: parent.verticalCenter
-            layer.enabled: true; layer.smooth: true
-            layer.effect: ColorOverlay {
-                color: island.dominantCol
-                Behavior on color { ColorAnimation { duration: 300 } }
-            }
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: island.prev()
-            }
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: procs.prev() }
         }
 
-        // Play / Pause
-        Image {
+        CtrlIcon {
+            id: playPauseBtn
             source: island.isPlaying ? "./assets/pause.png" : "./assets/play.png"
-            width: 24; height: 24
-            fillMode: Image.PreserveAspectFit
-            smooth: true; mipmap: true
-            anchors.verticalCenter: parent.verticalCenter
-            layer.enabled: true; layer.smooth: true
-            layer.effect: ColorOverlay {
-                color: island.dominantCol
-                Behavior on color { ColorAnimation { duration: 300 } }
+            sz: 24
+
+            SequentialAnimation {
+                id: playPauseAnim
+                NumberAnimation { target: playPauseBtn; property: "scale"; to: 0.75; duration: 60;  easing.type: Easing.OutQuad }
+                NumberAnimation { target: playPauseBtn; property: "scale"; to: 1.0;  duration: 350; easing.type: Easing.BezierSpline; easing.bezierCurve: [0.34, 1.56, 0.64, 1.0] }
             }
+
             MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: island.playPause()
+                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                onClicked: { playPauseAnim.restart(); procs.playPause() }
             }
         }
 
-        // Skip forward
-        Image {
+        CtrlIcon {
             source: "./assets/skip-forward.png"
-            width: 18; height: 18
-            fillMode: Image.PreserveAspectFit
-            smooth: true; mipmap: true
-            anchors.verticalCenter: parent.verticalCenter
-            layer.enabled: true; layer.smooth: true
-            layer.effect: ColorOverlay {
-                color: island.dominantCol
-                Behavior on color { ColorAnimation { duration: 300 } }
-            }
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: island.next()
-            }
+            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: procs.next() }
         }
 
-        // Loop
         Item {
             width: 18; height: 18
             anchors.verticalCenter: parent.verticalCenter
 
-            Image {
+            CtrlIcon {
                 id: loopIcon
                 anchors.fill: parent
                 source: "./assets/loop_icon.png"
-                fillMode: Image.PreserveAspectFit
-                smooth: true; mipmap: true
+                tint:    island.isLoop ? island.dominantCol : Bar.Theme.textSecondary
                 opacity: island.isLoop ? 1.0 : 0.35
                 Behavior on opacity { NumberAnimation { duration: 150 } }
+            }
 
-                layer.enabled: true; layer.smooth: true
-                layer.effect: ColorOverlay {
-                    color: island.isLoop ? island.dominantCol : Theme.textSecondary
-                    Behavior on color { ColorAnimation { duration: 200 } }
+            Rectangle {
+                visible: island.isLoopTrack
+                anchors { right: parent.right; top: parent.top; rightMargin: -3; topMargin: -3 }
+                width: 10; height: 10; radius: 5
+                color: island.dominantCol
+                Behavior on color { ColorAnimation { duration: 200 } }
+                Text {
+                    anchors.centerIn: parent
+                    text: "1"
+                    font.family: Bar.Theme.fontFamilyText
+                    font.pixelSize: 6
+                    font.weight: Font.Bold
+                    color: "black"
+                    antialiasing: true
+                    renderType: Text.NativeRendering
                 }
             }
 
-            ScaleAnimator {
-                id: loopPulse
-                target: loopIcon
-                from: 1.3; to: 1.0
-                duration: 250
-                easing.type: Easing.OutBack
-            }
+            ScaleAnimator { id: loopPulse; target: loopIcon; from: 1.3; to: 1.0; duration: 250; easing.type: Easing.OutBack }
 
             MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    island.toggleLoop()
-                    if (!island.isLoop) loopPulse.start()
-                }
+                anchors.fill: parent; cursorShape: Qt.PointingHandCursor
+                onClicked: { procs.toggleLoop(); loopPulse.start() }
             }
         }
     }

@@ -1,0 +1,12 @@
+module components
+singleton Theme 1.0 theme/Theme.qml
+NavItem 1.0 navigation/NavItem.qml
+SectionHeader 1.0 form/SectionHeader.qml
+SelectButton 1.0 form/SelectButton.qml
+SettingRow 1.0 form/SettingRow.qml
+Sidebar 1.0 navigation/Sidebar.qml
+ScrollPage 1.0 form/ScrollPage.qml
+SpeedCard 1.0 feedback/SpeedCard.qml
+DnsStatusCard 1.0 feedback/DnsStatusCard.qml
+DnsPresetChip 1.0 feedback/DnsPresetChip.qml
+StatusDot 1.0 feedback/StatusDot.qml

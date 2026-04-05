@@ -1,283 +1,307 @@
+import Quickshell
 import Quickshell.Io
 import QtQuick
 
 Item {
     // ── API Pública ────────────────────────────────────────────────
 
-    function setDominantColor(path) {
-        dominantColor.imagePath = path
-        dominantColor.running = false
-        Qt.callLater(() => { dominantColor.running = true })
+    function normalizeFileUrl(input) {
+        var raw = (input?.toString) ? input.toString() : String(input || "")
+        if (!raw?.startsWith("file://")) return ""
+        var path = raw.split("?")[0].slice(7)
+        try { path = decodeURIComponent(path) } catch (e) {}
+        return "file://" + encodeURI(path)
     }
 
-    function playPause()     { playerctlPlayPause.running = true }
-    function next()          { playerctlNext.running = true }
-    function prev()          { playerctlPrev.running = true }
+    function isSupportedFileUrl(fileUrl) {
+        var lower = fileUrl.toLowerCase().split("?")[0]
+        return lower.startsWith("file://") && lower.length > 7
+    }
+
+    // ── Categorias ─────────────────────────────────────────────────
+    function getFileCategory(url) {
+        var u = (url || "").toLowerCase().split("?")[0]
+        if (/\.(png|jpg|jpeg|webp|gif|bmp|avif|heic|heif|svg|ico|tiff|tif)$/.test(u)) return "image"
+        if (/\.(mp4|mkv|webm|avi|mov|flv|wmv|m4v|ogv|3gp|ts)$/.test(u))              return "video"
+        if (/\.(mp3|flac|ogg|wav|aac|m4a|opus|wma|aiff)$/.test(u))                   return "audio"
+        if (/\.pdf$/.test(u))                                                          return "pdf"
+        if (/\.(zip|tar|gz|bz2|xz|7z|rar|zst|lz4)$/.test(u))                        return "archive"
+        if (/\.(doc|docx|odt|rtf|pages)$/.test(u))                                    return "doc"
+        if (/\.(xls|xlsx|ods|csv)$/.test(u))                                          return "spreadsheet"
+        if (/\.(ppt|pptx|odp|key)$/.test(u))                                          return "presentation"
+        if (/\.(js|ts|py|rs|go|c|cpp|h|hpp|java|kt|swift|rb|php|sh|fish|lua|qml|css|html|xml|json|yaml|toml|md)$/.test(u)) return "code"
+        if (/\.(ttf|otf|woff|woff2)$/.test(u))                                        return "font"
+        return "generic"
+    }
+
+    function getCategoryEmoji(cat) {
+        return ({ image: "🖼", video: "🎬", audio: "🎵", pdf: "📄", archive: "📦",
+                  doc: "📝", spreadsheet: "📊", presentation: "📽", code: "💻", font: "🔤" })[cat] ?? "📎"
+    }
+
+    function getCategoryAccent(cat) {
+        return ({ image: "#a78bfa", video: "#f472b6", audio: "#34d399", pdf: "#f87171",
+                  archive: "#fbbf24", doc: "#60a5fa", spreadsheet: "#4ade80",
+                  presentation: "#fb923c", code: "#38bdf8", font: "#e879f9" })[cat] ?? "#94a3b8"
+    }
+
+    function getFileExtension(url) {
+        var u = (url || "").toLowerCase().split("?")[0]
+        var dot = u.lastIndexOf(".")
+        return dot === -1 ? "" : u.slice(dot + 1)
+    }
+
+    function getFileName(url) {
+        var u = (url || "").split("?")[0]
+        return decodeURIComponent(u.slice(Math.max(u.lastIndexOf("/"), u.lastIndexOf("%2F")) + 1))
+    }
+
+    // ── Dropped files ──────────────────────────────────────────────
+    function persistDroppedImages() {
+        saveDroppedImages.payload = JSON.stringify(island.droppedImages)
+        saveDroppedImages.running = false
+        Qt.callLater(() => { saveDroppedImages.running = true })
+    }
+
+    function addDroppedFiles(urls) {
+        if (!urls?.length) return
+        for (var i = 0; i < urls.length; i++) {
+            var fileUrl = normalizeFileUrl(urls[i])
+            if (!fileUrl || !isSupportedFileUrl(fileUrl)) continue
+            if (_pendingDroppedSources.indexOf(fileUrl) !== -1) continue
+            _pendingDroppedSources.push(fileUrl)
+        }
+        importNextDroppedFile()
+    }
+    function addDroppedImages(urls) { addDroppedFiles(urls) }
+
+    function importNextDroppedFile() {
+        if (importDroppedImage.running || !_pendingDroppedSources.length) return
+        importDroppedImage.sourceUrl = _pendingDroppedSources.shift()
+        importDroppedImage.running = false
+        Qt.callLater(() => { importDroppedImage.running = true })
+    }
+    function importNextDroppedImage() { importNextDroppedFile() }
+
+    function addImportedDroppedImage(fileUrl) {
+        var normalized = normalizeFileUrl(fileUrl)
+        if (!normalized || !isSupportedFileUrl(normalized)) return
+        var next = island.droppedImages.slice()
+        if (next.indexOf(normalized) !== -1) return
+        next.push(normalized)
+        if (next.length > 24) cleanupDroppedTempFile(next.shift())
+        island.droppedImages = next
+        persistDroppedImages()
+    }
+
+    function cleanupDroppedTempFile(fileUrl) {
+        if (!fileUrl?.startsWith("file://")) return
+        if (!fileUrl.includes("/.cache/island-dropped-images/")) return
+        deleteDroppedImage.sourceUrl = fileUrl
+        deleteDroppedImage.running = false
+        Qt.callLater(() => { deleteDroppedImage.running = true })
+    }
+
+    function removeDroppedFile(url) {
+        var fileUrl = normalizeFileUrl(url)
+        if (!fileUrl) return
+        var current = island.droppedImages.slice()
+        var idx = current.indexOf(fileUrl)
+        if (idx === -1) return
+        current.splice(idx, 1)
+        island.droppedImages = current
+        persistDroppedImages()
+        cleanupDroppedTempFile(fileUrl)
+    }
+    function removeDroppedImage(url) { removeDroppedFile(url) }
+
+    function openFile(url) {
+        var p = normalizeFileUrl(url).replace("file://", "")
+        if (!p) return
+        openProcess.command = ["xdg-open", p]
+        openProcess.running = false
+        Qt.callLater(() => { openProcess.running = true })
+    }
+
+    function openFolder(url) {
+        var p = normalizeFileUrl(url).replace("file://", "")
+        if (!p) return
+        openProcess.command = ["xdg-open", p.substring(0, p.lastIndexOf("/"))]
+        openProcess.running = false
+        Qt.callLater(() => { openProcess.running = true })
+    }
+
+    // ── Playback ───────────────────────────────────────────────────
+    function playPause() {
+        if (island.sharedMusicState)
+            island.sharedMusicState.playPause()
+    }
+
+    function next() {
+        if (island.sharedMusicState)
+            island.sharedMusicState.next()
+    }
+
+    function prev() {
+        if (island.sharedMusicState)
+            island.sharedMusicState.prev()
+    }
 
     function toggleShuffle() {
-        playerctlShuffle.running = false
-        Qt.callLater(() => { playerctlShuffle.running = true })
+        if (island.sharedMusicState)
+            island.sharedMusicState.toggleShuffle()
     }
 
     function toggleLoop() {
-        playerctlLoop.running = false
-        Qt.callLater(() => { playerctlLoop.running = true })
+        if (island.sharedMusicState)
+            island.sharedMusicState.toggleLoop()
     }
 
-    function clearIsland() {
-        if (island.musicTitleText === "") return
-        island.musicTitleText  = ""
-        island.musicArtistText = ""
-        island.isPlaying       = false
-        island.isShuffle       = false
-        island.isLoop          = false
-        island.artUrlCache     = ""
-        island.artSource       = ""
-        island.triggerArtFlip("", "")
-        island.dominantCol     = "#ffffff"
-        cavaProcess.running    = false
-        _sinkInitialized       = false
+    function setPosition(targetPosMicroSec) {
+        if (island.sharedMusicState)
+            island.sharedMusicState.setPosition(targetPosMicroSec)
     }
 
-    // ── Estado Interno ─────────────────────────────────────────────
-    property bool _sinkInitialized: false
+    // ── Estado interno ─────────────────────────────────────────────
+    property string legacyConfigFile:     Qt.resolvedUrl("config/island.json").toString().replace("file://", "")
+    property string stateDir:             Quickshell.env("HOME") + "/.local/state/Astrea/island"
+    property string configFile:           stateDir + "/island.json"
+    property string droppedImagesFile:    stateDir + "/dropped-images.json"
+    property string droppedImagesTempDir: "/home/agony/.cache/island-dropped-images"
+    property var    _pendingDroppedSources: []
 
-    // ── Processos ──────────────────────────────────────────────────
-
+    // ── Processos: ficheiros ───────────────────────────────────────
     Process {
-        id: dominantColor
-        property string imagePath: ""
-        command: [
-            Qt.resolvedUrl("scripts/get-dominant-color.sh").toString().replace("file://", ""),
-            imagePath
-        ]
+        id: openProcess
+        command: ["xdg-open", ""]
         running: false
-        stdout: SplitParser {
-            onRead: data => {
-                var parts = data.trim().split(" ")
-                if (parts.length !== 3) return
-                var r = parseInt(parts[0]), g = parseInt(parts[1]), b = parseInt(parts[2])
-                if (isNaN(r) || isNaN(g) || isNaN(b)) return
-                island.dominantCol = Qt.rgba(r/255, g/255, b/255, 1).toString()
-            }
-        }
     }
 
     Process {
-        id: spotifySink
-        command: ["bash", Qt.resolvedUrl("scripts/spotify-sink.sh").toString().replace("file://", "")]
-        running: false
-        stdout: SplitParser {
-            onRead: _ => {
-                cavaProcess.running = false
-                Qt.callLater(() => { cavaProcess.running = true })
-            }
-        }
-    }
-
-    Process {
-        id: cavaProcess
-        command: ["cava", "-p", Qt.resolvedUrl("config/cava.conf").toString().replace("file://", "")]
-        running: false
-        stdout: SplitParser {
-            splitMarker: "\n"
-            onRead: data => {
-                var trimmed = data.trim()
-                if (!trimmed) return
-                var parts = trimmed.split(";")
-                if (parts.length < 6) return
-                for (var i = 0; i < 6; i++)
-                    island.cavaBars[i] = parseInt(parts[i]) || 0
-                island.cavaBarsChanged()
-            }
-        }
-    }
-
-    Process {
-        id: playerMonitor
-        command: [
-            "playerctl", "--player=spotify", "metadata",
-            "--format", "{{status}}|||{{title}}|||{{artist}}|||{{mpris:artUrl}}|||{{position}}|||{{mpris:length}}|||{{shuffle}}|||{{loopStatus}}",
-            "--follow"
-        ]
-        running: true
-
-        stdout: SplitParser {
-            onRead: data => {
-                var parts = data.split("|||")
-                if (parts.length < 8) return
-
-                var status     = parts[0].trim().toLowerCase()
-                var title      = parts[1].trim()
-                var artist     = parts[2].trim()
-                var artUrl     = (parts[3] || "").trim()
-                var pos        = parseInt(parts[4]) || 0
-                var len        = parseInt(parts[5]) || 1
-                var shuffle    = parts[6].trim().toLowerCase()
-                var loopStatus = parts[7].trim().toLowerCase()
-
-                if (!title || status === "stopped") {
-                    clearIsland()
-                    return
-                }
-
-                var wasPlaying = island.isPlaying
-                island.isPlaying = (status === "playing")
-
-                if (island.isPlaying) {
-                    pauseIdleTimer.stop()
-                    island.idleHidden = false
-                } else if (!pauseIdleTimer.running && island.musicTitleText !== "") {
-                    pauseIdleTimer.restart()
-                }
-
-                if (island.musicTitleText !== title) {
-                    island.musicTitleText = title
-                    if (!_sinkInitialized) {
-                        _sinkInitialized = true
-                        spotifySink.running = true
-                    }
-                }
-                island.isShuffle = (shuffle === "true" || shuffle === "1")
-                island.isLoop    = (loopStatus === "track")
-
-                if (island.musicArtistText !== artist) island.musicArtistText = artist
-                island.musicPosition = pos
-                island.musicLength   = len
-
-                if (artUrl === island.artUrlCache) return
-                island.artUrlCache = artUrl
-
-                if (!artUrl) {
-                    island.triggerArtFlip("", "")
-                    island.dominantCol = "#ffffff"
-                } else if (artUrl.startsWith("http")) {
-                    fetchArt.running = false
-                    Qt.callLater(() => {
-                        fetchArt._url = artUrl
-                        fetchArt.running = true
-                    })
-                } else {
-                    island.triggerArtFlip(artUrl, artUrl.replace("file://", ""))
-                }
-            }
-        }
-
-        stderr: SplitParser {
-            onRead: data => {
-                if (data.includes("No players found")) clearIsland()
-            }
-        }
-    }
-
-    Timer {
-        id: retryTimer
-        interval: 1500
-        repeat: true
-        running: !playerMonitor.running
-        onTriggered: playerMonitor.running = true
-    }
-
-    Process {
-        id: spotifyWatcher
+        id: saveDroppedImages
+        property string payload: "[]"
         command: ["bash", "-c",
-            "pid=$(pgrep -x spotify | head -1); [ -n \"$pid\" ] && tail --pid=$pid -f /dev/null"]
-        running: true
-
-        onRunningChanged: {
-            if (running) return
-            clearIsland()
-            playerMonitor.running = false
-            Qt.callLater(() => { playerMonitor.running = true })
-            spotifyWatcherRetry.restart()
-        }
-    }
-
-    Timer {
-        id: spotifyWatcherRetry
-        interval: 1500
-        repeat: true
-        onTriggered: {
-            if (spotifyWatcher.running) {
-                spotifyWatcherRetry.stop()
-            } else {
-                spotifyWatcher.running = true
-            }
-        }
+            "mkdir -p \"$(dirname \"$1\")\"; printf '%s' \"$2\" > \"$1\"",
+            "--", droppedImagesFile, payload]
+        running: false
     }
 
     Process {
-        id: fetchArt
-        property string _url: ""
+        id: importDroppedImage
+        property string sourceUrl: ""
         command: ["bash", "-c",
-            "curl -sL --max-time 10 --output ~/.cache/island_art.jpg -- \"$1\" && echo ~/.cache/island_art.jpg",
-            "--", _url]
+            "python3 -c \"import os,sys,time,shutil,urllib.parse;" +
+            "u=sys.argv[1].split('?',1)[0];" +
+            "src=urllib.parse.unquote(u[7:]);" +
+            "out=sys.argv[2];" +
+            "os.makedirs(out,exist_ok=True);" +
+            "name=os.path.basename(src) or 'file';" +
+            "dst=os.path.join(out,f'{time.time_ns()}-{name}');" +
+            "shutil.copy2(src,dst);" +
+            "print('file://'+urllib.parse.quote(dst,safe='/'))\" \"$1\" \"$2\"",
+            "--", sourceUrl, droppedImagesTempDir]
+        running: false
+        stdout: SplitParser { onRead: data => addImportedDroppedImage(data.trim()) }
+        onRunningChanged: if (!running) Qt.callLater(() => { importNextDroppedFile() })
+    }
+
+    Process {
+        id: deleteDroppedImage
+        property string sourceUrl: ""
+        command: ["bash", "-c",
+            "python3 -c \"import os,sys,urllib.parse;" +
+            "p=urllib.parse.unquote(sys.argv[1].split('?',1)[0][7:]);" +
+            "os.path.exists(p) and os.remove(p)\" \"$1\"",
+            "--", sourceUrl]
+        running: false
+    }
+
+    Process {
+        id: sanitizeDroppedImages
+        property string payload: "[]"
+        command: ["bash", "-c",
+            "python3 -c \"import json,os,sys,urllib.parse;" +
+            "out=[];" +
+            "seen=set();" +
+            "[out.append(nu) or seen.add(nu)" +
+            " for u in json.loads(sys.argv[1])" +
+            " if (nu:='file://'+urllib.parse.quote(urllib.parse.unquote(str(u).split('?',1)[0][7:]),safe='/'))" +
+            " and str(u).startswith('file://') and os.path.exists(urllib.parse.unquote(str(u).split('?',1)[0][7:]))" +
+            " and nu not in seen];" +
+            "print(json.dumps(out))\" \"$1\"",
+            "--", payload]
         running: false
         stdout: SplitParser {
             onRead: data => {
-                var path = data.trim()
-                if (!path) return
-                island.triggerArtFlip("file://" + path + "?" + Date.now(), path)
-                setDominantColor(path)
+                try {
+                    var parsed = JSON.parse(data.trim())
+                    if (!Array.isArray(parsed)) return
+                    island.droppedImages = parsed
+                    persistDroppedImages()
+                } catch (e) {}
             }
         }
     }
 
-    Process { id: playerctlPlayPause; command: ["playerctl", "--player=spotify", "play-pause"];      running: false }
-    Process { id: playerctlNext;      command: ["playerctl", "--player=spotify", "next"];            running: false }
-    Process { id: playerctlPrev;      command: ["playerctl", "--player=spotify", "previous"];        running: false }
-    Process { id: playerctlShuffle;   command: ["playerctl", "--player=spotify", "shuffle", "toggle"]; running: false }
-
-    Process {
-        id: playerctlLoop
-        command: ["playerctl", "--player=spotify", "loop", island.isLoop ? "None" : "Track"]
-        running: false
-    }
-    Timer {
-    id: pauseIdleTimer
-    interval: 15000  // 30 segundos
-    repeat: false
-    running: false
-    onTriggered: {
-        island.idleHidden = true
-    }    
-}
+    // ── Monitores de config / estado ───────────────────────────────
     Process {
         id: gamemodeMonitor
         command: ["bash", "-c",
             "gamemoded -s 2>/dev/null | grep -q 'is active' && echo active || echo inactive;" +
-            "while inotifywait -q -e modify /tmp/gamemode_status 2>/dev/null; do" +
-            "  cat /tmp/gamemode_status; done"]
+            "while inotifywait -q -e modify /tmp/gamemode_status 2>/dev/null; do cat /tmp/gamemode_status; done"]
         running: true
-        stdout: SplitParser {
-            onRead: data => {
-                island.gamemodeActive = (data.trim() === "active")
-            }
-        }
+        stdout: SplitParser { onRead: data => { island.gamemodeActive = data.trim() === "active" } }
     }
 
     Process {
         id: configMonitor
         command: ["bash", "-c",
-            "FILE=" + Qt.resolvedUrl("config/island.json").toString().replace("file://", "") + ";" +
+            "FILE=\"$1\"; LEGACY=\"$2\";" +
+            "mkdir -p \"$(dirname \"$FILE\")\";" +
+            "if [ ! -f \"$FILE\" ]; then " +
+            "  if [ -f \"$LEGACY\" ]; then cp \"$LEGACY\" \"$FILE\"; " +
+            "  else printf '%s\n' '{' '    \"enabled\": true,' '    \"always_on_top\": true,' '    \"music\": true,' '    \"show_gamemode_notify\": false,' '    \"style\": \"Notch\"' '}' > \"$FILE\"; " +
+            "  fi; " +
+            "fi;" +
             "cat \"$FILE\" | tr '\\n' ' '; echo;" +
-            "while inotifywait -q -e modify \"$FILE\" 2>/dev/null; do" +
-            "  cat \"$FILE\" | tr '\\n' ' '; echo;" +
-            "done"
-        ]
+            "while inotifywait -q -e modify \"$FILE\" 2>/dev/null; do cat \"$FILE\" | tr '\\n' ' '; echo; done",
+            "--", configFile, legacyConfigFile]
+        running: true
+        stdout: SplitParser {
+            onRead: data => {
+                try {
+                    var c = JSON.parse(data.trim())
+                    island.islandConfig.enabled              = c.enabled              ?? true
+                    island.islandConfig.always_on_top        = c.always_on_top        ?? true
+                    island.islandConfig.music                = c.music                ?? true
+                    island.islandConfig.show_gamemode_notify = c.show_gamemode_notify ?? false
+                    island.islandConfig.style                = c.style                ?? "Notch"
+                } catch(e) {}
+            }
+        }
+    }
+
+    Process {
+        id: droppedImagesMonitor
+        command: ["bash", "-c",
+            "FILE=\"$1\";" +
+            "mkdir -p \"$(dirname \"$FILE\")\";" +
+            "[ -f \"$FILE\" ] || echo '[]' > \"$FILE\";" +
+            "cat \"$FILE\" | tr '\\n' ' '; echo;" +
+            "while inotifywait -q -e modify \"$FILE\" 2>/dev/null; do cat \"$FILE\" | tr '\\n' ' '; echo; done",
+            "--", droppedImagesFile]
         running: true
         stdout: SplitParser {
             onRead: data => {
                 try {
                     var parsed = JSON.parse(data.trim())
-                    // Cria ou atualiza o config garantindo que as propriedades padrão existam
-                    island.islandConfig = {
-                        always_on_top: parsed.always_on_top !== undefined ? parsed.always_on_top : true,
-                        music: parsed.music !== undefined ? parsed.music : true,
-                        show_gamemode_notify: parsed.show_gamemode_notify !== undefined ? parsed.show_gamemode_notify : false
-                    }
-                } catch(e) {}
+                    if (!Array.isArray(parsed)) return
+                    sanitizeDroppedImages.payload = JSON.stringify(parsed)
+                    sanitizeDroppedImages.running = false
+                    Qt.callLater(() => { sanitizeDroppedImages.running = true })
+                } catch (e) {}
             }
         }
     }
+
 }

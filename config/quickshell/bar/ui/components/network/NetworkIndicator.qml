@@ -14,6 +14,17 @@ Item {
     width:  netRow.implicitWidth + 16
     height: 34
 
+    function updatePopupAnchor() {
+        if (!root.netPopupRef) return
+        const point = root.mapToItem(null, root.width / 2, root.height / 2)
+        root.netPopupRef.anchorX = point.x
+    }
+
+    onXChanged: updatePopupAnchor()
+    onWidthChanged: updatePopupAnchor()
+    onNetPopupRefChanged: updatePopupAnchor()
+    Component.onCompleted: updatePopupAnchor()
+
     Rectangle {
         anchors.fill: parent
         anchors.margins: 3
@@ -51,6 +62,7 @@ Item {
 
         onClicked: {
             if (root.netPopupRef) {
+                root.updatePopupAnchor()
                 if (root.netPopupRef.shown) {
                     root.netPopupRef.shown = false;
                 } else {

@@ -14,6 +14,7 @@ PanelWindow {
     property string scannedJson: "[]"
     property bool   scanning:    false
     property var    btProcess:   null
+    property real   anchorX:     screen.width - 158  // fallback
 
     readonly property var parsedDevices: {
         try { return JSON.parse(devicesJson) } catch(e) { return [] }
@@ -75,7 +76,9 @@ PanelWindow {
     // ── Card ──────────────────────────────────────────────────────
     Item {
         id: card
-        anchors { top: parent.top; right: parent.right; topMargin: 54; rightMargin: 8 }
+        anchors.top:       parent.top
+        anchors.topMargin: 54
+        x:      Math.max(8, Math.min(parent.width - width - 8, root.anchorX - width / 2))
         width:   280
         height:  cardBg.height
         opacity: 0

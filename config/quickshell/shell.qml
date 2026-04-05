@@ -1,14 +1,18 @@
 //@ pragma UseQApplication
+//@ pragma IconTheme WhiteSur-dark
 import Quickshell
 import "./bar"
 import "./island"
-import "./spotlight" // O QML já vai buscar os arquivos com letra maiúscula aqui dentro
-import "./notifications"
+import "./spotlight"
 
 ShellRoot {
     id: root
 
-    // Suas Bars
+    MusicMonitor {
+        id: musicMonitor
+    }
+
+    // Bar — one per screen
     Variants {
         model: Quickshell.screens
         delegate: Bar {
@@ -17,16 +21,15 @@ ShellRoot {
         }
     }
 
-    // Suas Islands
     Variants {
         model: Quickshell.screens
         delegate: Island {
             required property var modelData
             screen: modelData
+            sharedMusicState: musicMonitor
         }
     }
 
-    // O seu Spotlightzão centralizado
-    Spotlight {
-    }
+    // Spotlight — shared singleton
+    Spotlight {}
 }
