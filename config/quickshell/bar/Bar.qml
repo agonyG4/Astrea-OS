@@ -7,9 +7,9 @@ import "ui/right"
 import "modules/network"
 import "ui/components/astrea"
 import "ui/components/bluetooth"
+import "ui/components/controlcenter"
 import "ui/components/network"
 import "ui/components/volume"
-import "./notifications"
 
 PanelWindow {
     id: bar
@@ -36,6 +36,11 @@ PanelWindow {
     property bool   volMuted:      false
     property int    _tick:         0
 
+    function refreshVolume() {
+        volumeProc.running = false
+        volumeProc.running = true
+    }
+
     BarLeft {
         anchors.left:           parent.left
         anchors.leftMargin:     8
@@ -56,11 +61,13 @@ PanelWindow {
         volLevel:      bar.volLevel
         volMuted:      bar.volMuted
         volPopupRef:   volPopup
+        ccPopupRef:    ccPopup
         onVolChangeRequested: function(v) {
             bar.volLevel       = v
             volSetProc.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", v + "%"]
             volSetProc.running = false
             volSetProc.running = true
+            volRefreshDebounce.restart()
         }
     }
 
@@ -82,6 +89,13 @@ PanelWindow {
                 if (m) bar.volLevel = Math.round(parseFloat(m[0]) * 100)
             }
         }
+    }
+
+    Timer {
+        id: volRefreshDebounce
+        interval: 180
+        repeat: false
+        onTriggered: bar.refreshVolume()
     }
 
     NetworkProcess {
@@ -108,11 +122,11 @@ PanelWindow {
         triggeredOnStart: true
         onTriggered: {
             barRight.tick()
-            volumeProc.running = false
-            volumeProc.running = true
-            if (++bar._tick % 5 === 0) {
+            if (++bar._tick % 3 === 0) {
+                bar.refreshVolume()
+            }
+            if (bar._tick % 5 === 0) {
                 netData.refresh()
-                btData.refresh()
             }
         }
     }
@@ -140,6 +154,10 @@ PanelWindow {
         scannedJson: bar.btScannedJson
         scanning:    bar.btScanning
         btProcess:   btData
+    }
+
+    ControlCenterPopup {
+        id: ccPopup
     }
 
     AstreaPopup {

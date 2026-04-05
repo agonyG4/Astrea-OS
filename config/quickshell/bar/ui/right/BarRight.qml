@@ -1,8 +1,10 @@
 import QtQuick
+import QtQml.Models
 import QtQuick.Effects
 import Quickshell.Io
 import "../components/system"
 import "../components/bluetooth"
+import "../components/controlcenter"
 import "../components/network"
 import "../components/volume"
 import "../../modules/network"
@@ -20,29 +22,52 @@ Item {
     property int    volLevel:     50
     property bool   volMuted:     false
     property var    volPopupRef:  null
+    property var    ccPopupRef:   null
+
+    property string _lastClockText: ""
+    property string _lastDateText:  ""
     signal volChangeRequested(int v)
 
     // ─── Layout ───────────────────────────────────────────────────
     height:  36
     width:   rightRow.implicitWidth + 20
     opacity: 0
+    clip:    true
 
     HoverHandler { id: rightRootHover }
 
-    Component.onCompleted: { tick(); appearAnim.start() }
+    // ─── Timer for Clock Update ───────────────────────────────────
+    Timer {
+        interval: 1000
+        running: true
+        repeat: true
+        onTriggered: root.tick()
+    }
 
-    // ─── Clock tick ───────────────────────────────────────────────
-    readonly property var   _days:   ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"]
-    readonly property var   _months: ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]
+    Component.onCompleted: {
+        root.tick()
+        appearAnim.start()
+    }
+
+    readonly property var _days:   ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"]
+    readonly property var _months: ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]
 
     function tick() {
         const now  = new Date()
         const h    = now.getHours()
-        clockLabel.text = `${(h % 12 || 12).toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`
-        dateLabel.text  = `${root._days[now.getDay()]} ${root._months[now.getMonth()]} ${now.getDate()}`
+        const nextClockText = `${(h % 12 || 12).toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`
+        const nextDateText  = `${root._days[now.getDay()]} ${root._months[now.getMonth()]} ${now.getDate()}`
+
+        if (nextClockText !== root._lastClockText) {
+            root._lastClockText = nextClockText
+            clockLabel.text = nextClockText
+        }
+        if (nextDateText !== root._lastDateText) {
+            root._lastDateText = nextDateText
+            dateLabel.text = nextDateText
+        }
     }
 
-    // ─── Animação de entrada ──────────────────────────────────────
     NumberAnimation {
         id: appearAnim
         target: root; property: "opacity"
@@ -50,18 +75,14 @@ Item {
         duration: 400; easing.type: Easing.OutCubic
     }
 
-    // ─── Glass background ─────────────────────────────────────────
+    // ─── Background ───────────────────────────────────────────────
     Rectangle {
         anchors.fill: parent
         radius: Theme.radiusLarge - 2
-        color:  "transparent"
+        color: Theme.background
+        border { width: 1; color: rightRootHover.hovered ? Theme.barBorderHover : Theme.border }
+        Behavior on border.color { ColorAnimation { duration: 200 } }
 
-        Rectangle { anchors.fill: parent; radius: parent.radius; color: Theme.background }
-        Rectangle {
-            anchors.fill: parent; radius: parent.radius
-            color: "transparent"
-            border { width: 1; color: Theme.border }
-        }
         Rectangle {
             anchors { top: parent.top; left: parent.left; right: parent.right; topMargin: 1; leftMargin: 4; rightMargin: 4 }
             height: parent.height * 0.45
@@ -72,16 +93,88 @@ Item {
         }
     }
 
-    // ─── Hover glow ───────────────────────────────────────────────
-    Rectangle {
-        anchors.fill: parent
-        radius: Theme.radiusLarge - 2
-        color:  "transparent"
-        border { width: 1; color: rightRootHover.hovered ? Theme.barBorderHover : Theme.border }
-        Behavior on border.color { ColorAnimation { duration: 200 } }
+    // ─── Indicators Model ─────────────────────────────────────────
+    ListModel {
+        id: indicatorOrderModel
+        ListElement { kind: "network" }
+        ListElement { kind: "bluetooth" }
+        ListElement { kind: "volume" }
+        ListElement { kind: "controlcenter" }
     }
 
-    // ─── Conteúdo ─────────────────────────────────────────────────
+    Component {
+        id: networkIndicatorComponent
+        NetworkIndicator {
+            anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+            netConnected: root.netConnected
+            netType:      root.netType
+            netPopupRef:  root.netPopupRef
+        }
+    }
+
+    Component {
+        id: bluetoothIndicatorComponent
+        BluetoothIndicator {
+            anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+            btOn:       root.btOn
+            btPopupRef: root.btPopupRef
+        }
+    }
+
+    Component {
+        id: volumeIndicatorComponent
+        VolumeIndicator {
+            anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+            volLevel:    root.volLevel
+            volMuted:    root.volMuted
+            volPopupRef: root.volPopupRef
+            onVolChanged: (v) => root.volChangeRequested(v)
+        }
+    }
+
+    Component {
+        id: controlCenterComponent
+        ControlCenterButton {
+            anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+            ccPopupRef: root.ccPopupRef
+        }
+    }
+
+    DelegateModel {
+        id: indicatorVisualModel
+        model: indicatorOrderModel
+        delegate: Item {
+            id: wrapper
+
+            required property int index
+            required property string kind
+
+            width: indicatorLoader.item ? indicatorLoader.item.width : 36
+            height: 36
+
+            Item {
+                id: delegateRoot
+                width: parent.width
+                height: 36
+
+                Loader {
+                    id: indicatorLoader
+                    anchors.centerIn: parent
+                    sourceComponent: {
+                        switch (kind) {
+                            case "network": return networkIndicatorComponent
+                            case "bluetooth": return bluetoothIndicatorComponent
+                            case "volume": return volumeIndicatorComponent
+                            case "controlcenter": return controlCenterComponent
+                            default: return null
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ─── Main Content ─────────────────────────────────────────────
     Row {
         id: rightRow
         anchors.centerIn: parent
@@ -92,44 +185,44 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
         }
 
-        Item { width: trayComp.width > 0 ? 8 : 0; height: 36 }
-
-        NetworkIndicator {
-            anchors.verticalCenter: parent.verticalCenter
-            netConnected: root.netConnected
-            netType:      root.netType
-            netPopupRef:  root.netPopupRef
+        Item {
+            id: trayGap
+            width: trayComp.width > 0 ? 8 : 0
+            height: 36
         }
 
-        BluetoothIndicator {
+        Row {
+            id: indicatorsRow
             anchors.verticalCenter: parent.verticalCenter
-            btOn:       root.btOn
-            btPopupRef: root.btPopupRef
-        }
-
-        VolumeIndicator {
-            anchors.verticalCenter: parent.verticalCenter
-            volLevel:    root.volLevel
-            volMuted:    root.volMuted
-            volPopupRef: root.volPopupRef
-            onVolChanged: (v) => root.volChangeRequested(v)
+            spacing: 0
+            Repeater {
+                model: indicatorVisualModel
+            }
         }
 
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             width: 1; height: 16
             color: Theme.separator
+            visible: indicatorsRow.children.length > 0
         }
 
-        // ── Data ──────────────────────────────────────────────────
         Item {
-            width:  dateLabel.implicitWidth + 16
+            width: dateLabel.implicitWidth + 16
             height: 36
             Text {
                 id: dateLabel
-                anchors.centerIn: parent
+                anchors.fill: parent
                 color: Theme.textSecondary
-                font { pixelSize: 12; letterSpacing: 0.3 }
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                font {
+                    family: Theme.fontFamilyDisplay
+                    pixelSize: 12
+                    weight: Font.Medium
+                    letterSpacing: 0.3
+                }
+                renderType: Text.NativeRendering
                 Behavior on text {
                     SequentialAnimation {
                         NumberAnimation { target: dateLabel; property: "opacity"; to: 0; duration: 120 }
@@ -139,15 +232,22 @@ Item {
             }
         }
 
-        // ── Relógio ───────────────────────────────────────────────
         Item {
-            width:  clockLabel.implicitWidth + 20
+            width: clockLabel.implicitWidth + 20
             height: 36
             Text {
                 id: clockLabel
-                anchors.centerIn: parent
+                anchors.fill: parent
                 color: Theme.textActive
-                font { pixelSize: 14; weight: Font.Medium; letterSpacing: 0.5 }
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                font {
+                    family: Theme.fontFamilyDisplay
+                    pixelSize: 14
+                    weight: Font.Medium
+                    letterSpacing: 0.35
+                }
+                renderType: Text.NativeRendering
                 Behavior on text {
                     SequentialAnimation {
                         NumberAnimation { target: clockLabel; property: "opacity"; to: 0; duration: 150; easing.type: Easing.InQuad }

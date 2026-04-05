@@ -9,6 +9,7 @@ PanelWindow {
     id: root
 
     property bool shown: false
+    property real anchorX: 22
 
     color:   "transparent"
     visible: root.shown
@@ -27,7 +28,9 @@ PanelWindow {
     // ─── Card ─────────────────────────────────────────────────────
     Item {
         id: card
-        anchors { left: parent.left; top: parent.top; leftMargin: 8; topMargin: 54 }
+        anchors.top: parent.top
+        anchors.topMargin: 54
+        x: Math.max(8, Math.min(parent.width - width - 8, root.anchorX - width / 2))
         width:   200
         height:  cardBg.height
         opacity: 0
@@ -89,7 +92,11 @@ PanelWindow {
             }
             MenuItem {
                 icon: "󰍜"; text: "Settings"
-                onClicked: { root.shown = false; shellSettings.running = true }
+                onClicked: {
+                    root.shown = false
+                    shellSettings.running = false
+                    Qt.callLater(() => { shellSettings.running = true })
+                }
             }
 
             MenuSeparator {}
@@ -111,58 +118,9 @@ PanelWindow {
 
     // ─── Processos ────────────────────────────────────────────────
     Process { id: shellLauncher;  command: ["rofi", "-show", "drun"] }
-    Process { id: shellAbout;    command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/about.qml"] }
-    Process { id: shellSettings; command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/Settings/main.qml"] }
+    Process { id: shellAbout;    command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/Apps/about.qml"] }
+    Process { id: shellSettings; command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/Apps/Settings/main.qml"] }
     Process { id: shellForceQuit; command: ["bash", "-c", "hyprctl kill"] }
-    Process { id: shellLock; command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/Astrea/Lockscreen/lockscreen.qml"] }
-    Process { id: shellPower;     command: ["wlogout"] }
-
-    // ─── Componentes ──────────────────────────────────────────────
-    component MenuSeparator: Rectangle {
-        width: parent.width - 16
-        height: 1
-        color: Theme.separator
-        anchors.horizontalCenter: parent.horizontalCenter
-    }
-
-    component MenuItem: Rectangle {
-        id: itemRoot
-        property string icon: ""
-        property string text: ""
-        signal clicked()
-
-        width: parent.width; height: 36
-        radius: Theme.radiusMedium
-        color:  mouse.containsMouse ? Theme.separator : "transparent"
-        Behavior on color { ColorAnimation { duration: 150 } }
-
-        Row {
-            anchors { fill: parent; leftMargin: 12 }
-            spacing: 12
-
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text:  itemRoot.icon
-                color: mouse.containsMouse ? Theme.iconActive : Theme.iconMain
-                font.pixelSize: Theme.fontSizeIcon
-                Behavior on color { ColorAnimation { duration: 150 } }
-            }
-
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text:  itemRoot.text
-                color: mouse.containsMouse ? Theme.textActive : Qt.rgba(1, 1, 1, 0.8)
-                font { pixelSize: Theme.fontSizeBody; weight: Font.Medium }
-                Behavior on color { ColorAnimation { duration: 150 } }
-            }
-        }
-
-        MouseArea {
-            id: mouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape:  Qt.PointingHandCursor
-            onClicked: itemRoot.clicked()
-        }
-    }
+    Process { id: shellLock; command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/Features/Paper/app/lockscreen/lockscreen.qml"] }
+    Process { id: shellPower;     command: ["bash", "-c", "shutdown now"] }
 }

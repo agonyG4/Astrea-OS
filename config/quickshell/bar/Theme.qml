@@ -34,8 +34,10 @@ QtObject {
     readonly property real radiusSmall:  6
     
     // --- Typography ---
-    readonly property string fontFamily: ""
-    readonly property int fontSizeTitle: 26
+    readonly property string fontFamily: "SF Pro Display"
+    readonly property string fontFamilyDisplay: "SF Pro Display"
+    readonly property string fontFamilyText: "SF Pro Text"
+    readonly property int fontSizeTitle: 14
     readonly property int fontSizeBody: 13
     readonly property int fontSizeIcon: 16
 

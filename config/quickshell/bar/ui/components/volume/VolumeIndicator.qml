@@ -16,6 +16,17 @@ Item {
     width:  volRow.implicitWidth + 16
     height: 34
 
+    function updatePopupAnchor() {
+        if (!root.volPopupRef) return
+        const point = root.mapToItem(null, root.width / 2, root.height / 2)
+        root.volPopupRef.anchorX = point.x
+    }
+
+    onXChanged: updatePopupAnchor()
+    onWidthChanged: updatePopupAnchor()
+    onVolPopupRefChanged: updatePopupAnchor()
+    Component.onCompleted: updatePopupAnchor()
+
     Rectangle {
         anchors.fill: parent
         anchors.margins: 3
@@ -54,6 +65,7 @@ Item {
 
         onClicked: {
             if (root.volPopupRef) {
+                root.updatePopupAnchor()
                 if (root.volPopupRef.shown) {
                     root.volPopupRef.shown = false;
                 } else {

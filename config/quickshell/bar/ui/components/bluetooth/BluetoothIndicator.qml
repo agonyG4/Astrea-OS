@@ -23,6 +23,17 @@ Item {
     width:  btRow.implicitWidth + 16
     height: 34
 
+    function updatePopupAnchor() {
+        if (!root.btPopupRef) return
+        const point = root.mapToItem(null, root.width / 2, root.height / 2)
+        root.btPopupRef.anchorX = point.x
+    }
+
+    onXChanged: updatePopupAnchor()
+    onWidthChanged: updatePopupAnchor()
+    onBtPopupRefChanged: updatePopupAnchor()
+    Component.onCompleted: updatePopupAnchor()
+
     // ── background ────────────────────────────────────────────────
     Rectangle {
         anchors { fill: parent; margins: 3 }
@@ -96,6 +107,10 @@ Item {
         id: btArea
         anchors.fill:    parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
-        onClicked: if (root.btPopupRef) root.btPopupRef.shown = !root.btPopupRef.shown
+        onClicked: {
+            if (!root.btPopupRef) return
+            root.updatePopupAnchor()
+            root.btPopupRef.shown = !root.btPopupRef.shown
+        }
     }
 }

@@ -13,6 +13,7 @@ PanelWindow {
     property string ssid:         ""
     property string downloadText: "0 B/s"
     property string uploadText:   "0 B/s"
+    property real   anchorX:      screen.width / 2   // fallback
 
     color:   "transparent"
     visible: root.shown
@@ -34,7 +35,9 @@ PanelWindow {
 
     Item {
         id: card
-        anchors { top: parent.top; right: parent.right; topMargin: 54; rightMargin: 108 }
+        anchors.top:       parent.top
+        anchors.topMargin: 54
+        x:      Math.max(8, Math.min(parent.width - width - 8, root.anchorX - width / 2))
         width:   280
         height:  cardBg.height
         opacity: 0

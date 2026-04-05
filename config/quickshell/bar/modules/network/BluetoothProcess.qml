@@ -10,7 +10,6 @@ QtObject {
     property string scannedJson: "[]"
     property bool   scanning:    false
 
-    // Lista interna de dispositivos encontrados no scan
     property var _scannedList: []
 
     function refresh() {
@@ -34,15 +33,12 @@ QtObject {
         root.scanning        = false
     }
 
-    // ─── Adiciona dispositivo à lista de scan sem duplicar ────────
     function _addScanned(mac, name) {
-        // Ignora se já pareado
         var paired = []
         try { paired = JSON.parse(root.devicesJson) } catch(e) {}
         for (var i = 0; i < paired.length; i++) {
             if (paired[i].mac === mac) return
         }
-        // Ignora duplicatas no scan
         for (var j = 0; j < root._scannedList.length; j++) {
             if (root._scannedList[j].mac === mac) return
         }
@@ -52,7 +48,6 @@ QtObject {
         root.scannedJson  = JSON.stringify(updated)
     }
 
-    // ─── Loop principal: pareados + estado ────────────────────────
     property var btProc: Process {
         command: ["bash", "-c", "
             while true; do
@@ -96,9 +91,6 @@ QtObject {
         }
     }
 
-    // ─── Scan em tempo real ───────────────────────────────────────
-    // Roda bluetoothctl interativo, parseia [NEW] Device em tempo real
-    // Após 15s manda scan off e encerra
     property var scanProc: Process {
         command: ["bash", "-c", "
             (
@@ -107,17 +99,14 @@ QtObject {
                 echo 'scan off'
                 sleep 1
             ) | bluetoothctl | while IFS= read -r line; do
-                # Captura linhas de novo dispositivo: [NEW] Device MAC Name
                 if echo \"$line\" | grep -q '\\[NEW\\] Device'; then
                     MAC=$(echo \"$line\" | grep -oE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}')
                     NAME=$(echo \"$line\" | sed 's/.*Device [0-9A-Fa-f:]*[[:space:]]*//')
                     NAME=$(echo \"$NAME\" | tr -d '\"\\\\' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-                    # Só emite se tem nome real (não só MAC)
                     if [ -n \"$MAC\" ] && [ -n \"$NAME\" ] && [ \"$NAME\" != \"$MAC\" ] && ! echo \"$NAME\" | grep -qE '^([0-9A-Fa-f]{2}[-]){5}[0-9A-Fa-f]{2}$'; then
                         echo \"found|$MAC|$NAME\"
                     fi
                 fi
-                # Fim do scan
                 if echo \"$line\" | grep -q 'Discovery stopped\\|Discovering: no'; then
                     echo 'scan_done'
                 fi
@@ -142,13 +131,11 @@ QtObject {
         }
     }
 
-    // ─── Para scan manualmente ────────────────────────────────────
     property var scanStopProc: Process {
         command: ["bluetoothctl", "scan", "off"]
         running: false
     }
 
-    // ─── Parear dispositivo novo ───────────────────────────────────
     property var pairProc: Process {
         property string targetMac: ""
         command: ["bluetoothctl", "pair", targetMac]

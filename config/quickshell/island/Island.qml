@@ -6,64 +6,101 @@ import "."
 
 PanelWindow {
     id: island
+    property QtObject sharedMusicState: null
 
     anchors.top: true
-    implicitWidth: screen.width
+    implicitWidth:  screen.width
     implicitHeight: islandContent.height + 100
     color: "transparent"
 
-    WlrLayershell.namespace: "dynamic-island"
-    WlrLayershell.layer: islandConfig.always_on_top ? WlrLayer.Overlay : WlrLayer.Top
-    WlrLayershell.exclusiveZone: -1
-    WlrLayershell.keyboardFocus: WlrLayershell.None
+    WlrLayershell.namespace:      "dynamic-island"
+    WlrLayershell.layer:          islandConfig.always_on_top ? WlrLayer.Overlay : WlrLayer.Top
+    WlrLayershell.exclusiveZone:  -1
+    WlrLayershell.keyboardFocus:  WlrLayershell.None
 
     mask: Region { item: islandContent }
 
-    // ── Estado global ─────────────────────────────────────────────
-    property var    islandConfig:   ({ always_on_top: true, music: true, show_gamemode_notify: false })
-    property string artUrlCache:    ""
-    property var    cavaBars:       [0, 0, 0, 0, 0, 0]
-    property string dominantCol:    "#ffffff"
-    property real   musicPosition:  0
-    property real   musicLength:    1
+// ── Config ────────────────────────────────────────────────────
+property QtObject islandConfig: QtObject {
+    property bool   enabled:              true
+    property bool   always_on_top:        true
+    property bool   music:                true
+    property bool   show_gamemode_notify: false
+    property string style:                "Notch"  // ou "Notch"
+}
+    // ── Estado ───────────────────────────────────────────────────
+    readonly property string artUrlCache: sharedMusicState ? sharedMusicState.artUrlCache : ""
+    readonly property var    cavaBars: sharedMusicState ? sharedMusicState.cavaBars : [0, 0, 0, 0, 0, 0]
+    readonly property string dominantCol: sharedMusicState ? sharedMusicState.dominantCol : "#ffffff"
+    readonly property real   musicPosition: sharedMusicState ? sharedMusicState.musicPosition : 0
+    readonly property real   musicLength: sharedMusicState ? sharedMusicState.musicLength : 1
     property real   smoothPosition: 0
-    property string musicTitleText:  ""
-    property string musicArtistText: ""
+    readonly property string musicTitleText: sharedMusicState ? sharedMusicState.musicTitleText : ""
+    readonly property string musicArtistText: sharedMusicState ? sharedMusicState.musicArtistText : ""
     property string artSource:       ""
-    property bool   isPlaying:       false
+    readonly property bool   isPlaying: sharedMusicState ? sharedMusicState.isPlaying : false
     property int    cavaMinHeight:         4
     property int    cavaMaxHeightExpanded: 32
     property int    cavaMaxHeightCompact:  18
 
-    property bool idleHidden: false
+    property bool idleHidden:         false
     property bool hasMusic:           islandConfig.music && musicTitleText !== ""
     property bool isExpanded:         islandContent.isMouseOver
     property bool cavaActive:         hasMusic && !showGamemodeNotify
-
     property bool gamemodeActive:     false
     property bool showGamemodeNotify: false
+    property var  droppedImages:      []
+    property bool hasDroppedImages:   droppedImages.length > 0
 
-    // ── Flip state ────────────────────────────────────────────────
+    property string activeTab: "home"
+
+    // ── Flip ──────────────────────────────────────────────────────
     property int    artFlipPhase:     0
+    property int    artFlipDirection: 1
     property real   artFlipAngle:     0
     property string pendingArtSource: ""
 
-    // ── Playback extras ───────────────────────────────────────────
-    property bool isShuffle: false
-    property bool isLoop:    false
+    // ── Playback ──────────────────────────────────────────────────
+    readonly property bool   isShuffle: sharedMusicState ? sharedMusicState.isShuffle : false
+    readonly property bool   isLoop: sharedMusicState ? sharedMusicState.isLoop : false
+    readonly property bool   isLoopTrack: sharedMusicState ? sharedMusicState.isLoopTrack : false
+    readonly property bool   isLoopPlaylist: sharedMusicState ? sharedMusicState.isLoopPlaylist : false
+    readonly property string loopMode: sharedMusicState ? sharedMusicState.loopMode : "none"
+    readonly property string targetArtSource: sharedMusicState ? sharedMusicState.artSource : ""
+    readonly property string targetArtPath: sharedMusicState ? sharedMusicState.artPath : ""
 
-    // ── Handlers ──────────────────────────────────────────────────
-    onIsExpandedChanged:    { if (isExpanded) syncPosition() }
+    // ── Bindings ──────────────────────────────────────────────────
+    Binding on smoothPosition {
+        when:  isExpanded && isPlaying && musicLength > musicPosition
+        value: musicPosition
+        restoreMode: Binding.RestoreNone
+    }
+
+    onIsExpandedChanged: { if (isExpanded) syncPosition(); else if (!hasDroppedImages) activeTab = "home" }
     onMusicPositionChanged: syncPosition()
-    onIsPlayingChanged:     syncPosition()
-
+    onIsPlayingChanged: {
+        syncPosition()
+        if (isPlaying) {
+            pauseIdleTimer.stop()
+            idleHidden = false
+        } else if (musicTitleText !== "") {
+            pauseIdleTimer.restart()
+        }
+    }
     onMusicTitleTextChanged: {
         smoothPositionAnim.stop()
         smoothPosition = 0
-        musicPosition  = 0
-        musicLength    = 1
+        if (musicTitleText !== "")
+            idleHidden = false
     }
-
+    onTargetArtSourceChanged: {
+        if (!targetArtSource) {
+            artSource = ""
+            pendingArtSource = ""
+            return
+        }
+        triggerArtFlip(targetArtSource, targetArtPath)
+    }
     onGamemodeActiveChanged: {
         if (gamemodeActive && islandConfig.show_gamemode_notify) {
             showGamemodeNotify = true
@@ -73,24 +110,17 @@ PanelWindow {
 
     // ── Helpers ───────────────────────────────────────────────────
     function formatTime(us) {
-        var s = Math.floor(us / 1000000)
-        var m = Math.floor(s / 60)
-        s = s % 60
-        return m + ":" + (s < 10 ? "0" + s : s)
+        const s = Math.floor(us / 1_000_000)
+        const m = Math.floor(s / 60)
+        return m + ":" + String(s % 60).padStart(2, "0")
     }
 
-    function triggerArtFlip(newSource, localPath) {
+    function triggerArtFlip(newSource, localPath, direction) {
+        if (direction !== undefined) artFlipDirection = direction
         if (newSource === artSource && pendingArtSource === "") return
-
-        if (artFlipPhase !== 0) {
-            pendingArtSource = newSource
-            return
-        }
-
+        if (artFlipPhase !== 0) { pendingArtSource = newSource; return }
         pendingArtSource = newSource
         flipAnim.triggerFlip()
-
-        if (localPath !== "") procs.setDominantColor(localPath)
     }
 
     function syncPosition() {
@@ -103,18 +133,17 @@ PanelWindow {
         }
     }
 
-    function playPause()     { procs.playPause() }
-    function next()          { procs.next() }
-    function prev()          { procs.prev() }
-    function toggleShuffle() { procs.toggleShuffle() }
-    function toggleLoop()    { procs.toggleLoop() }
-
-    // ── Timers e animações ────────────────────────────────────────
+    // ── Timers / animações ────────────────────────────────────────
     Timer {
         id: gamemodeNotifyTimer
         interval: 3000
-        repeat: false
         onTriggered: island.showGamemodeNotify = false
+    }
+
+    Timer {
+        id: pauseIdleTimer
+        interval: 15000
+        onTriggered: island.idleHidden = true
     }
 
     NumberAnimation {
