@@ -1,0 +1,10 @@
+Improve .gitignore by excluding local user data, generated files, caches, secrets, and tool-specific directories.
+
+Changes include:
+- Python cache files
+- local secret and key files
+- Weather keys directory
+- Paper user runtime data
+- auth helper and wallpaper local directories
+- Codex local folder
+- common logs and editor metadata
