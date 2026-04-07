@@ -29,19 +29,6 @@ Item {
     // ── Configuration Setup ───────────────────────────────────────────────
     readonly property string configPath: Quickshell.env("HOME") + "/.local/state/Astrea/island/island.json"
     readonly property string legacyConfigPath: Quickshell.env("HOME") + "/.config/quickshell/island/config/island.json"
-    readonly property string quickshellConfigDir: Quickshell.env("HOME") + "/.config/quickshell"
-    readonly property string quickshellMatch: "quickshell -p " + root.quickshellConfigDir
-
-    Process {
-        id: enableIslandProc
-        command: ["bash", "-c", "sed -i 's|^#*[[:space:]]*exec-once = quickshell -p ~/.config/quickshell\\(/shell\\.qml\\)\\{0,1\\}|exec-once = quickshell -p ~/.config/quickshell|' ~/.config/hypr/conf/startup/interface/ui.conf"]
-    }
-    
-    Process {
-        id: disableIslandProc
-        command: ["bash", "-c", "sed -i 's|^exec-once = quickshell -p ~/.config/quickshell\\(/shell\\.qml\\)\\{0,1\\}|#exec-once = quickshell -p ~/.config/quickshell|' ~/.config/hypr/conf/startup/interface/ui.conf"]
-    }
-
     Process {
         id: loadConfigProc
         command: ["bash", "-c",
@@ -83,35 +70,9 @@ Item {
     }
 
     Process {
-        id: stopIslandProc
-        command: ["pkill", "-f", root.quickshellMatch]
-    }
-
-    Process {
-        id: killIslandProc
-        command: ["pkill", "-f", root.quickshellMatch]
-        running: false
-        onExited: spawnIslandProc.running = true
-    }
-
-    Process {
-        id: spawnIslandProc
-        command: ["hyprctl", "dispatch", "exec",
-                  root.quickshellMatch]
-        running: false
-    }
-
-    function reloadIsland() {
-        killIslandProc.running = false
-        killIslandProc.running = true
-    }
-
-    Process {
         id: saveConfigProc
         property string jsonData: ""
-        property bool triggerReload: false
-        function save(reload) {
-            triggerReload = !!reload
+        function save() {
             let nCfg = Object.assign({}, root.islandConfig)
             nCfg.enabled = root.islandEnabled
             nCfg.music = root.musicEnabled
@@ -126,9 +87,6 @@ Item {
                 "--", root.configPath]
             running = false
             running = true
-        }
-        onExited: {
-            if (triggerReload) reloadIsland()
         }
     }
 
@@ -198,15 +156,7 @@ Item {
                             checked: root.islandEnabled
                             onToggled: { 
                                 root.islandEnabled = !root.islandEnabled
-                                if (root.islandEnabled) {
-                                    enableIslandProc.running = true
-                                    saveConfigProc.save(true)
-                                } else {
-                                    disableIslandProc.running = true
-                                    saveConfigProc.save(false)
-                                    stopIslandProc.running = false
-                                    stopIslandProc.running = true
-                                }
+                                saveConfigProc.save()
                             }
                         }
                     }
@@ -220,7 +170,7 @@ Item {
                             checked: root.alwaysOnTop
                             onToggled: { 
                                 root.alwaysOnTop = !root.alwaysOnTop
-                                saveConfigProc.save(true)
+                                saveConfigProc.save()
                             }
                         }
                     }
@@ -259,7 +209,7 @@ Item {
                             selectedIndex: root.selectedStyle
                             onSelected: (i) => {
                                 root.selectedStyle = i
-                                saveConfigProc.save(false)
+                                saveConfigProc.save()
                             }
                             accent: root.accent; textPrimary: root.textPrimary; textSecondary: root.textSecondary; popupBg: root.popupBg
                         }

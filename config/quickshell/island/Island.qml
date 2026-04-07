@@ -10,8 +10,9 @@ PanelWindow {
 
     anchors.top: true
     implicitWidth:  screen.width
-    implicitHeight: islandContent.height + 100
+    implicitHeight: islandConfig.enabled ? islandContent.height + 100 : 0
     color: "transparent"
+    visible: islandConfig.enabled
 
     WlrLayershell.namespace:      "dynamic-island"
     WlrLayershell.layer:          islandConfig.always_on_top ? WlrLayer.Overlay : WlrLayer.Top
