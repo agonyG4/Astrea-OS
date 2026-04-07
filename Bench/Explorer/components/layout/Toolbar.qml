@@ -9,9 +9,10 @@ import "../common" as CommonComponents
 Rectangle {
     id: toolbar
     height: 46
-    color: Theme.toolbar
+    color: Theme.bg
     property bool editingPath: false
     property int selectedSuggestionIndex: -1
+    readonly property bool searching: AppState.searchVisible || AppState.searchActive
 
     // ── Helpers ──────────────────────────────────────────────────
     function normalizePathInput(text) {
@@ -24,6 +25,8 @@ Rectangle {
     }
 
     function startPathEditing(initialPath) {
+        if (searching)
+            return
         editingPath = true
         pathField.text = initialPath || AppState.currentPath
         Qt.callLater(function() {
@@ -33,6 +36,14 @@ Rectangle {
         refreshSuggestions()
     }
 
+    function focusSearchField(selectText) {
+        Qt.callLater(function() {
+            searchField.forceActiveFocus()
+            if (selectText)
+                searchField.selectAll()
+        })
+    }
+
     function stopPathEditing() {
         focusLossTimer.stop()
         pathField.focus = false
@@ -40,6 +51,13 @@ Rectangle {
         selectedSuggestionIndex = -1
         suggestionsPopup.close()
         pathSuggestions.clear()
+    }
+
+    function stopSearchMode() {
+        if (AppState.searchActive)
+            AppState.clearSearch()
+        else
+            AppState.hideSearch()
     }
 
     function commitPathEditing() {
@@ -139,13 +157,13 @@ Rectangle {
             Layout.fillWidth: true
             height: 32
             radius: 10
-            color: editingPath
+            color: toolbar.searching || editingPath
                 ? Qt.rgba(1, 1, 1, 0.07)
                 : pillMouse.containsMouse
                     ? Qt.rgba(1, 1, 1, 0.07)
                     : Qt.rgba(1, 1, 1, 0.04)
-            border.color: editingPath
-                ? Qt.rgba(0.25, 0.55, 1.0, 0.6)
+            border.color: toolbar.searching || editingPath
+                ? Qt.rgba(0.25, 0.55, 1.0, toolbar.searching ? 0.72 : 0.6)
                 : Qt.rgba(1, 1, 1, 0.1)
             border.width: 1
 
@@ -163,7 +181,7 @@ Rectangle {
                     verticalCenter: parent.verticalCenter
                 }
                 spacing: 0
-                visible: !toolbar.editingPath
+                visible: !toolbar.editingPath && !toolbar.searching
                 clip: true
 
                 Repeater {
@@ -213,13 +231,87 @@ Rectangle {
                 }
             }
 
+            // ── Search field ──────────────────────────────────
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 10
+                anchors.rightMargin: 6
+                spacing: 6
+                visible: toolbar.searching
+
+                Text {
+                    text: "⌕"
+                    color: Theme.textTer
+                    font.pixelSize: 14
+                    verticalAlignment: Text.AlignVCenter
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                TextField {
+                    id: searchField
+                    Layout.fillWidth: true
+                    height: parent.height
+                    text: AppState.searchQuery
+                    color: Theme.text
+                    font.pixelSize: 13
+                    selectByMouse: true
+                    background: null
+                    placeholderText: "Buscar na pasta atual"
+                    placeholderTextColor: Theme.textTer
+                    verticalAlignment: TextInput.AlignVCenter
+                    leftPadding: 0
+                    rightPadding: 0
+
+                    onTextChanged: AppState.searchQuery = text
+                    onAccepted: AppState.submitSearch(text)
+                    onActiveFocusChanged: {
+                        if (!activeFocus && AppState.searchVisible)
+                            searchFocusLossTimer.restart()
+                    }
+
+                    Keys.onPressed: function(event) {
+                        if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_A) {
+                            searchField.selectAll()
+                            event.accepted = true
+                            return
+                        }
+                        if (event.key === Qt.Key_Escape) {
+                            toolbar.stopSearchMode()
+                            event.accepted = true
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: 20; height: 20; radius: 10
+                    color: searchDismissHover.containsMouse
+                        ? Qt.rgba(1, 1, 1, 0.12) : "transparent"
+                    visible: toolbar.searching
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "×"
+                        color: Theme.textSec
+                        font.pixelSize: 15
+                    }
+
+                    MouseArea {
+                        id: searchDismissHover
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: toolbar.stopSearchMode()
+                    }
+                }
+            }
+
             // ── Edit field ────────────────────────────────────
             RowLayout {
                 anchors.fill: parent
                 anchors.leftMargin: 10
                 anchors.rightMargin: 6
                 spacing: 4
-                visible: toolbar.editingPath
+                visible: toolbar.editingPath && !toolbar.searching
 
                 TextField {
                     id: pathField
@@ -274,7 +366,6 @@ Rectangle {
                     }
                 }
 
-                // × dismiss button
                 Rectangle {
                     width: 20; height: 20; radius: 10
                     color: dismissHover.containsMouse
@@ -298,12 +389,11 @@ Rectangle {
                 }
             }
 
-            // Click on pill to start editing (display mode only)
             MouseArea {
                 id: pillMouse
                 anchors.fill: parent
                 hoverEnabled: true
-                enabled: !toolbar.editingPath
+                enabled: !toolbar.editingPath && !toolbar.searching
                 cursorShape: Qt.IBeamCursor
                 onClicked: toolbar.startPathEditing(AppState.currentPath)
             }
@@ -474,7 +564,8 @@ Rectangle {
                 onTriggered: AppState.showPreview = !AppState.showPreview
             }
 
-            Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.07); topPadding: 2 }
+            Item { width: parent.width; height: 6 }
+            Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.07) }
 
             Text {
                 text: "ORDENAÇÃO"
@@ -532,13 +623,38 @@ Rectangle {
             }
 
             SettingsAction {
-                label: "Resetar Zoom"
+                label: "Reset Zoom"
                 icon: "⊙"
-                enabled: AppState.zoomLevel !== 1.0
+                isEnabled: AppState.zoomLevel !== 1.0
                 onTriggered: AppState.resetZoom()
             }
 
             Item { height: 4; width: 1 }
+        }
+    }
+
+    Connections {
+        target: AppState
+        function onSearchVisibleChanged() {
+            searchField.text = AppState.searchQuery
+            if (AppState.searchVisible) {
+                editingPath = false
+                selectedSuggestionIndex = -1
+                suggestionsPopup.close()
+                pathSuggestions.clear()
+                focusSearchField(true)
+            }
+        }
+
+        function onSearchActiveChanged() {
+            searchField.text = AppState.searchQuery
+            if (AppState.searchActive)
+                focusSearchField(false)
+        }
+
+        function onSearchQueryChanged() {
+            if (searchField.text !== AppState.searchQuery)
+                searchField.text = AppState.searchQuery
         }
     }
 
@@ -548,10 +664,48 @@ Rectangle {
         interval: 100
         repeat: false
         onTriggered: {
-            // Only close if the suggestions popup isn't being interacted with
             if (toolbar.editingPath && !pathField.activeFocus && !suggestionsPopup.activeFocus)
                 toolbar.stopPathEditing()
         }
+    }
+
+    Timer {
+        id: searchFocusLossTimer
+        interval: 100
+        repeat: false
+        onTriggered: {
+            if (AppState.searchVisible && !searchField.activeFocus)
+                AppState.hideSearch()
+        }
+    }
+
+    Component.onCompleted: {
+        searchField.text = AppState.searchQuery
+        if (toolbar.searching)
+            focusSearchField(!AppState.searchActive)
+    }
+
+    onEditingPathChanged: {
+        if (!editingPath) {
+            selectedSuggestionIndex = -1
+            suggestionsPopup.close()
+            pathSuggestions.clear()
+        }
+    }
+
+    onSearchingChanged: {
+        if (searching) {
+            editingPath = false
+            selectedSuggestionIndex = -1
+            suggestionsPopup.close()
+            pathSuggestions.clear()
+            focusSearchField(!AppState.searchActive)
+        }
+    }
+
+    onVisibleChanged: {
+        if (!visible)
+            suggestionsPopup.close()
     }
 
     // ── Bottom border ─────────────────────────────────────────────
@@ -593,7 +747,7 @@ Rectangle {
         property string label: ""
         property string icon: ""
         property bool checked: false
-        property bool enabled: true
+        property bool isEnabled: true
         signal triggered()
 
         width: settingsMenu.width - settingsMenu.leftPadding - settingsMenu.rightPadding
@@ -602,7 +756,7 @@ Rectangle {
         Rectangle {
             anchors.fill: parent
             radius: 7
-            color: sa_mouse.containsMouse && saRoot.enabled
+            color: sa_mouse.containsMouse && saRoot.isEnabled
                 ? Qt.rgba(1, 1, 1, 0.08) : "transparent"
             Behavior on color { ColorAnimation { duration: 70 } }
         }
@@ -623,7 +777,7 @@ Rectangle {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: saRoot.label
-                color: saRoot.enabled ? Theme.text : Theme.textTer
+                color: saRoot.isEnabled ? Theme.text : Theme.textTer
                 font.pixelSize: 12
                 elide: Text.ElideRight
             }
@@ -633,8 +787,8 @@ Rectangle {
             id: sa_mouse
             anchors.fill: parent
             hoverEnabled: true
-            enabled: saRoot.enabled
-            cursorShape: saRoot.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+            enabled: saRoot.isEnabled
+            cursorShape: saRoot.isEnabled ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: saRoot.triggered()
         }
     }

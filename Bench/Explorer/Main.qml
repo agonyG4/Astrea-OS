@@ -71,6 +71,16 @@ ApplicationWindow {
     }
 
     Shortcut {
+        sequence: "Ctrl+A"
+        onActivated: AppState.selectAll()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+F"
+        onActivated: AppState.startSearch()
+    }
+
+    Shortcut {
         sequence: "Delete"
         onActivated: AppState.deleteSelected()
     }
@@ -80,7 +90,7 @@ ApplicationWindow {
         spacing: 0
 
         // ── Sidebar (Full Height) ────────────────────────────
-        LayoutComponents.Sidebar { Layout.fillHeight: true }
+        LayoutComponents.Sidebar { Layout.fillHeight: true; Layout.preferredWidth: 224 }
 
         // ── Main Content Area ────────────────────────────────
         ColumnLayout {
@@ -92,7 +102,7 @@ ApplicationWindow {
             Rectangle {
                 Layout.fillWidth: true
                 height: 34
-                color: Theme.toolbar
+                color: Theme.bg
                 visible: AppState.tabs.length > 1
                 
                 Row {
@@ -170,6 +180,7 @@ ApplicationWindow {
             // ── Toolbar ──────────────────────────────────────
             LayoutComponents.Toolbar { Layout.fillWidth: true }
 
+
             // ── View Area (Files) ────────────────────────────
             RowLayout {
                 Layout.fillWidth: true
@@ -221,6 +232,7 @@ ApplicationWindow {
 
     Component { id: listComp; ViewComponents.FileListView {} }
     Component { id: iconComp; ViewComponents.FileIconView {} }
+
 
     Popup {
         id: pasteConflictPopup
@@ -373,6 +385,135 @@ ApplicationWindow {
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: parent.clicked()
+        }
+    }
+
+    Popup {
+        id: networkConnectPopup
+        anchors.centerIn: parent
+        width: 440
+        modal: true
+        focus: true
+        padding: 0
+        closePolicy: AppState.networkConnecting ? Popup.NoAutoClose : (Popup.CloseOnEscape | Popup.CloseOnPressOutside)
+        visible: AppState.networkConnectVisible
+
+        onVisibleChanged: {
+            if (!visible && AppState.networkConnectVisible && !AppState.networkConnecting)
+                AppState.hideNetworkConnectDialog()
+        }
+
+        background: Rectangle {
+            radius: 14
+            color: Theme.panel
+            border.color: Theme.border
+            border.width: 1
+        }
+
+        contentItem: Column {
+            spacing: 12
+            padding: 16
+
+            Text {
+                text: "Conectar ao servidor"
+                color: Theme.text
+                font.pixelSize: 15
+                font.weight: Font.DemiBold
+            }
+
+            Text {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                color: Theme.textSec
+                font.pixelSize: 12
+                text: "Use um endereço como smb://servidor/compartilhamento ou sftp://usuario@host/caminho."
+            }
+
+            TextField {
+                id: networkAddressField
+                width: parent.width
+                text: AppState.networkAddress
+                enabled: !AppState.networkConnecting
+                color: Theme.text
+                placeholderText: "smb://servidor/compartilhamento"
+                placeholderTextColor: Theme.textTer
+                selectByMouse: true
+                font.pixelSize: 13
+                background: Rectangle {
+                    radius: 8
+                    color: Qt.rgba(1, 1, 1, 0.06)
+                    border.color: networkAddressField.activeFocus ? Theme.accent : Theme.border
+                    border.width: 1
+                }
+                onTextChanged: AppState.networkAddress = text
+                onAccepted: AppState.connectToNetwork()
+                Component.onCompleted: {
+                    if (AppState.networkAddress === "")
+                        AppState.networkAddress = "smb://"
+                }
+            }
+
+            Text {
+                visible: AppState.networkError !== ""
+                width: parent.width
+                wrapMode: Text.WordWrap
+                color: "#ff9a9a"
+                font.pixelSize: 12
+                text: AppState.networkError
+            }
+
+            Row {
+                spacing: 8
+
+                Rectangle {
+                    width: 96
+                    height: 32
+                    radius: 8
+                    color: cancelNetworkMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.05)
+                    border.color: Theme.border
+                    border.width: 1
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Cancelar"
+                        color: Theme.text
+                        font.pixelSize: 13
+                    }
+
+                    MouseArea {
+                        id: cancelNetworkMouse
+                        anchors.fill: parent
+                        enabled: !AppState.networkConnecting
+                        hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: AppState.hideNetworkConnectDialog()
+                    }
+                }
+
+                Rectangle {
+                    width: 96
+                    height: 32
+                    radius: 8
+                    color: connectNetworkMouse.containsMouse ? Qt.darker(Theme.accent, 1.1) : Theme.accent
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: AppState.networkConnecting ? "Conectando..." : "Conectar"
+                        color: "white"
+                        font.pixelSize: 13
+                        font.weight: Font.DemiBold
+                    }
+
+                    MouseArea {
+                        id: connectNetworkMouse
+                        anchors.fill: parent
+                        enabled: !AppState.networkConnecting
+                        hoverEnabled: true
+                        cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: AppState.connectToNetwork()
+                    }
+                }
+            }
         }
     }
 }

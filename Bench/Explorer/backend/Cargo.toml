@@ -1,0 +1,8 @@
+[package]
+name = "explorer_backend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+md5 = "0.7"
+rayon = "1.10"

@@ -2,11 +2,12 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import Quickshell.Io
 import "../.."
+import "." as Common
 
 Item {
     id: menuRoot
     anchors.fill: parent
-    visible: menuOpen || creatingFolder || propertiesOpen || renamingItem
+    visible: menuOpen || creatingFolder || renamingItem
     z: 999
 
     property string itemPath: ""
@@ -17,26 +18,10 @@ Item {
     property real menuY: 0
     property bool menuOpen: false
     property bool creatingFolder: false
-    property bool propertiesOpen: false
     property bool renamingItem: false
     property string pendingFolderName: ""
     property string pendingRenameName: ""
-    property bool propertiesLoading: false
-    property string propertiesError: ""
-    property string propertiesType: ""
-    property string propertiesSizeText: ""
-    property string propertiesModifiedText: ""
-    property string propertiesAccessedText: ""
-    property string propertiesPermissionsText: ""
-    property string propertiesContainsText: ""
     readonly property bool isBackgroundTarget: itemPath === AppState.currentPath && itemIsDir
-
-    function formatDateTime(epochSeconds) {
-        var value = Number(epochSeconds)
-        if (!isFinite(value) || value <= 0) return "Indisponível"
-        var date = new Date(value * 1000)
-        return Qt.formatDateTime(date, "dd/MM/yyyy  HH:mm")
-    }
 
     function openAt(x, y, path, isDir, url) {
         itemPath = path
@@ -48,7 +33,6 @@ Item {
     }
 
     function closeMenu() { menuOpen = false }
-    function closeProperties() { propertiesOpen = false; propertiesLoading = false }
 
     function runOpen() {
         closeMenu()
@@ -65,8 +49,7 @@ Item {
         closeMenu()
         pendingFolderName = "Nova pasta"
         creatingFolder = true
-        nameField.forceActiveFocus()
-        nameField.selectAll()
+        Qt.callLater(function() { nameField.forceActiveFocus(); nameField.selectAll() })
     }
 
     function runRename() {
@@ -74,23 +57,29 @@ Item {
         closeMenu()
         pendingRenameName = itemPath.split("/").pop()
         renamingItem = true
-        renameField.forceActiveFocus()
-        renameField.selectAll()
+        Qt.callLater(function() { renameField.forceActiveFocus(); renameField.selectAll() })
     }
 
     function runShowProperties() {
         closeMenu()
-        propertiesOpen = true
-        propertiesLoading = true
-        propertiesError = ""
-        propertiesType = itemIsDir ? "Pasta" : "Arquivo"
-        propertiesSizeText = "Carregando…"
-        propertiesModifiedText = "Carregando…"
-        propertiesAccessedText = "Carregando…"
-        propertiesPermissionsText = "Carregando…"
-        propertiesContainsText = itemIsDir ? "Carregando…" : ""
-        propertiesProcess.running = false
-        propertiesProcess.running = true
+        var selected = AppState.selectedFiles
+        var inSelection = AppState.isSelected(itemPath.split('/').pop())
+
+        if (inSelection && selected.length > 1) {
+            propertiesWin.isMulti = true
+            propertiesWin.targetPaths = selected.map(function(n) { return AppState.currentPath + "/" + n })
+            propertiesWin.targetPath = ""
+            propertiesWin.targetIsDir = false
+        } else {
+            propertiesWin.isMulti = false
+            propertiesWin.targetPath = itemPath
+            propertiesWin.targetIsDir = itemIsDir
+            propertiesWin.targetPaths = []
+        }
+
+        propertiesWin.show()
+        propertiesWin.raise()
+        propertiesWin.requestActivate()
     }
 
     function confirmCreateFolder() {
@@ -118,562 +107,452 @@ Item {
         closeMenu()
     }
 
-    // ── Backdrop (closes menu) ────────────────────────────────────
+    // Backdrop
     MouseArea {
         anchors.fill: parent
         enabled: menuRoot.menuOpen
         onClicked: menuRoot.closeMenu()
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // CONTEXT MENU CARD
-    // ═══════════════════════════════════════════════════════════════
-    Rectangle {
+    // ─────────────────────────────────────────────────────────────
+    // CONTEXT MENU  flat dark, text only
+    // ─────────────────────────────────────────────────────────────
+    Common.ContextMenuPopup {
         id: menuCard
-        visible: menuRoot.menuOpen
-        x: menuRoot.menuX
-        y: menuRoot.menuY
-        width: 210
-        height: menuColumn.implicitHeight + 10
-        radius: 14
+        menuVisible: menuRoot.menuOpen
+        menuX: menuRoot.menuX
+        menuY: menuRoot.menuY
 
-        // Frosted-glass dark base
-        color: Qt.rgba(0.10, 0.10, 0.13, 0.97)
-        border.width: 1
-        border.color: Qt.rgba(1, 1, 1, 0.10)
+        Common.ContextMenuAction {
+            label: "Abrir"
+            actionEnabled: true
+            visible: !menuRoot.isBackgroundTarget
+            onTriggered: menuRoot.runOpen()
+        }
+        Common.ContextMenuAction {
+            label: "Nova Pasta"
+            actionEnabled: true
+            onTriggered: menuRoot.runCreateFolder()
+        }
+        Common.ContextMenuDivider {}
+        Common.ContextMenuAction {
+            label: "Copiar Caminho"
+            actionEnabled: true
+            onTriggered: menuRoot.runCopyPath()
+        }
+        Common.ContextMenuAction {
+            label: "Renomear"
+            actionEnabled: true
+            visible: !menuRoot.isBackgroundTarget
+            onTriggered: menuRoot.runRename()
+        }
+        Common.ContextMenuAction {
+            label: "Propriedades"
+            actionEnabled: true
+            onTriggered: menuRoot.runShowProperties()
+        }
+        Common.ContextMenuDivider { visible: !menuRoot.isBackgroundTarget }
+        Common.ContextMenuAction {
+            label: "Mover para Lixeira"
+            actionEnabled: true
+            visible: !menuRoot.isBackgroundTarget
+            destructive: true
+            onTriggered: menuRoot.runDelete()
+        }
+    }
 
-        // Inner gradient highlight
+    // ─────────────────────────────────────────────────────────────
+    // PROPERTIES  separate OS window
+    // ─────────────────────────────────────────────────────────────
+    Window {
+        id: propertiesWin
+        title: "Propriedades"
+        width: 440
+        minimumWidth: 380
+        minimumHeight: 300
+        color: "#1c1c1e"
+        flags: Qt.Window | Qt.Dialog
+
+        property string targetPath: ""
+        property bool targetIsDir: false
+        property bool isMulti: false
+        property var targetPaths: []
+        property bool isLoading: false
+        property string errorText: ""
+        property string propType: ""
+        property string propSize: ""
+        property string propModified: ""
+        property string propAccessed: ""
+        property string propPerms: ""
+        property string propContains: ""
+
+        readonly property bool isImageFile: {
+            if (isMulti) return false
+            var ext = targetPath.split(".").pop().toLowerCase()
+            return ["jpg","jpeg","png","gif","bmp","webp","svg"].indexOf(ext) !== -1
+        }
+
+        height: isImageFile ? 520 : 340
+
+        function fmtDate(epochSeconds) {
+            var v = Number(epochSeconds)
+            if (!isFinite(v) || v <= 0) return "--"
+            return Qt.formatDateTime(new Date(v * 1000), "dd/MM/yyyy  HH:mm")
+        }
+
+        onVisibilityChanged: {
+            if (!visible) return
+            isLoading = true
+            errorText = ""
+            propType = ""
+            propSize = "Carregando..."
+            propModified = "Carregando..."
+            propAccessed = "Carregando..."
+            propPerms = "Carregando..."
+            propContains = targetIsDir ? "Carregando..." : ""
+            propProcess.command = [
+                "bash", "-lc",
+                "if [ \"$1\" = \"--multi\" ]; then " +
+                "  shift; total_size=0; count=$#; " +
+                "  for f in \"$@\"; do " +
+                "    [ -e \"$f\" ] || continue; " +
+                "    s=$(du -sb -- \"$f\" 2>/dev/null | cut -f1); " +
+                "    total_size=$((total_size + s)); " +
+                "  done; " +
+                "  printf 'OK|%s itens|%s|—|—|—|%s\\n' \"$count\" \"$total_size\" \"—\" \"—\" \"—\" \"$count\"; " +
+                "else " +
+                "  target=\"$1\"; " +
+                "  [ -e \"$target\" ] || { echo 'ERROR|Arquivo nao encontrado'; exit 1; }; " +
+                "  meta=$(stat -Lc '%F|%s|%Y|%X|%A' -- \"$target\" 2>/dev/null) || { echo 'ERROR|Erro ao ler metadados'; exit 1; }; " +
+                "  IFS='|' read -r kind bytes modified accessed perms <<EOF\n$meta\nEOF\n" +
+                "  if [ -d \"$target\" ]; then " +
+                "    size=$(du -sb -- \"$target\" 2>/dev/null | cut -f1); " +
+                "    count=$(find \"$target\" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l); " +
+                "    printf 'OK|%s|%s|%s|%s|%s|%s\\n' \"$kind\" \"${size:-0}\" \"$modified\" \"$accessed\" \"$perms\" \"$count\"; " +
+                "  else " +
+                "    printf 'OK|%s|%s|%s|%s|%s|\\n' \"$kind\" \"$bytes\" \"$modified\" \"$accessed\" \"$perms\"; " +
+                "  fi; " +
+                "fi",
+                "_"
+            ].concat(propertiesWin.isMulti ? ["--multi"].concat(propertiesWin.targetPaths) : [propertiesWin.targetPath])
+            propProcess.running = false
+            propProcess.running = true
+        }
+
+        // Title bar
         Rectangle {
-            anchors.fill: parent; radius: parent.radius
-            gradient: Gradient {
-                GradientStop { position: 0.0;  color: Qt.rgba(1, 1, 1, 0.07) }
-                GradientStop { position: 0.18; color: "transparent" }
-            }
-        }
+            id: propTitleBar
+            anchors { top: parent.top; left: parent.left; right: parent.right }
+            height: 44
+            color: "#252527"
 
-        // Appear animation
-        scale: menuRoot.menuOpen ? 1.0 : 0.92
-        opacity: menuRoot.menuOpen ? 1.0 : 0.0
-        transformOrigin: Item.TopLeft
-        Behavior on scale   { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-        Behavior on opacity { NumberAnimation { duration: 120 } }
-
-        Column {
-            id: menuColumn
-            anchors { left: parent.left; right: parent.right; top: parent.top }
-            anchors.margins: 5
-            spacing: 1
-
-            // ── Primary actions ──────────────────────────────
-            MenuAction {
-                label: "Abrir"
-                icon: "↗"
-                shortcut: "↵"
-                visible: !menuRoot.isBackgroundTarget
-                onTriggered: menuRoot.runOpen()
-            }
-
-            MenuAction {
-                label: "Nova Pasta"
-                icon: "+"
-                onTriggered: menuRoot.runCreateFolder()
-            }
-
-            // ── Separator ────────────────────────────────────
-            MenuSeparator {}
-
-            MenuAction {
-                label: "Copiar Caminho"
-                icon: "⎘"
-                onTriggered: menuRoot.runCopyPath()
-            }
-
-            MenuAction {
-                label: "Renomear"
-                icon: "✎"
-                visible: !menuRoot.isBackgroundTarget
-                onTriggered: menuRoot.runRename()
-            }
-
-            MenuAction {
-                label: "Propriedades"
-                icon: "ℹ"
-                onTriggered: menuRoot.runShowProperties()
-            }
-
-            // ── Separator ────────────────────────────────────
-            MenuSeparator { visible: !menuRoot.isBackgroundTarget && !menuRoot.itemIsDir }
-
-            MenuAction {
-                label: "Mover para Lixeira"
-                icon: "⌫"
-                visible: !menuRoot.isBackgroundTarget && !menuRoot.itemIsDir
-                destructive: true
-                onTriggered: menuRoot.runDelete()
-            }
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // PROPERTIES POPUP
-    // ═══════════════════════════════════════════════════════════════
-    Popup {
-        id: propertiesPopup
-        anchors.centerIn: parent
-        width: 400
-        modal: true
-        focus: true
-        padding: 0
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-        visible: menuRoot.propertiesOpen
-
-        onClosed: menuRoot.propertiesOpen = false
-
-        background: Rectangle {
-            radius: 16
-            color: Qt.rgba(0.10, 0.10, 0.13, 0.99)
-            border.color: Qt.rgba(1, 1, 1, 0.10)
-            border.width: 1
-
-            // Gradient shimmer at top
-            Rectangle {
-                anchors { top: parent.top; left: parent.left; right: parent.right }
-                height: parent.height * 0.35
-                radius: parent.radius
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.05) }
-                    GradientStop { position: 1.0; color: "transparent" }
-                }
-            }
-        }
-
-        contentItem: Column {
-            spacing: 0
-
-            // ── Header with icon ─────────────────────────────
-            Rectangle {
-                width: parent.width
-                height: 72
-                color: "transparent"
-                radius: 16
-
-                Row {
-                    anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter }
-                    anchors.leftMargin: 20
-                    anchors.rightMargin: 20
-                    spacing: 14
-
-                    // Big file/folder icon
-                    Rectangle {
-                        width: 44; height: 44; radius: 12
-                        color: menuRoot.itemIsDir
-                            ? Qt.rgba(0.25, 0.55, 1.0, 0.2)
-                            : Qt.rgba(1, 1, 1, 0.08)
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: menuRoot.itemIsDir ? "📁" : "📄"
-                            font.pixelSize: 22
-                        }
-                    }
-
-                    Column {
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 3
-
-                        Text {
-                            text: menuRoot.itemPath.split("/").pop() || menuRoot.itemPath
-                            color: Theme.text
-                            font { pixelSize: 14; weight: Font.DemiBold }
-                            elide: Text.ElideMiddle
-                            width: propertiesPopup.width - 20 - 20 - 14 - 44 - 10
-                        }
-
-                        Text {
-                            text: menuRoot.propertiesLoading
-                                ? "Carregando…"
-                                : menuRoot.propertiesType || (menuRoot.itemIsDir ? "Pasta" : "Arquivo")
-                            color: Theme.textSec
-                            font.pixelSize: 12
-                        }
-                    }
-                }
-
-                // Close button
-                Rectangle {
-                    anchors { right: parent.right; top: parent.top; margins: 12 }
-                    width: 26; height: 26; radius: 13
-                    color: closePropHover.containsMouse
-                        ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.06)
-
-                    Behavior on color { ColorAnimation { duration: 80 } }
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "×"
-                        color: Theme.textSec
-                        font.pixelSize: 16
-                    }
-
-                    MouseArea {
-                        id: closePropHover
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: menuRoot.closeProperties()
-                    }
-                }
-            }
-
-            // ── Divider ──────────────────────────────────────
-            Rectangle { width: parent.width; height: 1; color: Qt.rgba(1, 1, 1, 0.07) }
-
-            // ── Info grid ────────────────────────────────────
-            Column {
-                width: parent.width
-                spacing: 0
-                topPadding: 4
-                bottomPadding: 4
-
-                PropRow {
-                    label: "Caminho"
-                    value: menuRoot.itemPath
-                }
-                PropRow {
-                    label: "Tamanho"
-                    value: menuRoot.propertiesSizeText
-                }
-                PropRow {
-                    visible: menuRoot.itemIsDir
-                    label: "Conteúdo"
-                    value: menuRoot.propertiesContainsText
-                }
-                PropRow {
-                    label: "Modificado"
-                    value: menuRoot.propertiesModifiedText
-                }
-                PropRow {
-                    label: "Acessado"
-                    value: menuRoot.propertiesAccessedText
-                }
-                PropRow {
-                    label: "Permissões"
-                    value: menuRoot.propertiesPermissionsText
-                    monospace: true
-                }
-            }
-
-            // ── Error ─────────────────────────────────────────
             Text {
-                visible: menuRoot.propertiesError !== ""
-                text: menuRoot.propertiesError
-                color: "#ff8b8b"
-                font.pixelSize: 12
-                wrapMode: Text.WordWrap
-                width: parent.width
-                leftPadding: 20
-                rightPadding: 20
-                bottomPadding: 8
+                anchors {
+                    left: parent.left; leftMargin: 16
+                    right: parent.right; rightMargin: 16
+                    verticalCenter: parent.verticalCenter
+                }
+                text: propertiesWin.isMulti
+                    ? (propertiesWin.targetPaths.length + " itens selecionados")
+                    : (propertiesWin.targetPath.split("/").pop() || propertiesWin.targetPath)
+                color: "#f2f2f7"
+                font { pixelSize: 13; weight: Font.DemiBold }
+                elide: Text.ElideMiddle
             }
 
-            // ── Footer ────────────────────────────────────────
             Rectangle {
-                width: parent.width; height: 1
-                color: Qt.rgba(1, 1, 1, 0.07)
+                anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
+                height: 1; color: "#2c2c2c"
+            }
+        }
+
+        // Preview image for image files
+        Rectangle {
+            id: propPreview
+            anchors { top: propTitleBar.bottom; left: parent.left; right: parent.right }
+            height: propertiesWin.isImageFile ? 160 : 0
+            visible: propertiesWin.isImageFile
+            color: "#141416"
+
+            Image {
+                anchors { fill: parent; margins: 8 }
+                source: propertiesWin.visible && propertiesWin.isImageFile
+                    ? ("file://" + propertiesWin.targetPath) : ""
+                fillMode: Image.PreserveAspectFit
+                smooth: true
+                asynchronous: true
+                cache: false
             }
 
-            Item {
-                width: parent.width
-                height: 58
+            Rectangle {
+                anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
+                height: 1; color: "#2c2c2c"
+            }
+        }
 
-                // Fechar button
-                Rectangle {
-                    anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 20 }
-                    width: 88; height: 34; radius: 9
-                    color: closePropBtnMouse.containsMouse
-                        ? Qt.rgba(0.25, 0.55, 1.0, 0.25)
-                        : Qt.rgba(0.25, 0.55, 1.0, 0.15)
-                    border.color: Qt.rgba(0.4, 0.7, 1.0, 0.25)
-                    border.width: 1
+        // Info area
+        Item {
+            anchors {
+                top: propPreview.bottom
+                left: parent.left; right: parent.right
+                bottom: propFooter.top
+            }
 
-                    Behavior on color { ColorAnimation { duration: 80 } }
+            Column {
+                id: infoCol
+                anchors {
+                    top: parent.top; topMargin: 16
+                    left: parent.left; leftMargin: 16
+                    right: parent.right; rightMargin: 16
+                }
+                spacing: 10
 
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Fechar"
-                        color: Qt.rgba(0.55, 0.8, 1.0, 1.0)
-                        font { pixelSize: 13; weight: Font.Medium }
+                Repeater {
+                    id: infoRepeater
+                    model: {
+                        var rows = [
+                            { lbl: propertiesWin.isMulti ? "Local" : "Caminho",    val: propertiesWin.isMulti ? AppState.currentPath : propertiesWin.targetPath },
+                            { lbl: "Tipo",       val: propertiesWin.propType },
+                            { lbl: "Tamanho",    val: propertiesWin.propSize }
+                        ]
+                        if (propertiesWin.targetIsDir || (propertiesWin.isMulti && propertiesWin.targetPaths.length > 0))
+                            rows.push({ lbl: propertiesWin.isMulti ? "Itens" : "Conteudo", val: propertiesWin.propContains })
+                        if (!propertiesWin.isMulti) {
+                            rows.push({ lbl: "Modificado",  val: propertiesWin.propModified })
+                            rows.push({ lbl: "Permissoes",  val: propertiesWin.propPerms })
+                        }
+                        return rows
                     }
 
-                    MouseArea {
-                        id: closePropBtnMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: menuRoot.closeProperties()
+                    Row {
+                        width: infoCol.width
+                        spacing: 12
+
+                        Text {
+                            text: modelData.lbl
+                            color: "#8e8e93"
+                            font.pixelSize: 12
+                            width: 90
+                        }
+
+                        Text {
+                            text: modelData.val
+                            color: "#f2f2f7"
+                            font.pixelSize: 12
+                            width: infoCol.width - 90 - 12
+                            wrapMode: Text.WrapAnywhere
+                        }
                     }
                 }
-            }
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // CREATE FOLDER POPUP
-    // ═══════════════════════════════════════════════════════════════
-    Popup {
-        id: createFolderPopup
-        anchors.centerIn: parent
-        width: 360
-        modal: true
-        focus: true
-        padding: 0
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-        visible: menuRoot.creatingFolder
-
-        onClosed: menuRoot.creatingFolder = false
-
-        background: Rectangle {
-            radius: 16
-            color: Qt.rgba(0.10, 0.10, 0.13, 0.99)
-            border.color: Qt.rgba(1, 1, 1, 0.10)
-            border.width: 1
-        }
-
-        contentItem: Column {
-            spacing: 0
-
-            // Header
-            Item {
-                width: parent.width; height: 60
 
                 Text {
-                    anchors { left: parent.left; leftMargin: 20; verticalCenter: parent.verticalCenter }
-                    text: "Nova Pasta"
-                    color: Theme.text
-                    font { pixelSize: 16; weight: Font.DemiBold }
-                }
-
-                Rectangle {
-                    anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 12 }
-                    width: 26; height: 26; radius: 13
-                    color: cancelFolderClose.containsMouse
-                        ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.06)
-                    Behavior on color { ColorAnimation { duration: 80 } }
-
-                    Text { anchors.centerIn: parent; text: "×"; color: Theme.textSec; font.pixelSize: 16 }
-                    MouseArea {
-                        id: cancelFolderClose
-                        anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                        onClicked: menuRoot.creatingFolder = false
-                    }
+                    visible: propertiesWin.errorText !== ""
+                    text: propertiesWin.errorText
+                    color: "#ff6b6b"
+                    font.pixelSize: 12
+                    wrapMode: Text.WordWrap
+                    width: infoCol.width
                 }
             }
+        }
 
-            Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.07) }
+        // Footer
+        Rectangle {
+            id: propFooter
+            anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
+            height: 48
+            color: "#252527"
 
-            // Field
-            Item {
-                width: parent.width; height: 72
+            Rectangle {
+                anchors { top: parent.top; left: parent.left; right: parent.right }
+                height: 1; color: "#2c2c2c"
+            }
+
+            Rectangle {
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 14 }
+                width: 80; height: 30; radius: 7
+                color: propCloseMouse.containsMouse ? "#3a3a3c" : "#2c2c2e"
+                border.color: "#48484a"; border.width: 1
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "Fechar"
+                    color: "#f2f2f7"
+                    font.pixelSize: 13
+                }
+
+                MouseArea {
+                    id: propCloseMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: propertiesWin.close()
+                }
+            }
+        }
+
+        // Process
+        Process {
+            id: propProcess
+            command: []
+            running: false
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    var raw = text.trim()
+                    if (!raw) {
+                        propertiesWin.isLoading = false
+                        propertiesWin.errorText = "Sem resposta do sistema."
+                        return
+                    }
+                    var parts = raw.split("|")
+                    if (parts[0] !== "OK") {
+                        propertiesWin.isLoading = false
+                        propertiesWin.errorText = parts.length > 1 ? parts.slice(1).join("|") : "Erro ao carregar."
+                        return
+                    }
+                    propertiesWin.errorText   = ""
+                    propertiesWin.propType    = parts[1] || (propertiesWin.targetIsDir ? "Pasta" : "Arquivo")
+                    propertiesWin.propSize    = AppState.formatSize(Number(parts[2] || 0))
+                    propertiesWin.propModified = propertiesWin.fmtDate(parts[3])
+                    propertiesWin.propAccessed = propertiesWin.fmtDate(parts[4])
+                    propertiesWin.propPerms   = parts[5] || "--"
+                    if (propertiesWin.targetIsDir) {
+                        var cnt = Number(parts[6] || 0)
+                        propertiesWin.propContains = cnt + (cnt === 1 ? " item" : " itens")
+                    }
+                    propertiesWin.isLoading = false
+                }
+            }
+            onExited: function(exitCode) {
+                if (exitCode !== 0 && propertiesWin.isLoading) {
+                    propertiesWin.isLoading = false
+                    if (!propertiesWin.errorText)
+                        propertiesWin.errorText = "Falha ao consultar propriedades."
+                }
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // CREATE FOLDER overlay
+    // ─────────────────────────────────────────────────────────────
+    Rectangle {
+        anchors.fill: parent
+        visible: creatingFolder
+        color: Qt.rgba(0, 0, 0, 0.5)
+
+        MouseArea { anchors.fill: parent; onClicked: menuRoot.creatingFolder = false }
+
+        Rectangle {
+            id: createDialog
+            width: 320
+            anchors.centerIn: parent
+            height: createCol.implicitHeight + 24
+            radius: 10
+            color: "#1e1e20"
+            border.color: "#3a3a3c"; border.width: 1
+
+            Column {
+                id: createCol
+                anchors { fill: parent; margins: 16 }
+                spacing: 12
+
+                Text {
+                    text: "Nova Pasta"
+                    color: "#f2f2f7"
+                    font { pixelSize: 14; weight: Font.DemiBold }
+                }
 
                 TextField {
                     id: nameField
-                    anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; leftMargin: 20; rightMargin: 20 }
+                    width: parent.width
                     text: menuRoot.pendingFolderName
-                    color: Theme.text
+                    color: "#f2f2f7"
                     placeholderText: "Nome da pasta"
-                    placeholderTextColor: Theme.textTer
+                    placeholderTextColor: "#636366"
                     selectByMouse: true
-                    font.pixelSize: 14
+                    font.pixelSize: 13
                     background: Rectangle {
-                        radius: 9
-                        color: Qt.rgba(1, 1, 1, 0.05)
-                        border.color: nameField.activeFocus ? Qt.rgba(0.25, 0.55, 1.0, 0.7) : Qt.rgba(1, 1, 1, 0.12)
-                        border.width: 1
-                        Behavior on border.color { ColorAnimation { duration: 120 } }
+                        radius: 7; color: "#2c2c2e"
+                        border.color: nameField.activeFocus ? "#636366" : "#3a3a3c"; border.width: 1
                     }
                     onTextChanged: menuRoot.pendingFolderName = text
                     onAccepted: menuRoot.confirmCreateFolder()
                 }
-            }
-
-            Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.07) }
-
-            // Actions
-            Item {
-                width: parent.width; height: 58
 
                 Row {
-                    anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 20 }
-                    spacing: 10
-
-                    Rectangle {
-                        width: 88; height: 34; radius: 9
-                        color: cancelFolderMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.1) : Qt.rgba(1, 1, 1, 0.06)
-                        Behavior on color { ColorAnimation { duration: 80 } }
-
-                        Text { anchors.centerIn: parent; text: "Cancelar"; color: Theme.textSec; font.pixelSize: 13 }
-                        MouseArea {
-                            id: cancelFolderMouse
-                            anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                            onClicked: menuRoot.creatingFolder = false
-                        }
-                    }
-
-                    Rectangle {
-                        width: 88; height: 34; radius: 9
-                        color: createMouse.containsMouse
-                            ? Qt.rgba(0.25, 0.55, 1.0, 0.35)
-                            : Qt.rgba(0.25, 0.55, 1.0, 0.22)
-                        border.color: Qt.rgba(0.4, 0.7, 1.0, 0.3)
-                        border.width: 1
-                        Behavior on color { ColorAnimation { duration: 80 } }
-
-                        Text { anchors.centerIn: parent; text: "Criar"; color: Qt.rgba(0.55, 0.8, 1.0, 1.0); font { pixelSize: 13; weight: Font.Medium } }
-                        MouseArea {
-                            id: createMouse
-                            anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                            onClicked: menuRoot.confirmCreateFolder()
-                        }
-                    }
+                    spacing: 8
+                    FlatButton { id: cancelCreate; label: "Cancelar"; onClicked: menuRoot.creatingFolder = false }
+                    FlatButton { label: "Criar"; primary: true; onClicked: menuRoot.confirmCreateFolder() }
                 }
             }
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
-    // RENAME POPUP
-    // ═══════════════════════════════════════════════════════════════
-    Popup {
-        id: renamePopup
-        anchors.centerIn: parent
-        width: 360
-        modal: true
-        focus: true
-        padding: 0
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
-        visible: menuRoot.renamingItem
+    // ─────────────────────────────────────────────────────────────
+    // RENAME overlay
+    // ─────────────────────────────────────────────────────────────
+    Rectangle {
+        anchors.fill: parent
+        visible: renamingItem
+        color: Qt.rgba(0, 0, 0, 0.5)
 
-        onClosed: menuRoot.renamingItem = false
+        MouseArea { anchors.fill: parent; onClicked: menuRoot.renamingItem = false }
 
-        background: Rectangle {
-            radius: 16
-            color: Qt.rgba(0.10, 0.10, 0.13, 0.99)
-            border.color: Qt.rgba(1, 1, 1, 0.10)
-            border.width: 1
-        }
+        Rectangle {
+            width: 320
+            anchors.centerIn: parent
+            height: renameCol.implicitHeight + 24
+            radius: 10
+            color: "#1e1e20"
+            border.color: "#3a3a3c"; border.width: 1
 
-        contentItem: Column {
-            spacing: 0
-
-            // Header
-            Item {
-                width: parent.width; height: 60
+            Column {
+                id: renameCol
+                anchors { fill: parent; margins: 16 }
+                spacing: 12
 
                 Text {
-                    anchors { left: parent.left; leftMargin: 20; verticalCenter: parent.verticalCenter }
                     text: "Renomear"
-                    color: Theme.text
-                    font { pixelSize: 16; weight: Font.DemiBold }
+                    color: "#f2f2f7"
+                    font { pixelSize: 14; weight: Font.DemiBold }
                 }
-
-                Rectangle {
-                    anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 12 }
-                    width: 26; height: 26; radius: 13
-                    color: cancelRenameClose.containsMouse
-                        ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(1, 1, 1, 0.06)
-                    Behavior on color { ColorAnimation { duration: 80 } }
-                    Text { anchors.centerIn: parent; text: "×"; color: Theme.textSec; font.pixelSize: 16 }
-                    MouseArea {
-                        id: cancelRenameClose
-                        anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                        onClicked: menuRoot.renamingItem = false
-                    }
-                }
-            }
-
-            Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.07) }
-
-            // Field
-            Item {
-                width: parent.width; height: 72
 
                 TextField {
                     id: renameField
-                    anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter; leftMargin: 20; rightMargin: 20 }
+                    width: parent.width
                     text: menuRoot.pendingRenameName
-                    color: Theme.text
+                    color: "#f2f2f7"
                     placeholderText: "Novo nome"
-                    placeholderTextColor: Theme.textTer
+                    placeholderTextColor: "#636366"
                     selectByMouse: true
-                    font.pixelSize: 14
+                    font.pixelSize: 13
                     background: Rectangle {
-                        radius: 9
-                        color: Qt.rgba(1, 1, 1, 0.05)
-                        border.color: renameField.activeFocus ? Qt.rgba(0.25, 0.55, 1.0, 0.7) : Qt.rgba(1, 1, 1, 0.12)
-                        border.width: 1
-                        Behavior on border.color { ColorAnimation { duration: 120 } }
+                        radius: 7; color: "#2c2c2e"
+                        border.color: renameField.activeFocus ? "#636366" : "#3a3a3c"; border.width: 1
                     }
                     onTextChanged: menuRoot.pendingRenameName = text
                     onAccepted: menuRoot.confirmRename()
                 }
-            }
-
-            Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.07) }
-
-            // Actions
-            Item {
-                width: parent.width; height: 58
 
                 Row {
-                    anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 20 }
-                    spacing: 10
-
-                    Rectangle {
-                        width: 88; height: 34; radius: 9
-                        color: cancelRenameMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.1) : Qt.rgba(1, 1, 1, 0.06)
-                        Behavior on color { ColorAnimation { duration: 80 } }
-
-                        Text { anchors.centerIn: parent; text: "Cancelar"; color: Theme.textSec; font.pixelSize: 13 }
-                        MouseArea {
-                            id: cancelRenameMouse
-                            anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                            onClicked: menuRoot.renamingItem = false
-                        }
-                    }
-
-                    Rectangle {
-                        width: 88; height: 34; radius: 9
-                        color: applyRenameMouse.containsMouse
-                            ? Qt.rgba(0.25, 0.55, 1.0, 0.35)
-                            : Qt.rgba(0.25, 0.55, 1.0, 0.22)
-                        border.color: Qt.rgba(0.4, 0.7, 1.0, 0.3)
-                        border.width: 1
-                        Behavior on color { ColorAnimation { duration: 80 } }
-
-                        Text { anchors.centerIn: parent; text: "Renomear"; color: Qt.rgba(0.55, 0.8, 1.0, 1.0); font { pixelSize: 13; weight: Font.Medium } }
-                        MouseArea {
-                            id: applyRenameMouse
-                            anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                            onClicked: menuRoot.confirmRename()
-                        }
-                    }
+                    spacing: 8
+                    FlatButton { label: "Cancelar"; onClicked: menuRoot.renamingItem = false }
+                    FlatButton { label: "Renomear"; primary: true; onClicked: menuRoot.confirmRename() }
                 }
             }
         }
     }
 
-    // ═══════════════════════════════════════════════════════════════
+    // ─────────────────────────────────────────────────────────────
     // PROCESSES
-    // ═══════════════════════════════════════════════════════════════
+    // ─────────────────────────────────────────────────────────────
     Process {
         id: createFolderProcess
         command: [
             "bash", "-lc",
             "base=\"$1\"; name=\"$2\"; target=\"$base/$name\"; n=2; while [ -e \"$target\" ]; do target=\"$base/$name $n\"; n=$((n+1)); done; mkdir -- \"$target\"",
-            "_",
-            AppState.currentPath,
-            pendingFolderName
+            "_", AppState.currentPath, pendingFolderName
         ]
         running: false
         onExited: function(exitCode) {
@@ -686,9 +565,7 @@ Item {
         command: [
             "bash", "-lc",
             "source=\"$1\"; new_name=\"$2\"; base=$(dirname -- \"$source\"); target=\"$base/$new_name\"; [ \"$source\" = \"$target\" ] && exit 0; [ -e \"$target\" ] && exit 1; mv -- \"$source\" \"$target\"",
-            "_",
-            itemPath,
-            pendingRenameName
+            "_", itemPath, pendingRenameName
         ]
         running: false
         onExited: function(exitCode) {
@@ -700,199 +577,35 @@ Item {
         }
     }
 
-    Process {
-        id: propertiesProcess
-        command: [
-            "bash", "-lc",
-            "target=\"$1\"; " +
-            "[ -e \"$target\" ] || { echo 'ERROR|Arquivo não encontrado'; exit 1; }; " +
-            "meta=$(stat -Lc '%F|%s|%Y|%X|%A' -- \"$target\" 2>/dev/null) || { echo 'ERROR|Não foi possível ler os metadados'; exit 1; }; " +
-            "IFS='|' read -r kind bytes modified accessed perms <<EOF\n$meta\nEOF\n" +
-            "if [ -d \"$target\" ]; then " +
-            "  size=$(du -sb -- \"$target\" 2>/dev/null | cut -f1); " +
-            "  count=$(find \"$target\" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l); " +
-            "  printf 'OK|%s|%s|%s|%s|%s|%s\\n' \"$kind\" \"${size:-0}\" \"$modified\" \"$accessed\" \"$perms\" \"$count\"; " +
-            "else " +
-            "  printf 'OK|%s|%s|%s|%s|%s|\\n' \"$kind\" \"$bytes\" \"$modified\" \"$accessed\" \"$perms\"; " +
-            "fi",
-            "_",
-            itemPath
-        ]
-        running: false
-        stdout: StdioCollector {
-            onStreamFinished: {
-                var raw = text.trim()
-                if (!raw) {
-                    menuRoot.propertiesLoading = false
-                    menuRoot.propertiesError = "Não foi possível carregar as propriedades."
-                    return
-                }
-
-                var parts = raw.split("|")
-                if (parts[0] !== "OK") {
-                    menuRoot.propertiesLoading = false
-                    menuRoot.propertiesError = parts.length > 1 ? parts.slice(1).join("|") : "Erro ao carregar propriedades."
-                    return
-                }
-
-                menuRoot.propertiesError = ""
-                menuRoot.propertiesType = parts[1] || (menuRoot.itemIsDir ? "Pasta" : "Arquivo")
-                menuRoot.propertiesSizeText = AppState.formatSize(Number(parts[2] || 0))
-                menuRoot.propertiesModifiedText = menuRoot.formatDateTime(parts[3])
-                menuRoot.propertiesAccessedText = menuRoot.formatDateTime(parts[4])
-                menuRoot.propertiesPermissionsText = parts[5] || "Indisponível"
-                if (menuRoot.itemIsDir) {
-                    var count = Number(parts[6] || 0)
-                    menuRoot.propertiesContainsText = count + (count === 1 ? " item" : " itens")
-                }
-                menuRoot.propertiesLoading = false
-            }
-        }
-        onExited: function(exitCode) {
-            if (exitCode !== 0 && menuRoot.propertiesLoading) {
-                menuRoot.propertiesLoading = false
-                if (!menuRoot.propertiesError)
-                    menuRoot.propertiesError = "Falha ao consultar propriedades."
-            }
-        }
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // SUB-COMPONENTS
-    // ═══════════════════════════════════════════════════════════════
-
-    component MenuAction: Item {
-        id: actionRoot
+    // ─────────────────────────────────────────────────────────────
+    // INLINE COMPONENTS
+    // ─────────────────────────────────────────────────────────────
+    component FlatButton: Rectangle {
+        id: fbRoot
         property string label: ""
-        property string icon: ""
-        property string shortcut: ""
-        property bool destructive: false
-        signal triggered()
+        property bool primary: false
+        signal clicked()
 
-        width: parent ? parent.width : 200
-        height: visible ? 34 : 0
+        width: 88; height: 30; radius: 7
+        color: fbMouse.containsMouse
+            ? "#3a3a3c"
+            : (primary ? "#2c2c2e" : "#232325")
+        border.color: "#3a3a3c"; border.width: 1
+        Behavior on color { ColorAnimation { duration: 60 } }
 
-        Rectangle {
-            anchors.fill: parent
-            radius: 9
-            color: {
-                if (!actionHover.containsMouse) return "transparent"
-                return actionRoot.destructive
-                    ? Qt.rgba(0.9, 0.2, 0.2, 0.22)
-                    : Qt.rgba(0.25, 0.55, 1.0, 0.22)
-            }
-            border.width: actionHover.containsMouse ? 1 : 0
-            border.color: {
-                if (!actionHover.containsMouse) return "transparent"
-                return actionRoot.destructive
-                    ? Qt.rgba(1, 0.5, 0.5, 0.18)
-                    : Qt.rgba(0.6, 0.82, 1.0, 0.18)
-            }
-            Behavior on color { ColorAnimation { duration: 80 } }
-        }
-
-        Row {
-            anchors { left: parent.left; right: parent.right; leftMargin: 10; rightMargin: 10; verticalCenter: parent.verticalCenter }
-            spacing: 10
-
-            // Icon glyph
-            Text {
-                text: actionRoot.icon
-                color: actionRoot.destructive
-                    ? Qt.rgba(1, 0.5, 0.5, 0.9)
-                    : actionHover.containsMouse ? Theme.text : Theme.textSec
-                font.pixelSize: 13
-                width: 16
-                horizontalAlignment: Text.AlignHCenter
-                anchors.verticalCenter: parent.verticalCenter
-            }
-
-            // Label
-            Text {
-                text: actionRoot.label
-                color: actionRoot.destructive ? "#ff8b8b" : Theme.text
-                font { pixelSize: 13; weight: Font.Medium }
-                anchors.verticalCenter: parent.verticalCenter
-                Layout.fillWidth: true
-            }
-
-            Item { width: 1 }
-
-            // Shortcut hint
-            Text {
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                text: actionRoot.shortcut
-                color: Theme.textTer
-                font.pixelSize: 11
-            }
+        Text {
+            anchors.centerIn: parent
+            text: fbRoot.label
+            color: "#f2f2f7"
+            font { pixelSize: 13; weight: fbRoot.primary ? Font.Medium : Font.Normal }
         }
 
         MouseArea {
-            id: actionHover
+            id: fbMouse
             anchors.fill: parent
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: actionRoot.triggered()
-        }
-    }
-
-    component MenuSeparator: Rectangle {
-        width: parent ? parent.width : 200
-        height: visible ? 5 : 0
-        color: "transparent"
-
-        Rectangle {
-            anchors { left: parent.left; right: parent.right; leftMargin: 6; rightMargin: 6; verticalCenter: parent.verticalCenter }
-            height: 1
-            color: Qt.rgba(1, 1, 1, 0.07)
-        }
-    }
-
-    component PropRow: Item {
-        property string label: ""
-        property string value: ""
-        property bool monospace: false
-
-        width: parent ? parent.width : 400
-        height: visible ? Math.max(42, propVal.implicitHeight + 16) : 0
-
-        Rectangle {
-            anchors.fill: parent
-            color: "transparent"
-
-            Rectangle {
-                anchors { left: parent.left; right: parent.right; bottom: parent.bottom; leftMargin: 20; rightMargin: 20 }
-                height: 1
-                color: Qt.rgba(1, 1, 1, 0.05)
-            }
-        }
-
-        Row {
-            anchors { left: parent.left; right: parent.right; leftMargin: 20; rightMargin: 20; verticalCenter: parent.verticalCenter }
-            spacing: 12
-
-            Text {
-                id: propLbl
-                text: parent.parent.parent.label
-                color: Theme.textTer
-                font { pixelSize: 11; weight: Font.Medium }
-                width: 90
-                anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Text {
-                id: propVal
-                text: parent.parent.parent.value
-                color: Theme.text
-                font {
-                    pixelSize: 12
-                    family: parent.parent.parent.monospace ? "monospace" : ""
-                }
-                width: parent.width - propLbl.width - parent.spacing
-                wrapMode: Text.WrapAnywhere
-                anchors.verticalCenter: parent.verticalCenter
-            }
+            onClicked: fbRoot.clicked()
         }
     }
 }

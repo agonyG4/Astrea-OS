@@ -5,7 +5,7 @@ import "../.."
 
 Rectangle {
     height: 26
-    color: Theme.statusBar
+    color: Theme.bg
 
     Rectangle { anchors.top: parent.top; width: parent.width; height: 1; color: Theme.border }
 

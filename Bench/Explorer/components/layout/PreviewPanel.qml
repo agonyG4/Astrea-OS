@@ -3,7 +3,7 @@ import QtQuick.Controls.impl 2.15
 import "../.."
 
 Rectangle {
-    color: Theme.panel
+    color: Theme.bg
     clip: true
 
     Behavior on width { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
