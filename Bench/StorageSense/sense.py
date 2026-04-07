@@ -34,6 +34,7 @@ SKIP_PREFIXES: tuple[str, ...] = (
 
 FLUSH_INTERVAL = 10_000
 PRINT_INTERVAL = 100_000
+DIR_FLUSH_INTERVAL = 1_000
 
 # ─────────────────────────────────────────
 # CATEGORIAS DE SISTEMA — fallback hardcoded
@@ -77,11 +78,13 @@ SYS_CAT_META: dict[str, tuple[str, str]] = {
 
 def resolve_system_category(path_str: str, ext: str, dir_parts: frozenset[str]) -> str:
     # Jogos têm prioridade máxima — podem estar em qualquer lugar
-    if dir_parts & _GAME_SEGS: return "sys:games"
+    if dir_parts & _GAME_SEGS:
+        return "sys:games"
 
     # /opt/ → apps instalados manualmente (Discord, Zen, etc.)
     for p in _APP_PREFIXES:
-        if path_str.startswith(p): return "sys:apps"
+        if path_str.startswith(p):
+            return "sys:apps"
 
     # Extensões de tipo de arquivo
     if ext in _VM:   return "sys:vms"
@@ -96,11 +99,13 @@ def resolve_system_category(path_str: str, ext: str, dir_parts: frozenset[str]) 
 
     # Temp/cache de sistema
     for p in _TMP_PREFIXES:
-        if path_str.startswith(p): return "sys:tmp"
+        if path_str.startswith(p):
+            return "sys:tmp"
 
     # Sistema puro
     for p in _SYS_PREFIXES:
-        if path_str.startswith(p): return "sys:system"
+        if path_str.startswith(p):
+            return "sys:system"
 
     return "sys:other"
 
@@ -215,6 +220,12 @@ def get_conn() -> sqlite3.Connection:
             cat   TEXT    NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS dirs (
+            path  TEXT PRIMARY KEY,
+            mtime REAL    NOT NULL
+        )
+    """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cat ON files(cat)")
     conn.commit()
     return conn
@@ -225,9 +236,20 @@ def load_cache(conn: sqlite3.Connection) -> dict[str, tuple[int, float, str]]:
     return {row[0]: (row[1], row[2], row[3]) for row in cur}
 
 
+def load_dir_cache(conn: sqlite3.Connection) -> dict[str, float]:
+    cur = conn.execute("SELECT path, mtime FROM dirs")
+    return {row[0]: row[1] for row in cur}
+
+
 def flush(conn: sqlite3.Connection, entries: list) -> None:
     if entries:
         conn.executemany("INSERT OR REPLACE INTO files VALUES (?,?,?,?)", entries)
+        conn.commit()
+
+
+def flush_dirs(conn: sqlite3.Connection, entries: list[tuple[str, float]]) -> None:
+    if entries:
+        conn.executemany("INSERT OR REPLACE INTO dirs VALUES (?,?)", entries)
         conn.commit()
 
 
@@ -268,8 +290,10 @@ def _walk_and_classify(compiled: dict, allowed_devs: set[int],
     """
     conn          = get_conn()
     cache         = load_cache(conn)
+    dir_cache     = load_dir_cache(conn)
     stats: dict[str, int] = defaultdict(int)
     new_entries: list     = []
+    new_dirs: list[tuple[str, float]] = []
     scanned_paths: set    = set()
     scanned = updated = errors = 0
     start = time.monotonic()
@@ -283,7 +307,8 @@ def _walk_and_classify(compiled: dict, allowed_devs: set[int],
 
         # Pula dispositivos externos
         try:
-            if os.stat(dirpath).st_dev not in allowed_devs:
+            dir_stat = os.stat(dirpath)
+            if dir_stat.st_dev not in allowed_devs:
                 dirnames[:] = []
                 continue
         except OSError:
@@ -291,6 +316,20 @@ def _walk_and_classify(compiled: dict, allowed_devs: set[int],
 
         dir_parts = frozenset(p.lower() for p in dirpath.split("/") if p)
         dirnames.sort()
+
+        dir_mtime = dir_stat.st_mtime
+        cached_dir_mtime = dir_cache.get(dirpath)
+
+        # Se o diretório não mudou, ainda contamos os arquivos do cache
+        # sem re-statar/reclassificar cada um.
+        if cached_dir_mtime == dir_mtime:
+            prefix = dirpath.rstrip("/") + "/"
+            for path_str, (size, _mtime, cat) in cache.items():
+                if path_str.startswith(prefix):
+                    stats[cat] += size
+                    scanned_paths.add(path_str)
+                    scanned += 1
+            continue
 
         for filename in filenames:
             path_str = dirpath.rstrip("/") + "/" + filename
@@ -328,7 +367,13 @@ def _walk_and_classify(compiled: dict, allowed_devs: set[int],
             except OSError:
                 errors += 1
 
+        new_dirs.append((dirpath, dir_mtime))
+        if len(new_dirs) >= DIR_FLUSH_INTERVAL:
+            flush_dirs(conn, new_dirs)
+            new_dirs.clear()
+
     flush(conn, new_entries)
+    flush_dirs(conn, new_dirs)
     pruned = prune(conn, set(cache.keys()), scanned_paths)
     conn.close()
     return stats, scanned_paths, scanned, updated, errors, pruned
@@ -491,40 +536,38 @@ def print_json(compiled: dict, cat_meta: dict) -> None:
         l = label.lower()
         i = cat_id.lower()
         # Apple SF Colors / macOS Palette
-        if "jogo" in l or "game" in l: return "#007AFF" # Blue
-        if "download" in l: return "#FFD426" # Yellow
-        if "foto" in l or "imagem" in l or "image" in l: return "#FF9F0A" # Light Orange
-        if "vídeo" in l or "video" in l: return "#AF52DE" # Purple
-        if "música" in l or "music" in l or "audio" in l: return "#FF2D55" # Pink/Red
-        if "doc" in l or "documento" in l: return "#FF9500" # Orange
-        if "código" in l or "code" in l or "github" in l: return "#34C759" # Green
-        if "archive" in i or "arquivos" in l: return "#5856D6" # Indigo
-        if i == "unified_apps" or "app" in l or "flatpak" in i or "spotify" in i: return "#FF3B30" # Red
-        if "cache" in l or "tmp" in i or "sistema" in l or "system" in l or "config" in i: return "#AEAEB2" # System/Gray
+        if "jogo" in l or "game" in l: return "#007AFF"
+        if "download" in l: return "#FFD426"
+        if "foto" in l or "imagem" in l or "image" in l: return "#FF9F0A"
+        if "vídeo" in l or "video" in l: return "#AF52DE"
+        if "música" in l or "music" in l or "audio" in l: return "#FF2D55"
+        if "doc" in l or "documento" in l: return "#FF9500"
+        if "código" in l or "code" in l or "github" in l: return "#34C759"
+        if "archive" in i or "arquivos" in l: return "#5856D6"
+        if i == "unified_apps" or "app" in l or "flatpak" in i or "spotify" in i: return "#FF3B30"
+        if "cache" in l or "tmp" in i or "sistema" in l or "system" in l or "config" in i: return "#AEAEB2"
         return "#636366"
 
-    # Grouping logic
     data_map = {}
     APP_IDS  = {"sys:apps", "flatpak", "spotify", "apps"}
     SYS_IDS  = {"sys:system", "sys:other", "sys:tmp", "sys:games", "sys:vms", "sys:archives", "sys:fonts", "sys:images", "sys:videos", "sys:audio", "sys:docs", "sys:code", "config", "cache"}
 
     for cat_id, count, sz in rows:
-        if not sz: continue
+        if not sz:
+            continue
         label, emoji = cat_meta.get(cat_id, (cat_id or "Outros", "📁"))
-        
+
         target_id = cat_id
         target_label = label
         target_emoji = emoji
         is_system = cat_id.startswith("sys:")
 
-        # Agrupar Aplicativos
         if cat_id in APP_IDS or "aplicativo" in label.lower() or "apps" in label.lower():
             target_id = "unified_apps"
             target_label = "Aplicativos"
             target_emoji = ""
             is_system = False
-        
-        # Agrupar Sistema (incluindo caches/configs se o user quer unificação total)
+
         elif is_system or cat_id in SYS_IDS or "sistema" in label.lower() or "cache" in label.lower():
             target_id = "sys:unified"
             target_label = "Sistema"
@@ -541,14 +584,13 @@ def print_json(compiled: dict, cat_meta: dict) -> None:
                 "color": get_color(target_id, target_label),
                 "is_system": is_system
             }
-        
+
         data_map[target_id]["size"]  += sz
         data_map[target_id]["count"] += count
 
-    # Cálculo de "Dados do Sistema" (espaço usado mas não classificado)
     categorized_total = sum(d["size"] for d in data_map.values())
     system_delta = disk_used - categorized_total
-    if system_delta > 1024 * 1024: # Só mostra se for > 1MB
+    if system_delta > 1024 * 1024:
         if "sys:unified" in data_map:
             data_map["sys:unified"]["size"] += system_delta
         else:
@@ -562,7 +604,6 @@ def print_json(compiled: dict, cat_meta: dict) -> None:
                 "is_system": True
             }
 
-    # Sort by size
     final_data = sorted(data_map.values(), key=lambda x: x["size"], reverse=True)
     print(json.dumps({
         "disk_total": disk_total,
