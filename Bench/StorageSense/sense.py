@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-StorageSense — analisador de disco estilo macOS.
-Requer Python 3.10+
+StorageSense -- macOS-style disk analyzer.
+Requires Python 3.10+
 """
 
 import os
@@ -14,9 +14,9 @@ import argparse
 from pathlib import Path
 from collections import defaultdict
 
-# ─────────────────────────────────────────
-# CAMINHOS
-# ─────────────────────────────────────────
+# -----------------------------------------
+# PATHS
+# -----------------------------------------
 HOME       = str(Path.home())
 HOME_SEP   = HOME + "/"
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -26,20 +26,20 @@ CACHE_DIR = Path(HOME) / ".cache" / "storagesense"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = CACHE_DIR / "metadata_cache.db"
 
-# Paths para pular completamente (não entrar)
+# Paths to skip entirely (do not descend into)
 SKIP_PREFIXES: tuple[str, ...] = (
     "/proc/", "/sys/", "/dev/", "/run/",
     "/snap/", "/boot/", "/mnt/", "/media/",
 )
 
-FLUSH_INTERVAL = 10_000
-PRINT_INTERVAL = 100_000
+FLUSH_INTERVAL     = 10_000
+PRINT_INTERVAL     = 100_000
 DIR_FLUSH_INTERVAL = 1_000
 
-# ─────────────────────────────────────────
-# CATEGORIAS DE SISTEMA — fallback hardcoded
-# Aplicadas apenas para arquivos FORA do home.
-# ─────────────────────────────────────────
+# -----------------------------------------
+# SYSTEM CATEGORIES -- hardcoded fallback
+# Applied only to files OUTSIDE the home directory.
+# -----------------------------------------
 _IMG  = frozenset({".jpg",".jpeg",".png",".gif",".bmp",".tiff",".tif",".webp",".heic",".heif",".raw",".cr2",".nef",".arw",".svg",".avif",".dng",".psd",".xcf",".kra",".ico"})
 _VID  = frozenset({".mp4",".mkv",".avi",".mov",".wmv",".flv",".webm",".m4v",".mpg",".mpeg",".ts",".m2ts",".vob",".3gp",".ogv",".rmvb"})
 _AUD  = frozenset({".mp3",".flac",".aac",".ogg",".wav",".m4a",".wma",".opus",".aiff",".mid",".midi",".ape",".mka",".alac"})
@@ -48,45 +48,45 @@ _ARCH = frozenset({".zip",".tar",".gz",".bz2",".xz",".zst",".7z",".rar",".lz4","
 _APP  = frozenset({".appimage",".exe",".msi",".bin",".run"})
 _FONT = frozenset({".ttf",".otf",".woff",".woff2",".eot"})
 _VM   = frozenset({".vmdk",".vdi",".vhd",".vhdx",".qcow2",".ova",".ovf"})
-_CODE = frozenset({".py",".js",".ts",".rs",".go",".c",".cpp",".h",".java",".rb",".php",".lua",".sh",".toml",".yaml",".yml",".json",".xml",".html",".css",".sql"})
+_CODE = frozenset({".py",".js",".ts",".rs",".go",".c",".cpp",".h",".java",".rb",".php",".lua",".sh",".toml",".yaml",".yml",".json",".xml",".html",".css",".sql",".qml"})
 
-_GAME_SEGS  = frozenset({"steamapps","games","heroic","lutris","wine","proton","compatdata"})
+_GAME_SEGS = frozenset({"steamapps","games","heroic","lutris","wine","proton","compatdata"})
 
-# Prefixos que são claramente apps instalados
+# Prefixes that clearly indicate manually installed apps
 _APP_PREFIXES = ("/opt/",)
 
-# Prefixos de sistema puro (libs, bins, config)
+# Pure system prefixes (libs, bins, config)
 _SYS_PREFIXES = ("/usr/","/lib/","/lib64/","/bin/","/sbin/","/etc/","/snap/")
 _TMP_PREFIXES = ("/tmp/","/var/tmp/","/var/cache/","/var/log/")
 
 SYS_CAT_META: dict[str, tuple[str, str]] = {
-    "sys:games":   ("Games (sistema)",  ""),
-    "sys:vms":     ("Máq. Virtuais",    ""),
-    "sys:archives house":("Arquivos",         ""),
-    "sys:fonts":   ("Fontes",           ""),
-    "sys:apps":    ("Aplicativos",      ""),
-    "sys:images":  ("Imagens",          ""),
-    "sys:videos":  ("Vídeos",           ""),
-    "sys:audio":   ("Áudio",            ""),
-    "sys:docs":    ("Documentos",       ""),
-    "sys:code":    ("Código",           ""),
-    "sys:tmp":     ("Temp Sistema",     ""),
-    "sys:system":  ("Sistema",          ""),
-    "sys:other":   ("Outros (sistema)", ""),
+    "sys:games":    ("Games (system)",   ""),
+    "sys:vms":      ("Virtual Machines", ""),
+    "sys:archives": ("Archives",         ""),
+    "sys:fonts":    ("Fonts",            ""),
+    "sys:apps":     ("Applications",     ""),
+    "sys:images":   ("Images",           ""),
+    "sys:videos":   ("Videos",           ""),
+    "sys:audio":    ("Audio",            ""),
+    "sys:docs":     ("Documents",        ""),
+    "sys:code":     ("Code",             ""),
+    "sys:tmp":      ("System Temp",      ""),
+    "sys:system":   ("System",           ""),
+    "sys:other":    ("Other (system)",   ""),
 }
 
 
 def resolve_system_category(path_str: str, ext: str, dir_parts: frozenset[str]) -> str:
-    # Jogos têm prioridade máxima — podem estar em qualquer lugar
+    # Games take top priority -- can live anywhere
     if dir_parts & _GAME_SEGS:
         return "sys:games"
 
-    # /opt/ → apps instalados manualmente (Discord, Zen, etc.)
+    # /opt/ -> manually installed apps (Discord, etc.)
     for p in _APP_PREFIXES:
         if path_str.startswith(p):
             return "sys:apps"
 
-    # Extensões de tipo de arquivo
+    # File-type extensions
     if ext in _VM:   return "sys:vms"
     if ext in _ARCH: return "sys:archives"
     if ext in _FONT: return "sys:fonts"
@@ -97,12 +97,12 @@ def resolve_system_category(path_str: str, ext: str, dir_parts: frozenset[str]) 
     if ext in _DOC:  return "sys:docs"
     if ext in _CODE: return "sys:code"
 
-    # Temp/cache de sistema
+    # System temp/cache
     for p in _TMP_PREFIXES:
         if path_str.startswith(p):
             return "sys:tmp"
 
-    # Sistema puro
+    # Pure system paths
     for p in _SYS_PREFIXES:
         if path_str.startswith(p):
             return "sys:system"
@@ -110,24 +110,24 @@ def resolve_system_category(path_str: str, ext: str, dir_parts: frozenset[str]) 
     return "sys:other"
 
 
-# ─────────────────────────────────────────
-# CARREGA E COMPILA CATEGORIES.JSON
-# ─────────────────────────────────────────
+# -----------------------------------------
+# LOAD AND COMPILE CATEGORIES.JSON
+# -----------------------------------------
 def load_categories() -> dict:
     if not CAT_FILE.exists():
-        print(f"Erro: {CAT_FILE} não encontrado.", file=sys.stderr)
+        print(f"Error: {CAT_FILE} not found.", file=sys.stderr)
         sys.exit(1)
     try:
         with open(CAT_FILE, encoding="utf-8") as f:
             raw = json.load(f)
     except json.JSONDecodeError as e:
-        print(f"Erro ao ler categories.json: {e}", file=sys.stderr)
+        print(f"Error reading categories.json: {e}", file=sys.stderr)
         sys.exit(1)
     return {k: v for k, v in raw.items() if not k.startswith("_")}
 
 
 def compile_categories(categories: dict) -> dict:
-    """Pré-computa prefixos absolutos e frozensets para lookup rápido."""
+    """Pre-compute absolute prefixes and frozensets for fast lookup."""
     compiled = {}
     for cat_id, cat in categories.items():
         inc_prefixes = []
@@ -137,7 +137,7 @@ def compile_categories(categories: dict) -> dict:
 
         compiled[cat_id] = {
             "label":            cat.get("label", cat_id),
-            "emoji":            cat.get("emoji", "📁"),
+            "emoji":            cat.get("emoji", ""),
             "include_prefixes": inc_prefixes,
             "exclude_parts":    frozenset(p.lower() for p in cat.get("exclude_parts", [])),
             "match_dirs":       frozenset(d.lower() for d in cat.get("match_dirs", [])),
@@ -146,35 +146,34 @@ def compile_categories(categories: dict) -> dict:
     return compiled
 
 
-# ─────────────────────────────────────────
-# RESOLVE CATEGORIA
-# ─────────────────────────────────────────
+# -----------------------------------------
+# RESOLVE CATEGORY
+# -----------------------------------------
 def resolve_category(path_str: str, ext: str, dir_parts: frozenset[str],
                      compiled: dict) -> str:
     """
-    Percorre as categorias na ordem do JSON.
-    A primeira que casar (path + extensão ou match_dir) vence.
-    Categorias sem extensões definidas casam com qualquer arquivo
-    dentro dos include_paths — útil para 'downloads' ser um catch-all.
+    Iterates categories in JSON order; the first match wins.
+    Categories without defined extensions match any file inside
+    their include_paths -- useful for 'downloads' as a catch-all.
     """
     if not path_str.startswith(HOME_SEP):
         return resolve_system_category(path_str, ext, dir_parts)
 
     for cat_id, cat in compiled.items():
-        # Filtro de exclusão
+        # Exclusion filter
         if cat["exclude_parts"] and (cat["exclude_parts"] & dir_parts):
             continue
 
-        # Filtro de caminho
+        # Path filter
         inc = cat["include_prefixes"]
         if inc and not any(path_str.startswith(p) for p in inc):
             continue
 
-        # Casamento por diretório especial
+        # Match by special directory name
         if cat["match_dirs"] and (cat["match_dirs"] & dir_parts):
             return cat_id
 
-        # Casamento por extensão (ou catch-all se lista vazia)
+        # Match by extension (or catch-all if list is empty)
         if not cat["extensions"] or ext in cat["extensions"]:
             return cat_id
 
@@ -183,14 +182,14 @@ def resolve_category(path_str: str, ext: str, dir_parts: frozenset[str],
 
 def build_cat_meta(compiled: dict) -> dict[str, tuple[str, str]]:
     meta = {cat_id: (cat["label"], "") for cat_id, cat in compiled.items()}
-    meta["home_other"] = ("Outros (Home)", "")
+    meta["home_other"] = ("Other (Home)", "")
     meta.update(SYS_CAT_META)
     return meta
 
 
-# ─────────────────────────────────────────
-# UTILITÁRIOS
-# ─────────────────────────────────────────
+# -----------------------------------------
+# UTILITIES
+# -----------------------------------------
 def format_size(size: float) -> str:
     for unit in ["B", "KB", "MB", "GB", "TB"]:
         if size < 1024:
@@ -201,12 +200,12 @@ def format_size(size: float) -> str:
 
 def bar(fraction: float, width: int = 22) -> str:
     filled = round(fraction * width)
-    return "█" * filled + "░" * (width - filled)
+    return "#" * filled + "-" * (width - filled)
 
 
-# ─────────────────────────────────────────
-# BANCO
-# ─────────────────────────────────────────
+# -----------------------------------------
+# DATABASE
+# -----------------------------------------
 def get_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA journal_mode=WAL")
@@ -231,9 +230,28 @@ def get_conn() -> sqlite3.Connection:
     return conn
 
 
-def load_cache(conn: sqlite3.Connection) -> dict[str, tuple[int, float, str]]:
+def load_cache(
+    conn: sqlite3.Connection,
+) -> tuple[dict[str, tuple[int, float, str]], dict[str, list[str]]]:
+    """
+    Returns:
+      cache     -- {path: (size, mtime, cat)}
+      dir_index -- {dirpath: [path, ...]}  (direct children only, not recursive)
+
+    The dir_index allows directory cache lookups in O(1) without a full
+    linear scan, and without accidentally including files from subdirectories.
+    """
     cur = conn.execute("SELECT path, size, mtime, cat FROM files")
-    return {row[0]: (row[1], row[2], row[3]) for row in cur}
+    cache: dict[str, tuple[int, float, str]] = {}
+    dir_index: dict[str, list[str]] = defaultdict(list)
+
+    for path, size, mtime, cat in cur:
+        cache[path] = (size, mtime, cat)
+        # Use the immediate parent directory -- not a recursive prefix
+        parent = str(Path(path).parent)
+        dir_index[parent].append(path)
+
+    return cache, dir_index
 
 
 def load_dir_cache(conn: sqlite3.Connection) -> dict[str, float]:
@@ -261,11 +279,11 @@ def prune(conn: sqlite3.Connection, old: set, current: set) -> int:
     return len(stale)
 
 
-# ─────────────────────────────────────────
-# MOUNTINFO — dispositivos permitidos
-# ─────────────────────────────────────────
+# -----------------------------------------
+# MOUNTINFO -- allowed devices
+# -----------------------------------------
 def get_allowed_devs() -> set[int]:
-    """Retorna o conjunto de st_dev das partições montadas no sistema de arquivos raiz."""
+    """Returns the set of st_dev values for partitions mounted on the root filesystem."""
     devs: set[int] = set()
     try:
         with open("/proc/self/mountinfo") as f:
@@ -279,57 +297,67 @@ def get_allowed_devs() -> set[int]:
     return devs
 
 
-# ─────────────────────────────────────────
+# -----------------------------------------
 # SCAN
-# ─────────────────────────────────────────
-def _walk_and_classify(compiled: dict, allowed_devs: set[int],
-                       quiet: bool) -> tuple[dict, set, int, int, int]:
+# -----------------------------------------
+def _walk_and_classify(
+    compiled: dict,
+    allowed_devs: set[int],
+    quiet: bool,
+) -> tuple[dict, set, int, int, int, int]:
     """
-    Percorre o sistema de arquivos e classifica cada arquivo regular.
-    Retorna (stats, scanned_paths, scanned_count, updated_count, error_count).
+    Walks the filesystem and classifies every regular file.
+    Returns (stats, scanned_paths, scanned_count, updated_count, error_count, pruned_count).
     """
-    conn          = get_conn()
-    cache         = load_cache(conn)
-    dir_cache     = load_dir_cache(conn)
-    stats: dict[str, int] = defaultdict(int)
-    new_entries: list     = []
+    conn                = get_conn()
+    cache, dir_index    = load_cache(conn)
+    dir_cache           = load_dir_cache(conn)
+    stats: dict[str, int]             = defaultdict(int)
+    new_entries: list                 = []
     new_dirs: list[tuple[str, float]] = []
-    scanned_paths: set    = set()
+    scanned_paths: set                = set()
     scanned = updated = errors = 0
     start = time.monotonic()
 
     for dirpath, dirnames, filenames in os.walk("/", followlinks=False):
-        # Pula prefixos proibidos
+        # Skip forbidden prefixes
         if any(dirpath == sp.rstrip("/") or dirpath.startswith(sp)
                for sp in SKIP_PREFIXES):
             dirnames[:] = []
             continue
 
-        # Pula dispositivos externos
+        # Skip external devices
         try:
             dir_stat = os.stat(dirpath)
-            if dir_stat.st_dev not in allowed_devs:
-                dirnames[:] = []
-                continue
         except OSError:
+            dirnames[:] = []
             continue
 
-        dir_parts = frozenset(p.lower() for p in dirpath.split("/") if p)
-        dirnames.sort()
+        if dir_stat.st_dev not in allowed_devs:
+            dirnames[:] = []
+            continue
 
-        dir_mtime = dir_stat.st_mtime
+        dir_mtime        = dir_stat.st_mtime
         cached_dir_mtime = dir_cache.get(dirpath)
 
-        # Se o diretório não mudou, ainda contamos os arquivos do cache
-        # sem re-statar/reclassificar cada um.
+        # -- Cache hit: directory unchanged since last scan ------------------
+        # Uses dir_index to access only the direct children of this directory,
+        # avoiding both an O(n) scan of the full cache and double-counting
+        # files that belong to modified subdirectories.
         if cached_dir_mtime == dir_mtime:
-            prefix = dirpath.rstrip("/") + "/"
-            for path_str, (size, _mtime, cat) in cache.items():
-                if path_str.startswith(prefix):
-                    stats[cat] += size
-                    scanned_paths.add(path_str)
-                    scanned += 1
+            for path_str in dir_index.get(dirpath, []):
+                cached = cache.get(path_str)
+                if not cached:
+                    continue
+                size, _mtime, cat = cached
+                stats[cat] += size
+                scanned_paths.add(path_str)
+                scanned += 1
             continue
+
+        # -- Cache miss: process files individually --------------------------
+        dir_parts = frozenset(p.lower() for p in dirpath.split("/") if p)
+        dirnames.sort()
 
         for filename in filenames:
             path_str = dirpath.rstrip("/") + "/" + filename
@@ -350,6 +378,10 @@ def _walk_and_classify(compiled: dict, allowed_devs: set[int],
                     ext = filename[dot:].lower() if dot > 0 else ""
                     cat = resolve_category(path_str, ext, dir_parts, compiled)
                     new_entries.append((path_str, size, mtime, cat))
+                    cache[path_str] = (size, mtime, cat)
+                    parent = dirpath
+                    if path_str not in dir_index[parent]:
+                        dir_index[parent].append(path_str)
                     updated += 1
 
                 stats[cat] += size
@@ -362,11 +394,12 @@ def _walk_and_classify(compiled: dict, allowed_devs: set[int],
                 if not quiet and scanned % PRINT_INTERVAL == 0:
                     elapsed = time.monotonic() - start
                     rate    = scanned / elapsed if elapsed > 0 else 0
-                    print(f"  📂 {scanned:>10,} arquivos  |  {rate:,.0f} arq/s", end="\r")
+                    print(f"  {scanned:>10,} files  |  {rate:,.0f} files/s", end="\r")
 
             except OSError:
                 errors += 1
 
+        # Record directory mtime only after successful processing
         new_dirs.append((dirpath, dir_mtime))
         if len(new_dirs) >= DIR_FLUSH_INTERVAL:
             flush_dirs(conn, new_dirs)
@@ -379,9 +412,9 @@ def _walk_and_classify(compiled: dict, allowed_devs: set[int],
     return stats, scanned_paths, scanned, updated, errors, pruned
 
 
-def scan_all(compiled: dict, quiet: bool) -> tuple:
+def scan_all(compiled: dict, quiet: bool) -> tuple[dict[str, int], int, int, int, int, float]:
     if not quiet:
-        print(f"\n🔍  Varrendo /  —  cache em {DB_PATH}")
+        print(f"\nScanning /  --  cache at {DB_PATH}")
 
     allowed_devs = get_allowed_devs()
     start        = time.monotonic()
@@ -393,21 +426,20 @@ def scan_all(compiled: dict, quiet: bool) -> tuple:
     return stats, scanned, updated, pruned, errors, elapsed
 
 
-# ─────────────────────────────────────────
-# RELATÓRIO
-# ─────────────────────────────────────────
+# -----------------------------------------
+# REPORT
+# -----------------------------------------
 W = 68
 
 
-def sep(char: str = "─") -> None:
+def sep(char: str = "-") -> None:
     print(char * W)
 
 
 def _print_rows(rows: list[tuple[str, str, int]], total: int) -> None:
-    for label, emoji, size in rows:
+    for label, _emoji, size in rows:
         frac = size / total
-        name = f"{emoji} {label}"
-        print(f"  {name:<24}  {format_size(size):>9}  {frac*100:>4.1f}%  {bar(frac)}")
+        print(f"  {label:<26}  {format_size(size):>9}  {frac*100:>4.1f}%  {bar(frac)}")
 
 
 def print_scan_report(stats: dict, cat_meta: dict,
@@ -422,7 +454,7 @@ def print_scan_report(stats: dict, cat_meta: dict,
     for cat_id, size in stats.items():
         if size == 0:
             continue
-        label, emoji = cat_meta.get(cat_id, (cat_id, "📁"))
+        label, emoji = cat_meta.get(cat_id, (cat_id, ""))
         entry = (label, emoji, size)
         (sys_rows if cat_id.startswith("sys:") else home_rows).append(entry)
 
@@ -430,12 +462,12 @@ def print_scan_report(stats: dict, cat_meta: dict,
     sys_rows.sort(key=lambda x: x[2], reverse=True)
 
     print()
-    print("═" * W)
-    print(f"  💾  STORAGE SENSE")
-    print(f"  Arquivos: {scanned:,}   Tempo: {elapsed:.1f}s  ({rate:,.0f} arq/s)")
-    print(f"  Atualizados: {updated:,}   Podados: {pruned:,}   Erros: {errors:,}")
-    print("═" * W)
-    print(f"  {'CATEGORIA':<24}  {'TAMANHO':>9}  {'%':>5}  BARRA")
+    print("=" * W)
+    print("  STORAGE SENSE")
+    print(f"  Files: {scanned:,}   Time: {elapsed:.1f}s  ({rate:,.0f} files/s)")
+    print(f"  Updated: {updated:,}   Pruned: {pruned:,}   Errors: {errors:,}")
+    print("=" * W)
+    print(f"  {'CATEGORY':<26}  {'SIZE':>9}  {'%':>5}  BAR")
 
     sep()
     print("  ~ HOME")
@@ -443,22 +475,22 @@ def print_scan_report(stats: dict, cat_meta: dict,
     _print_rows(home_rows, total)
 
     sep()
-    print("  / SISTEMA")
+    print("  / SYSTEM")
     sep()
     _print_rows(sys_rows, total)
 
     sep()
-    print(f"  {'TOTAL':<24}  {format_size(total):>9}")
-    print("═" * W)
+    print(f"  {'TOTAL':<26}  {format_size(total):>9}")
+    print("=" * W)
     print()
 
 
-# ─────────────────────────────────────────
+# -----------------------------------------
 # CACHE INFO
-# ─────────────────────────────────────────
+# -----------------------------------------
 def print_cache_info(cat_meta: dict) -> None:
     if not DB_PATH.exists():
-        print("ℹ️  Nenhum cache. Execute `storagesense scan`.")
+        print("No cache found. Run `storagesense scan`.")
         return
 
     conn    = get_conn()
@@ -471,33 +503,32 @@ def print_cache_info(cat_meta: dict) -> None:
     conn.close()
 
     print()
-    print("═" * W)
-    print(f"  CACHE INFO  —  {DB_PATH}")
+    print("=" * W)
+    print(f"  CACHE INFO  --  {DB_PATH}")
     sep()
-    print(f"  Banco:         {format_size(db_size)}")
-    print(f"  Arquivos:      {n_files:,}")
-    print(f"  Volume total:  {format_size(vol)}")
+    print(f"  Database:      {format_size(db_size)}")
+    print(f"  Files:         {n_files:,}")
+    print(f"  Total volume:  {format_size(vol)}")
     sep()
-    print(f"  {'CATEGORIA':<24}  {'ARQUIVOS':>10}  {'TAMANHO':>10}")
+    print(f"  {'CATEGORY':<26}  {'FILES':>10}  {'SIZE':>10}")
     sep()
     for cat_id, count, sz in rows:
-        label, emoji = cat_meta.get(cat_id, (cat_id or "(sem cat)", "📁"))
-        name = f"{emoji} {label}"
-        print(f"  {name:<24}  {count:>10,}  {format_size(sz or 0):>10}")
-    print("═" * W)
+        label, _emoji = cat_meta.get(cat_id, (cat_id or "(no category)", ""))
+        print(f"  {label:<26}  {count:>10,}  {format_size(sz or 0):>10}")
+    print("=" * W)
     print()
 
 
-# ─────────────────────────────────────────
+# -----------------------------------------
 # LIST
-# ─────────────────────────────────────────
+# -----------------------------------------
 def print_list(compiled: dict) -> None:
     conn = get_conn()
     print()
-    print("═" * W)
-    print(f"  CATEGORIAS  ({CAT_FILE.name})")
+    print("=" * W)
+    print(f"  CATEGORIES  ({CAT_FILE.name})")
     sep()
-    print(f"  {'ID':<16}  {'LABEL':<22}  {'EXTS':>5}  {'NO CACHE':>10}")
+    print(f"  {'ID':<16}  {'LABEL':<22}  {'EXTS':>5}  {'IN CACHE':>10}")
     sep()
     for cat_id, cat in compiled.items():
         label = cat["label"]
@@ -508,13 +539,13 @@ def print_list(compiled: dict) -> None:
         catch = "  (catch-all)" if not cat["extensions"] else ""
         print(f"  {cat_id:<16}  {label:<22}  {exts:>5}  {count:>10,}{catch}")
     conn.close()
-    print("═" * W)
+    print("=" * W)
     print()
 
 
-# ─────────────────────────────────────────
+# -----------------------------------------
 # JSON OUTPUT
-# ─────────────────────────────────────────
+# -----------------------------------------
 def print_json(compiled: dict, cat_meta: dict) -> None:
     if not DB_PATH.exists():
         print(json.dumps({"error": "No cache found", "total": 0, "data": []}))
@@ -535,54 +566,54 @@ def print_json(compiled: dict, cat_meta: dict) -> None:
     def get_color(cat_id: str, label: str) -> str:
         l = label.lower()
         i = cat_id.lower()
-        # Apple SF Colors / macOS Palette
-        if "jogo" in l or "game" in l: return "#007AFF"
-        if "download" in l: return "#FFD426"
-        if "foto" in l or "imagem" in l or "image" in l: return "#FF9F0A"
-        if "vídeo" in l or "video" in l: return "#AF52DE"
-        if "música" in l or "music" in l or "audio" in l: return "#FF2D55"
-        if "doc" in l or "documento" in l: return "#FF9500"
-        if "código" in l or "code" in l or "github" in l: return "#34C759"
-        if "archive" in i or "arquivos" in l: return "#5856D6"
-        if i == "unified_apps" or "app" in l or "flatpak" in i or "spotify" in i: return "#FF3B30"
-        if "cache" in l or "tmp" in i or "sistema" in l or "system" in l or "config" in i: return "#AEAEB2"
+        # Apple SF Colors / macOS palette
+        if "game" in l:                                                   return "#007AFF"
+        if "download" in l:                                               return "#FFD426"
+        if "image" in l or "photo" in l:                                  return "#FF9F0A"
+        if "video" in l:                                                  return "#AF52DE"
+        if "music" in l or "audio" in l:                                  return "#FF2D55"
+        if "doc" in l:                                                    return "#FF9500"
+        if "code" in l or "github" in l:                                  return "#34C759"
+        if "archive" in i or "archive" in l:                              return "#5856D6"
+        if i == "unified_apps" or "app" in l or "flatpak" in i:           return "#FF3B30"
+        if "cache" in l or "tmp" in i or "system" in l or "config" in i:  return "#AEAEB2"
         return "#636366"
 
     data_map = {}
-    APP_IDS  = {"sys:apps", "flatpak", "spotify", "apps"}
-    SYS_IDS  = {"sys:system", "sys:other", "sys:tmp", "sys:games", "sys:vms", "sys:archives", "sys:fonts", "sys:images", "sys:videos", "sys:audio", "sys:docs", "sys:code", "config", "cache"}
+    APP_IDS = {"sys:apps", "flatpak", "spotify", "apps"}
+    SYS_IDS = {
+        "sys:system", "sys:other", "sys:tmp", "sys:games", "sys:vms",
+        "sys:archives", "sys:fonts", "sys:images", "sys:videos",
+        "sys:audio", "sys:docs", "sys:code", "config", "cache",
+    }
 
     for cat_id, count, sz in rows:
         if not sz:
             continue
-        label, emoji = cat_meta.get(cat_id, (cat_id or "Outros", "📁"))
+        label, _emoji = cat_meta.get(cat_id, (cat_id or "Other", ""))
 
-        target_id = cat_id
+        target_id    = cat_id
         target_label = label
-        target_emoji = emoji
-        is_system = cat_id.startswith("sys:")
+        is_system    = cat_id.startswith("sys:")
 
-        if cat_id in APP_IDS or "aplicativo" in label.lower() or "apps" in label.lower():
-            target_id = "unified_apps"
-            target_label = "Aplicativos"
-            target_emoji = ""
-            is_system = False
+        if cat_id in APP_IDS or "application" in label.lower() or "apps" in label.lower():
+            target_id    = "unified_apps"
+            target_label = "Applications"
+            is_system    = False
 
-        elif is_system or cat_id in SYS_IDS or "sistema" in label.lower() or "cache" in label.lower():
-            target_id = "sys:unified"
-            target_label = "Sistema"
-            target_emoji = ""
-            is_system = True
+        elif is_system or cat_id in SYS_IDS or "system" in label.lower() or "cache" in label.lower():
+            target_id    = "sys:unified"
+            target_label = "System"
+            is_system    = True
 
         if target_id not in data_map:
             data_map[target_id] = {
-                "id": target_id,
-                "label": target_label,
-                "emoji": target_emoji,
-                "size": 0,
-                "count": 0,
-                "color": get_color(target_id, target_label),
-                "is_system": is_system
+                "id":        target_id,
+                "label":     target_label,
+                "size":      0,
+                "count":     0,
+                "color":     get_color(target_id, target_label),
+                "is_system": is_system,
             }
 
         data_map[target_id]["size"]  += sz
@@ -595,34 +626,33 @@ def print_json(compiled: dict, cat_meta: dict) -> None:
             data_map["sys:unified"]["size"] += system_delta
         else:
             data_map["sys:unified"] = {
-                "id": "sys:unified",
-                "label": "Sistema",
-                "emoji": "⚙️",
-                "size": system_delta,
-                "count": 0,
-                "color": get_color("sys:unified", "Sistema"),
-                "is_system": True
+                "id":        "sys:unified",
+                "label":     "System",
+                "size":      system_delta,
+                "count":     0,
+                "color":     get_color("sys:unified", "System"),
+                "is_system": True,
             }
 
     final_data = sorted(data_map.values(), key=lambda x: x["size"], reverse=True)
     print(json.dumps({
-        "disk_total": disk_total,
-        "disk_used": disk_used,
+        "disk_total":    disk_total,
+        "disk_used":     disk_used,
         "scanned_total": total_scanned,
-        "data": final_data
+        "data":          final_data,
     }, ensure_ascii=False))
 
 
-# ─────────────────────────────────────────
+# -----------------------------------------
 # CLI
-# ─────────────────────────────────────────
+# -----------------------------------------
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="storagesense",
-        description="Analisador de armazenamento estilo macOS.",
+        description="macOS-style storage analyzer.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-exemplos:
+examples:
   storagesense scan
   storagesense scan --quiet
   storagesense list
@@ -630,13 +660,13 @@ exemplos:
   storagesense clear-cache
         """,
     )
-    sub = p.add_subparsers(dest="command", metavar="<comando>")
-    scan_p = sub.add_parser("scan", help="Varre o disco e exibe relatório")
-    scan_p.add_argument("--quiet", "-q", action="store_true", help="Sem progresso")
-    sub.add_parser("list",        help="Lista categorias do JSON")
-    sub.add_parser("info",        help="Info do cache")
-    sub.add_parser("json",        help="Saída em JSON para integração")
-    sub.add_parser("clear-cache", help="Apaga o cache")
+    sub = p.add_subparsers(dest="command", metavar="<command>")
+    scan_p = sub.add_parser("scan", help="Scan the disk and display a report")
+    scan_p.add_argument("--quiet", "-q", action="store_true", help="No progress output")
+    sub.add_parser("list",        help="List categories from the JSON file")
+    sub.add_parser("info",        help="Show cache info")
+    sub.add_parser("json",        help="Output results as JSON for integration")
+    sub.add_parser("clear-cache", help="Delete the cache")
     return p
 
 
@@ -665,9 +695,9 @@ def main() -> None:
         case "clear-cache":
             if DB_PATH.exists():
                 DB_PATH.unlink()
-                print(f"✅  Cache removido: {DB_PATH}")
+                print(f"Cache removed: {DB_PATH}")
             else:
-                print("ℹ️  Nenhum cache encontrado.")
+                print("No cache found.")
 
 
 if __name__ == "__main__":
