@@ -12,5 +12,4 @@ Thumbs.db
 *.log
 *.tmp
 *.bak
-*~[
 .sqlite
