@@ -1,8 +1,10 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.impl 2.15
+import "/home/agony/.local/share/Astrea/Features/System/DragDropSupport.js" as DragDropSupport
 import "../.."
 import "../common" as Common
+import "file:///home/agony/.local/share/Astrea/Features/System" as AstreaSystem
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Root transparente — serve apenas como âncora de posição na janela.
@@ -10,7 +12,7 @@ import "../common" as Common
 // ─────────────────────────────────────────────────────────────────────────────
 Item {
     id: root
-    width: 224          // largura total incluindo margens externas
+    width: 256          // largura total incluindo margens externas
 
     // ── Propriedades do drive context-menu (sem alteração) ────────────────────
     property bool   driveMenuOpen:        false
@@ -45,10 +47,13 @@ Item {
         driveMenuOpen = false
     }
 
+    function handleDroppedUrls(drop, destinationPath) {
+        DragDropSupport.handleDroppedUrls(AppState, drop, destinationPath)
+    }
+
     // ── Card flutuante principal ───────────────────────────────────────────────
-    Rectangle {
+    AstreaSystem.SidebarFrame {
         id: floatingCard
-        // Margens externas: 10 px topo/base, 12 px lados
         anchors {
             fill:           parent
             topMargin:      10
@@ -56,173 +61,139 @@ Item {
             leftMargin:     12
             rightMargin:    8
         }
+        backgroundColor: Qt.rgba(Theme.bg.r, Theme.bg.g, Theme.bg.b, 0.96)
+        washColor: Qt.rgba(1, 1, 1, 0.02)
+        borderColor: Qt.rgba(1, 1, 1, 0.09)
 
-        radius: 22
-        clip:   true                // ScrollView respeita os cantos arredondados
+        // ── Header ────────────────────────────────────────────────────
+        Item {
+            width:  parent.width - 28
+            x:      14
+            height: 36
 
-        // Fundo alinhado ao canvas principal, mantendo o card flutuante
-        color: Qt.rgba(Theme.bg.r, Theme.bg.g, Theme.bg.b, 0.96)
+            Text {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter:   parent.verticalCenter
+                text:  "Finder"
+                color: Theme.text
+                font { pixelSize: 22; weight: Font.Bold; letterSpacing: -0.5 }
+            }
 
-        Rectangle {
-            anchors.fill: parent
-            radius: parent.radius
-            color: Qt.rgba(1, 1, 1, 0.02)
-        }
+            Rectangle {
+                id: searchBtn
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+                width:  28
+                height: 28
+                radius: 9
+                color:  searchHover.containsMouse
+                            ? Qt.rgba(1, 1, 1, 0.10)
+                            : Qt.rgba(1, 1, 1, 0.04)
 
-        // Borda externa sutil
-        Rectangle {
-            anchors.fill: parent
-            radius: parent.radius
-            color: "transparent"
-            border.width: 1
-            border.color: Qt.rgba(1, 1, 1, 0.09)
-        }
+                Behavior on color { ColorAnimation { duration: 100 } }
 
-        // ── ScrollView com conteúdo ───────────────────────────────────────────
-        ScrollView {
-            anchors.fill: parent
-            contentWidth: availableWidth
-            ScrollBar.vertical.policy:   ScrollBar.AsNeeded
-            ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-            clip: true
-
-            Column {
-                width: parent.width
-                topPadding:    20
-                bottomPadding: 20
-                spacing:       2
-
-                // ── Header ────────────────────────────────────────────────────
-                Item {
-                    width:  parent.width - 28
-                    x:      14
-                    height: 36
-
-                    Text {
-                        anchors.left:           parent.left
-                        anchors.verticalCenter: parent.verticalCenter
-                        text:  "Finder"
-                        color: Theme.text
-                        font { pixelSize: 22; weight: Font.Bold; letterSpacing: -0.5 }
-                    }
-
-                    Rectangle {
-                        id: searchBtn
-                        anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                        width:  28
-                        height: 28
-                        radius: 9
-                        color:  searchHover.containsMouse
-                                    ? Qt.rgba(1, 1, 1, 0.10)
-                                    : Qt.rgba(1, 1, 1, 0.04)
-
-                        Behavior on color { ColorAnimation { duration: 100 } }
-
-                        IconImage {
-                            name: "system-search"
-                            width: 14; height: 14
-                            sourceSize: Qt.size(14, 14)
-                            anchors.centerIn: parent
-                            opacity: 0.55
-                            visible: !AppState.isPortalDialog
-                        }
-
-                        Image {
-                            source: AppState.portalIconSource("system-search", 16)
-                            width: 14; height: 14
-                            anchors.centerIn: parent
-                            opacity: 0.70
-                            visible: AppState.isPortalDialog
-                            fillMode: Image.PreserveAspectFit
-                            smooth: true
-                            asynchronous: true
-                        }
-
-                        MouseArea {
-                            id: searchHover
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: AppState.startSearch()
-                        }
-                    }
+                IconImage {
+                    name: "system-search"
+                    width: 14; height: 14
+                    sourceSize: Qt.size(14, 14)
+                    anchors.centerIn: parent
+                    opacity: 0.55
+                    visible: !AppState.isPortalDialog
                 }
 
-                Item { width: 1; height: 10 }
-
-                // ── Pessoal ───────────────────────────────────────────────────
-                SidebarSection { label: "PESSOAL" }
-                SidebarItem { icon: "inode-directory";      label: "Pasta Pessoal"; path: "/home/agony" }
-                SidebarItem { icon: "document-open-recent"; label: "Recentes";      path: "/home/agony" }
-
-                Item { width: 1; height: 4 }
-
-                // ── Favoritos ─────────────────────────────────────────────────
-                SidebarSection { label: "FAVORITOS" }
-                Repeater {
-                    model: [
-                        { label: "Desktop",    icon: "user-desktop",      path: "/home/agony/Área de trabalho" },
-                        { label: "Documentos", icon: "folder-documents",  path: "/home/agony/Documentos" },
-                        { label: "Downloads",  icon: "folder-downloads",  path: "/home/agony/Downloads" },
-                        { label: "Imagens",    icon: "folder-pictures",   path: "/home/agony/Imagens" },
-                        { label: "Músicas",    icon: "folder-music",      path: "/home/agony/Músicas" },
-                        { label: "Vídeos",     icon: "folder-videos",     path: "/home/agony/Vídeos" },
-                        { label: "Público",    icon: "folder-publicshare",path: "/home/agony/Público" },
-                        { label: "Modelos",    icon: "folder-templates",  path: "/home/agony/Modelos" },
-                    ]
-                    SidebarItem { icon: modelData.icon; label: modelData.label; path: modelData.path }
+                Image {
+                    source: AppState.portalIconSource("system-search", 16)
+                    width: 14; height: 14
+                    anchors.centerIn: parent
+                    opacity: 0.70
+                    visible: AppState.isPortalDialog
+                    fillMode: Image.PreserveAspectFit
+                    smooth: true
+                    asynchronous: true
                 }
 
-                Item { width: 1; height: 4 }
-
-                // ── Dispositivos ──────────────────────────────────────────────
-                SidebarSection { label: "DISPOSITIVOS" }
-                SidebarItem { icon: "drive-harddisk"; label: "Sistema"; path: "/" }
-                Repeater {
-                    model: AppState.deviceModel
-                    DeviceSidebarItem {
-                        deviceId:    model.id
-                        icon:        model.icon
-                        label:       model.title
-                        subtitle:    model.subtitle
-                        path:        model.mountPath
-                        devicePath:  model.devicePath
-                        mounted:     model.mounted
-                        canMount:    model.canMount
-                        canUnmount:  model.canUnmount
-                        autoMount:   model.autoMount
-                        busy:        model.busy
-                    }
+                MouseArea {
+                    id: searchHover
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: AppState.startSearch()
                 }
-                SidebarItem {
-                    icon:   "network-workgroup"
-                    label:  "Rede"
-                    action: "network"
-                    path:   AppState.networkRootPath
-                }
-                Text {
-                    width: parent.width - 28
-                    x: 14
-                    visible: AppState.deviceError !== ""
-                    text:    AppState.deviceError
-                    color:   "#ff9a9a"
-                    wrapMode: Text.WordWrap
-                    font.pixelSize: 11
-                }
-
-                Item { width: 1; height: 4 }
-
-                // ── Outro ─────────────────────────────────────────────────────
-                SidebarSection { label: "OUTRO" }
-                SidebarItem {
-                    icon:  "user-trash"
-                    label: "Lixeira"
-                    path:  "/home/agony/.local/share/Trash/files"
-                }
-
-                Item { width: 1; height: 6 }
             }
         }
+
+        Item { width: 1; height: 10 }
+
+        // ── Pessoal ───────────────────────────────────────────────────
+        SidebarSection { label: "PESSOAL" }
+        SidebarItem { icon: "inode-directory";      label: "Pasta Pessoal"; path: "/home/agony" }
+        SidebarItem { icon: "document-open-recent"; label: "Recentes";      path: AppState.recentVirtualPath }
+
+        Item { width: 1; height: 4 }
+
+        // ── Favoritos ─────────────────────────────────────────────────
+        SidebarSection { label: "FAVORITOS" }
+        Repeater {
+            model: [
+                { label: "Desktop",    icon: "user-desktop",      path: "/home/agony/Área de trabalho" },
+                { label: "Documentos", icon: "folder-documents",  path: "/home/agony/Documentos" },
+                { label: "Downloads",  icon: "folder-downloads",  path: "/home/agony/Downloads" },
+                { label: "Imagens",    icon: "folder-pictures",   path: "/home/agony/Imagens" },
+                { label: "Músicas",    icon: "folder-music",      path: "/home/agony/Músicas" },
+                { label: "Vídeos",     icon: "folder-videos",     path: "/home/agony/Vídeos" },
+                { label: "Público",    icon: "folder-publicshare",path: "/home/agony/Público" },
+                { label: "Modelos",    icon: "folder-templates",  path: "/home/agony/Modelos" }
+            ]
+            SidebarItem { icon: modelData.icon; label: modelData.label; path: modelData.path }
+        }
+
+        Item { width: 1; height: 4 }
+
+        // ── Dispositivos ──────────────────────────────────────────────
+        SidebarSection { label: "DISPOSITIVOS" }
+        SidebarItem { icon: "drive-harddisk"; label: "Sistema"; path: "/" }
+        Repeater {
+            model: AppState.deviceModel
+            DeviceSidebarItem {
+                deviceId:    model.id
+                icon:        model.icon
+                label:       model.title
+                subtitle:    model.subtitle
+                path:        model.mountPath
+                devicePath:  model.devicePath
+                mounted:     model.mounted
+                canMount:    model.canMount
+                canUnmount:  model.canUnmount
+                autoMount:   model.autoMount
+                busy:        model.busy
+            }
+        }
+        SidebarItem {
+            icon:   "network-workgroup"
+            label:  "Rede"
+            action: "network"
+            path:   AppState.networkRootPath
+        }
+        Text {
+            width: parent.width - 28
+            x: 14
+            visible: AppState.deviceError !== ""
+            text:    AppState.deviceError
+            color:   "#ff9a9a"
+            wrapMode: Text.WordWrap
+            font.pixelSize: 11
+        }
+
+        Item { width: 1; height: 4 }
+
+        // ── Outro ─────────────────────────────────────────────────────
+        SidebarSection { label: "OUTRO" }
+        SidebarItem {
+            icon:  "user-trash"
+            label: "Lixeira"
+            path:  "/home/agony/.local/share/Trash/files"
+        }
+
+        Item { width: 1; height: 6 }
     }
 
     // ── Drive context-menu overlay (sem alteração de lógica) ──────────────────
@@ -322,6 +293,7 @@ Item {
         property string label
         property string path
         property string action
+        readonly property bool acceptsDrop: action === "" && path.indexOf("/") === 0
 
         readonly property bool active: action === "network"
             ? (AppState.currentPath === AppState.networkRootPath ||
@@ -336,10 +308,13 @@ Item {
         // Pill de fundo: ativo = azul suave, hover = branco ultra-sutil
         color: active
             ? Qt.rgba(0.20, 0.48, 0.95, 0.22)
-            : hoverArea.containsMouse ? Qt.rgba(1, 1, 1, 0.055) : "transparent"
+            : sidebarDropTarget.containsDrag ? Qt.rgba(0.49, 0.72, 0.97, 0.18)
+            : itemHover.hovered ? Qt.rgba(1, 1, 1, 0.055) : "transparent"
 
-        border.width: active ? 1 : 0
-        border.color: active ? Qt.rgba(0.55, 0.78, 1, 0.20) : "transparent"
+        border.width: (active || sidebarDropTarget.containsDrag) ? 1 : 0
+        border.color: active
+            ? Qt.rgba(0.55, 0.78, 1, 0.20)
+            : sidebarDropTarget.containsDrag ? Qt.rgba(0.49, 0.72, 0.97, 0.45) : "transparent"
 
         Behavior on color       { ColorAnimation { duration: 110 } }
         Behavior on border.color{ ColorAnimation { duration: 110 } }
@@ -361,29 +336,20 @@ Item {
                 radius: 7
                 color: active
                     ? Qt.rgba(1, 1, 1, 0.13)
-                    : hoverArea.containsMouse ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(1, 1, 1, 0.05)
+                    : itemHover.hovered ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(1, 1, 1, 0.05)
                 anchors.verticalCenter: parent.verticalCenter
 
                 Behavior on color { ColorAnimation { duration: 110 } }
 
-                IconImage {
-                    name: sbItem.icon
-                    width: 13; height: 13
-                    sourceSize: Qt.size(13, 13)
-                    anchors.centerIn: parent
-                    color: sbItem.active ? Theme.text : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.72)
-                    visible: !AppState.isPortalDialog
-                }
-
                 Image {
                     source: AppState.portalIconSource(sbItem.icon, 16)
-                    width: 13; height: 13
+                    width: 14; height: 14
                     anchors.centerIn: parent
-                    visible: AppState.isPortalDialog
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     asynchronous: true
-                    opacity: sbItem.active ? 1.0 : 0.72
+                    sourceSize: Qt.size(14, 14)
+                    opacity: sbItem.active ? 0.98 : 0.74
                 }
             }
 
@@ -395,7 +361,7 @@ Item {
                     : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.78)
                 font {
                     pixelSize: 13
-                    weight: sbItem.active ? Font.SemiBold : Font.Medium
+                    weight: sbItem.active ? Font.DemiBold : Font.Normal
                 }
                 anchors.verticalCenter: parent.verticalCenter
                 elide: Text.ElideRight
@@ -416,9 +382,14 @@ Item {
             }
         }
 
+        HoverHandler {
+            id: itemHover
+        }
+
         MouseArea {
             id: hoverArea
             anchors.fill: parent
+            z: 1
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: {
@@ -426,6 +397,19 @@ Item {
                     AppState.openNetworkBrowser()
                 else
                     AppState.navigateTo(sbItem.path)
+            }
+        }
+
+        DropArea {
+            id: sidebarDropTarget
+            anchors.fill: parent
+            z: 0
+            enabled: sbItem.acceptsDrop
+
+            onDropped: function(drop) {
+                if (drop.accepted)
+                    return
+                root.handleDroppedUrls(drop, sbItem.path)
             }
         }
     }
@@ -483,26 +467,15 @@ Item {
 
                 Behavior on color { ColorAnimation { duration: 110 } }
 
-                IconImage {
-                    name: deviceItem.icon
-                    width: 13; height: 13
-                    sourceSize: Qt.size(13, 13)
-                    anchors.centerIn: parent
-                    color: deviceItem.active ? Theme.text : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.68)
-                    visible: !AppState.isPortalDialog
-                    opacity: deviceItem.busy ? 0.40 : 1.0
-                    Behavior on opacity { NumberAnimation { duration: 160 } }
-                }
-
                 Image {
                     source: AppState.portalIconSource(deviceItem.icon, 16)
-                    width: 13; height: 13
+                    width: 14; height: 14
                     anchors.centerIn: parent
-                    visible: AppState.isPortalDialog
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     asynchronous: true
-                    opacity: deviceItem.busy ? 0.40 : (deviceItem.active ? 1.0 : 0.68)
+                    sourceSize: Qt.size(14, 14)
+                    opacity: deviceItem.busy ? 0.40 : (deviceItem.active ? 0.98 : 0.70)
                     Behavior on opacity { NumberAnimation { duration: 160 } }
                 }
             }
@@ -520,7 +493,7 @@ Item {
                         : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.78)
                     font {
                         pixelSize: 13
-                        weight: deviceItem.active ? Font.SemiBold : Font.Medium
+                        weight: deviceItem.active ? Font.DemiBold : Font.Normal
                     }
                     elide: Text.ElideRight
                     opacity: deviceItem.busy ? 0.50 : 1.0

@@ -1,8 +1,10 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.impl 2.15
+import "/home/agony/.local/share/Astrea/Features/System/DragDropSupport.js" as DragDropSupport
 import "../.."
 import "../common" as CommonComponents
+import "ViewShared.js" as ViewShared
 
 // ── FileListView ──────────────────────────────────────────────────────────────
 // Column-based list with sortable header. Optimised for large directories.
@@ -29,6 +31,13 @@ import "../common" as CommonComponents
 
 Item {
     id: root
+    property ListModel displayModel: ListModel {}
+    property string trackedPath: ""
+    property bool scrollSyncReady: false
+    property bool restoringScroll: false
+    property real pendingRestoreY: 0
+    property int restoreAttempts: 0
+    property alias restoreRetryTimerRef: restoreRetryTimer
 
     // ── Activation (double-click emulation) ───────────────────────────────
     property string lastActivationCandidatePath: ""
@@ -59,28 +68,85 @@ Item {
 
     // ── Helpers ───────────────────────────────────────────────────────────
     function resetActivationCandidate() {
-        lastActivationCandidatePath = ""
-        lastActivationCandidateAt   = 0
+        ViewShared.resetActivationCandidate(root)
     }
 
     function handlePrimaryItemClick(path, isDir, fileUrl, fileName, index, modifiers) {
-        const ctrl  = Boolean(modifiers & Qt.ControlModifier)
-        const shift = Boolean(modifiers & Qt.ShiftModifier)
-        AppState.handleSelection(fileName, index, ctrl, shift, false)
-        if (ctrl || shift) return
-
-        const now = Date.now()
-        if (lastActivationCandidatePath === path &&
-                (now - lastActivationCandidateAt) <= activationIntervalMs) {
-            resetActivationCandidate()
-            AppState.openItem(path, isDir, fileUrl)
-            return
-        }
-        lastActivationCandidatePath = path
-        lastActivationCandidateAt   = now
+        ViewShared.handlePrimaryItemClick(root, AppState, path, isDir, fileUrl, fileName, index, modifiers)
     }
 
-    function clamp(value, min, max) { return Math.max(min, Math.min(max, value)) }
+    function clamp(value, min, max) { return ViewShared.clamp(value, min, max) }
+
+    function prepareScrollRestore(path) {
+        ViewShared.prepareScrollRestore(root, AppState, "list", path)
+    }
+
+    function applyPendingScrollRestore() {
+        ViewShared.applyPendingScrollRestore(root, AppState, list)
+    }
+
+    function refreshAfterModelChange() {
+        ViewShared.refreshAfterModelChange(
+            root,
+            AppState,
+            list,
+            "list",
+            function() { root.rebuildDisplayModel() },
+            function() { root.applyPendingScrollRestore() }
+        )
+        warmTimer.restart()
+    }
+
+    function normalizedKind(kind, isDir, name) {
+        return ViewShared.normalizedKind(kind, isDir, name)
+    }
+
+    function sizeGroup(size, isDir) {
+        return ViewShared.sizeGroup(size, isDir)
+    }
+
+    function dateGroup(modified) {
+        return ViewShared.dateGroup(modified)
+    }
+
+    function handleDroppedUrls(drop, destinationPath) {
+        DragDropSupport.handleDroppedUrls(AppState, drop, destinationPath)
+    }
+
+    function groupLabelForItem(item) {
+        return ViewShared.groupLabelForItem(AppState, item)
+    }
+
+    function rebuildDisplayModel() {
+        displayModel.clear()
+        var currentGroup = ""
+        for (var i = 0; i < AppState.fileModel.count; i++) {
+            var item = AppState.fileModel.get(i)
+            var groupLabel = groupLabelForItem(item)
+            if (groupLabel && groupLabel !== currentGroup) {
+                displayModel.append({
+                    rowType: "header",
+                    headerTitle: groupLabel,
+                    fileHidden: false
+                })
+                currentGroup = groupLabel
+            }
+            displayModel.append({
+                rowType: "item",
+                headerTitle: "",
+                sourceIndex: i,
+                fileName: item.fileName,
+                filePath: item.filePath,
+                fileUrl: item.fileUrl,
+                fileIsDir: item.fileIsDir,
+                fileHidden: item.fileHidden,
+                fileSize: item.fileSize,
+                fileModified: item.fileModified,
+                fileKind: item.fileKind,
+                filePreviewUrl: item.filePreviewUrl
+            })
+        }
+    }
 
     // ── Shared UI helpers ─────────────────────────────────────────────────
     CommonComponents.FileContextMenu {
@@ -95,6 +161,54 @@ Item {
         function copyPath(path) {
             text = path; forceActiveFocus(); select(0, path.length); copy(); text = ""
         }
+    }
+
+    Connections {
+        target: AppState.fileModel
+        function onCountChanged() { root.refreshAfterModelChange() }
+    }
+
+    Connections {
+        target: AppState
+        function onSortFieldChanged() { root.rebuildDisplayModel() }
+        function onSortAscChanged() { root.rebuildDisplayModel() }
+        function onGroupingEnabledChanged() { root.rebuildDisplayModel() }
+        function onLoadingDirChanged() {
+            if (AppState.loadingDir)
+                root.prepareScrollRestore(AppState.currentPath)
+            else
+                root.applyPendingScrollRestore()
+        }
+        function onCurrentPathChanged() {
+            if (root.trackedPath && root.trackedPath !== AppState.currentPath)
+                AppState.rememberScrollPosition(root.trackedPath, "list", list.contentY)
+            root.prepareScrollRestore(AppState.currentPath)
+            root.rebuildDisplayModel()
+            warmTimer.restart()
+        }
+    }
+
+    Component.onCompleted: {
+        rebuildDisplayModel()
+        prepareScrollRestore(AppState.currentPath)
+        Qt.callLater(function() { root.applyPendingScrollRestore() })
+    }
+
+    DropArea {
+        anchors.fill: parent
+
+        onDropped: function(drop) {
+            if (drop.accepted)
+                return
+            root.handleDroppedUrls(drop, AppState.currentPath)
+        }
+    }
+
+    Timer {
+        id: restoreRetryTimer
+        interval: 35
+        repeat: false
+        onTriggered: root.applyPendingScrollRestore()
     }
 
     // ── Sortable header ───────────────────────────────────────────────────
@@ -129,7 +243,7 @@ Item {
                         Text {
                             text: modelData.label
                             color: parent.parent.isActive ? Theme.accent : Theme.textSec
-                            font { pixelSize: 11; weight: Font.Medium }
+                            font { pixelSize: 11; weight: Font.Normal }
                         }
 
                         Text {
@@ -160,7 +274,7 @@ Item {
     ListView {
         id: list
         anchors { top: header.bottom; left: parent.left; right: parent.right; bottom: parent.bottom }
-        model: AppState.fileModel
+        model: root.displayModel
         clip: true
 
         // Reuse delegates — safe because all bindings are model-role driven.
@@ -178,18 +292,46 @@ Item {
             return idx < 0 ? Math.min(count - 1, firstVisibleIndex + 18) : idx
         }
 
+        function sourceIndexNear(proxyIndex, fallbackToEnd) {
+            if (proxyIndex < 0)
+                return fallbackToEnd ? Math.max(0, AppState.fileModel.count - 1) : 0
+            var start = Math.max(0, Math.min(proxyIndex, root.displayModel.count - 1))
+            if (fallbackToEnd) {
+                for (var i = start; i >= 0; i--) {
+                    var row = root.displayModel.get(i)
+                    if (row.rowType === "item")
+                        return row.sourceIndex
+                }
+                return Math.max(0, AppState.fileModel.count - 1)
+            }
+            for (var j = start; j < root.displayModel.count; j++) {
+                var nextRow = root.displayModel.get(j)
+                if (nextRow.rowType === "item")
+                    return nextRow.sourceIndex
+            }
+            return 0
+        }
+
         // ── Thumbnail warm-up ─────────────────────────────────────────────
         function warmVisible() {
-            if (count <= 0) return
+            if (AppState.fileModel.count <= 0) return
             const first = indexAt(8, contentY + 1)
             const last  = indexAt(8, contentY + height - 2)
             AppState.scheduleVisibleThumbnailWarm(
-                first < 0 ? 0 : first,
-                last  < 0 ? Math.min(count - 1, (first < 0 ? 0 : first) + 36) : Math.min(count - 1, last + 12))
+                sourceIndexNear(first < 0 ? 0 : first, false),
+                sourceIndexNear(last < 0 ? Math.min(root.displayModel.count - 1, (first < 0 ? 0 : first) + 36) : Math.min(root.displayModel.count - 1, last + 12), true))
         }
 
-        onContentYChanged: warmTimer.restart()
-        onHeightChanged:   warmTimer.restart()
+        onContentYChanged: {
+            warmTimer.restart()
+            if (root.scrollSyncReady && !root.restoringScroll && root.trackedPath === AppState.currentPath)
+                AppState.rememberScrollPosition(root.trackedPath, "list", contentY)
+        }
+        onHeightChanged: {
+            warmTimer.restart()
+            root.applyPendingScrollRestore()
+        }
+        onContentHeightChanged: root.applyPendingScrollRestore()
         Component.onCompleted: warmTimer.restart()
 
         Timer { id: warmTimer; interval: 80; repeat: false; onTriggered: list.warmVisible() }
@@ -247,20 +389,32 @@ Item {
         delegate: Rectangle {
             id: row
 
+            readonly property bool isHeaderRow: rowType === "header"
             // Model aliases — make intent clear
-            readonly property string itemPath:    filePath
-            readonly property string itemUrl:     fileUrl
-            readonly property bool   itemIsDir:   fileIsDir
-            readonly property string itemName:    fileName
-            readonly property bool   isPreviewable: AppState.previewsEnabled &&
+            readonly property string itemPath:    isHeaderRow ? "" : filePath
+            readonly property string itemUrl:     isHeaderRow ? "" : fileUrl
+            readonly property bool   itemIsDir:   isHeaderRow ? false : fileIsDir
+            readonly property string itemName:    isHeaderRow ? "" : fileName
+            readonly property int    itemSourceIndex: isHeaderRow ? -1 : sourceIndex
+            readonly property string itemIconName: isHeaderRow ? "" : AppState.fileIconName(itemName, itemIsDir)
+            readonly property bool   isPreviewable: !isHeaderRow &&
+                                                    AppState.previewsEnabled &&
                                                     !itemIsDir &&
                                                     filePreviewUrl !== ""
-            readonly property bool   hasPreview:  filePreviewUrl !== ""
-            property url    activePreviewUrl: filePreviewUrl
+            readonly property bool   hasPreview:  !isHeaderRow && filePreviewUrl !== ""
+            property url    activePreviewUrl: isHeaderRow ? "" : filePreviewUrl
 
-            ListView.onReused: { activePreviewUrl = ""; activePreviewUrl = Qt.binding(function(){ return filePreviewUrl }) }
+            ListView.onReused: {
+                activePreviewUrl = ""
+                if (!isHeaderRow)
+                    activePreviewUrl = Qt.binding(function(){ return filePreviewUrl })
+            }
             readonly property int    previewRequestSize: root.previewSize
             readonly property int    previewDisplaySize: Math.min(root.iconFrameSize, Math.round(root.iconFrameSize * 0.82))
+            readonly property int    dragPreviewSize: Math.max(42, Math.round(root.iconFrameSize * 0.9))
+            readonly property url    dragImageUrl: DragDropSupport.dragImageUrl(
+                                                    hasPreview && activePreviewUrl ? activePreviewUrl : "",
+                                                    isHeaderRow ? Qt.resolvedUrl("") : AppState.portalIconSource(itemIconName, dragPreviewSize))
 
             // Drag support
             property bool dragging: false
@@ -270,20 +424,37 @@ Item {
             Drag.dragType: Drag.Automatic
             Drag.supportedActions: Qt.CopyAction
             Drag.mimeData: ({ "text/uri-list": itemUrl, "text/plain": itemPath })
-            Drag.imageSource: hasPreview && filePreviewUrl ? filePreviewUrl : Qt.resolvedUrl("")
-            Drag.hotSpot: Qt.point(width / 2, height / 2)
+            Drag.imageSource: dragImageUrl
+            Drag.imageSourceSize: Qt.size(dragPreviewSize, dragPreviewSize)
+            Drag.hotSpot: Qt.point(dragPreviewSize / 2, dragPreviewSize / 2)
 
             width:   ListView.view.width
-            height:  root.rowHeight
+            height:  isHeaderRow ? 30 : root.rowHeight
             radius:  5
-            color:   AppState.itemColor(itemName, hover.containsMouse)
+            color:   isHeaderRow ? "transparent" : (dropTarget.containsDrag
+                                                    ? Qt.rgba(0.49, 0.72, 0.97, 0.18)
+                                                    : AppState.itemColor(itemName, rowHover.hovered))
 
-            opacity: AppState.isCutPending(itemName) ? 0.4 : 1.0
+            opacity: isHeaderRow ? 1.0 : ((AppState.isCutPending(itemName) || fileHidden) ? 0.4 : 1.0)
             Behavior on opacity { NumberAnimation { duration: 120 } }
+
+            Text {
+                anchors {
+                    left: parent.left
+                    leftMargin: 12
+                    verticalCenter: parent.verticalCenter
+                }
+                visible: row.isHeaderRow
+                text: headerTitle
+                color: Theme.accent
+                font.pixelSize: 12
+                font.weight: Font.DemiBold
+            }
 
             // ── Row content ───────────────────────────────────────────────
             Row {
                 anchors.fill: parent
+                visible: !row.isHeaderRow
 
                 // Name column
                 Item {
@@ -302,7 +473,7 @@ Item {
                             IconImage {
                                 anchors.centerIn: parent
                                 visible: (!row.hasPreview || previewImage.status !== Image.Ready) && !AppState.isPortalDialog
-                                name: AppState.fileIconName(itemName, itemIsDir)
+                                name: itemIconName
                                 width: root.iconFrameSize; height: root.iconFrameSize
                                 sourceSize: Qt.size(root.iconFrameSize, root.iconFrameSize)
                             }
@@ -311,8 +482,7 @@ Item {
                             Image {
                                 anchors.centerIn: parent
                                 visible: (!row.hasPreview || previewImage.status !== Image.Ready) && AppState.isPortalDialog
-                                source: AppState.portalIconSource(
-                                    AppState.fileIconName(itemName, itemIsDir), root.iconFrameSize)
+                                source: AppState.portalIconSource(itemIconName, root.iconFrameSize)
                                 width: root.iconFrameSize; height: root.iconFrameSize
                                 fillMode: Image.PreserveAspectFit
                                 asynchronous: true; smooth: true
@@ -381,17 +551,41 @@ Item {
             // ── Selection ring (outside Row so it's never clipped) ────────
             Rectangle {
                 anchors { fill: parent; leftMargin: 2; rightMargin: 2 }
+                visible: !row.isHeaderRow
                 radius: 5; color: "transparent"
                 border {
-                    color: AppState.isSelected(itemName) ? Theme.selectedBdr : "transparent"
+                    color: dropTarget.containsDrag
+                           ? "#7eb8f7"
+                           : (AppState.isSelected(itemName) ? Theme.selectedBdr : "transparent")
                     width: 1
                 }
+            }
+
+            DropArea {
+                id: dropTarget
+                anchors.fill: parent
+                z: 0
+                enabled: !row.isHeaderRow && itemIsDir
+
+                onDropped: function(drop) {
+                    if (drop.accepted)
+                        return
+                    row.dragging = false
+                    root.handleDroppedUrls(drop, itemPath)
+                }
+            }
+
+            HoverHandler {
+                id: rowHover
+                enabled: !row.isHeaderRow
             }
 
             // ── Interaction ───────────────────────────────────────────────
             MouseArea {
                 id: hover
                 anchors.fill: parent
+                z: 1
+                enabled: !row.isHeaderRow
                 acceptedButtons: Qt.LeftButton | Qt.RightButton
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
@@ -405,18 +599,18 @@ Item {
                     const dist = Math.abs(mouse.x - row.pressX) + Math.abs(mouse.y - row.pressY)
                     if (dist < root.dragStartThreshold) return
                     root.resetActivationCandidate()
-                    AppState.handleSelection(itemName, index, false, false, true)
+                    AppState.handleSelection(itemName, itemSourceIndex, false, false, true)
                     row.dragging = true
                 }
 
                 onClicked: function(mouse) {
                     row.dragging = false
                     if (mouse.button === Qt.LeftButton) {
-                        root.handlePrimaryItemClick(itemPath, itemIsDir, itemUrl, itemName, index, mouse.modifiers)
+                        root.handlePrimaryItemClick(itemPath, itemIsDir, itemUrl, itemName, itemSourceIndex, mouse.modifiers)
                         return
                     }
                     AppState.handleSelection(
-                        itemName, index,
+                        itemName, itemSourceIndex,
                         Boolean(mouse.modifiers & Qt.ControlModifier),
                         Boolean(mouse.modifiers & Qt.ShiftModifier), true)
                     if (mouse.button === Qt.RightButton) {
@@ -426,8 +620,12 @@ Item {
                     }
                 }
 
-                onReleased: row.dragging = false
-                onCanceled: row.dragging = false
+                onReleased: {
+                    row.dragging = false
+                }
+                onCanceled: {
+                    row.dragging = false
+                }
             }
         }
     }

@@ -20,16 +20,19 @@ Item {
     readonly property color popupBg: Theme.popupBg
 
     // ── Constantes e Caminhos ────────────────────────────────────────────────
-    readonly property string _base:       Quickshell.env("HOME") + "/.local/share/Astrea/Features/Paper"
-    readonly property string _scripts:    Quickshell.env("HOME") + "/.local/share/Astrea/System/scripts/wallpaper"
-    readonly property string wpFull:      _base + "/state/wallpaper/wallpaper.jpg"
-    readonly property string wpName_f:    _base + "/state/wallpaper/wallpaper_name.txt"
-    readonly property string transFil:    _base + "/state/wallpaper_transition.txt"
-    readonly property string userDir:     _base + "/library/user"
-    readonly property string dynamicDir:  _base + "/library/dynamic"
-    readonly property string landscapeDir:_base + "/library/landscapes"
+    readonly property string _featureBase: Quickshell.env("HOME") + "/.local/share/Astrea/Features/Paper"
+    readonly property string _userBase:    Quickshell.env("HOME") + "/.local/share/Astrea/Data/user"
+    readonly property string _configBase:  Quickshell.env("HOME") + "/.config/AstreaOS/user"
+    readonly property string _prefsBase:   _configBase + "/paper"
+    readonly property string _scripts:     Quickshell.env("HOME") + "/.local/share/Astrea/Core/bridge/wallpaper"
+    readonly property string wpFull:       _prefsBase + "/wallpaper/wallpaper.jpg"
+    readonly property string wpName_f:     _prefsBase + "/wallpaper/wallpaper_name.txt"
+    readonly property string transFil:     _prefsBase + "/wallpaper_transition.txt"
+    readonly property string userDir:      _userBase + "/wallpapers"
+    readonly property string dynamicDir:   _featureBase + "/library/dynamic"
+    readonly property string landscapeDir: _featureBase + "/library/landscapes"
     readonly property string imgCache:    _scripts + "/img_cache.py"
-    readonly property string _thumbPath:  _base + "/state/wallpaper/wallpaper_thumb.jpg"
+    readonly property string _thumbPath:   _prefsBase + "/wallpaper/wallpaper_thumb.jpg"
 
     property string wpThumb: "file://" + _thumbPath + "?t=" + Date.now()
     property int    selTrans: 0

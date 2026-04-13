@@ -1,1 +1,0 @@
-personalization/personalization.qml

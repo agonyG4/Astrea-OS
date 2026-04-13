@@ -218,7 +218,7 @@ Item {
                 verticalAlignment: Text.AlignVCenter
                 font {
                     family: Theme.fontFamilyDisplay
-                    pixelSize: 12
+                    pixelSize: Theme.fontSizeSmall
                     weight: Font.Medium
                     letterSpacing: 0.3
                 }
@@ -243,7 +243,7 @@ Item {
                 verticalAlignment: Text.AlignVCenter
                 font {
                     family: Theme.fontFamilyDisplay
-                    pixelSize: 14
+                    pixelSize: Theme.fontSizeTitle
                     weight: Font.Medium
                     letterSpacing: 0.35
                 }

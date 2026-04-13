@@ -81,6 +81,11 @@ ApplicationWindow {
     }
 
     Shortcut {
+        sequence: "Ctrl+H"
+        onActivated: AppState.showHidden = !AppState.showHidden
+    }
+
+    Shortcut {
         sequence: "Delete"
         onActivated: AppState.deleteSelected()
     }
@@ -90,7 +95,7 @@ ApplicationWindow {
         spacing: 0
 
         // ── Sidebar (Full Height) ────────────────────────────
-        LayoutComponents.Sidebar { Layout.fillHeight: true; Layout.preferredWidth: 224 }
+        LayoutComponents.Sidebar { Layout.fillHeight: true; Layout.preferredWidth: 256 }
 
         // ── Main Content Area ────────────────────────────────
         ColumnLayout {
@@ -119,6 +124,10 @@ ApplicationWindow {
                             anchors.verticalCenter: parent.verticalCenter
                             radius: 6
                             color: index === AppState.activeTabIndex ? Qt.rgba(1, 1, 1, 0.1) : "transparent"
+
+                            HoverHandler {
+                                id: tabHover
+                            }
                             
                             MouseArea {
                                 anchors.fill: parent
@@ -129,7 +138,7 @@ ApplicationWindow {
                                     anchors.fill: parent
                                     radius: 6
                                     color: Qt.rgba(1, 1, 1, 0.05)
-                                    visible: parent.containsMouse && index !== AppState.activeTabIndex
+                                    visible: tabHover.hovered && index !== AppState.activeTabIndex
                                 }
                             }
                             
@@ -376,7 +385,7 @@ ApplicationWindow {
             text: parent.label
             color: Theme.text
             font.pixelSize: 12
-            font.weight: parent.emphasized || parent.danger ? Font.Medium : Font.Normal
+            font.weight: parent.emphasized || parent.danger ? Font.DemiBold : Font.Normal
         }
 
         MouseArea {

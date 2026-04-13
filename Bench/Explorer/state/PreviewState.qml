@@ -24,7 +24,7 @@ QtObject {
     }
 
     function beginCurrentFolderWarm() {
-        if (!app.currentPath || app.loadingDir || app.searchActive || app.fileModel.count <= 0)
+        if (!app.currentPath || app.loadingDir || app.searchActive || app.isRecentPath(app.currentPath) || app.fileModel.count <= 0)
             return
         requestThumbnailWarm(app.currentPath, 0, viewMode === "icon" ? 18 : 24)
         currentFolderWarmOffset = viewMode === "icon" ? 18 : 24
@@ -33,7 +33,7 @@ QtObject {
     }
 
     function queueNextCurrentFolderWarmChunk() {
-        if (!app.currentPath || app.loadingDir || app.searchActive || currentFolderWarmOffset < 0)
+        if (!app.currentPath || app.loadingDir || app.searchActive || app.isRecentPath(app.currentPath) || currentFolderWarmOffset < 0)
             return
         if (currentFolderWarmOffset >= app.fileModel.count) {
             clearCurrentFolderWarm()
@@ -75,7 +75,7 @@ QtObject {
 
 
     function refreshPreviewMetadata() {
-        if (!app.currentPath || previewRefreshProcess.running || app.searchActive)
+        if (!app.currentPath || previewRefreshProcess.running || app.searchActive || app.isRecentPath(app.currentPath))
             return
 
         activePreviewRefreshPath = app.currentPath
@@ -149,55 +149,199 @@ QtObject {
             var folderIcons = {
                 "desktop": "user-desktop",
                 "área de trabalho": "user-desktop",
+                "home": "user-home",
+                "pasta pessoal": "user-home",
                 "documentos": "folder-documents",
                 "documents": "folder-documents",
-                "downloads": "folder-downloads",
-                "imagens": "folder-pictures",
-                "pictures": "folder-pictures",
-                "fotos": "folder-pictures",
+                "downloads": "folder-download",
+                "download": "folder-download",
+                "imagens": "folder-images",
+                "pictures": "folder-images",
+                "fotos": "folder-images",
+                "photos": "folder-images",
+                "images": "folder-images",
                 "music": "folder-music",
                 "música": "folder-music",
                 "musica": "folder-music",
+                "vídeos": "folder-videos",
                 "videos": "folder-videos",
                 "vídeos": "folder-videos",
                 "movies": "folder-videos",
-                "public": "folder-publicshare",
-                "público": "folder-publicshare",
-                "publico": "folder-publicshare",
+                "public": "folder-public",
+                "público": "folder-public",
+                "publico": "folder-public",
                 "templates": "folder-templates",
                 "modelos": "folder-templates",
+                "github": "folder-github",
+                "git": "folder-git",
+                "gitlab": "folder-gitlab",
+                "games": "folder-games",
+                "jogos": "folder-games",
+                "steam": "folder-steam",
+                "projects": "folder-projects",
+                "projetos": "folder-projects",
+                "development": "folder-development",
+                "desenvolvimento": "folder-development",
+                "scripts": "folder-script",
+                "script": "folder-script",
+                "code": "folder-code",
+                "src": "folder-code",
+                "source": "folder-code",
+                "backup": "folder-build",
+                "backups": "folder-build",
+                "build": "folder-build",
+                "dist": "folder-build",
+                "out": "folder-build",
+                "target": "folder-build",
+                "tmp": "folder-temp",
+                "temp": "folder-temp",
+                "cache": "folder-temp",
+                "logs": "folder-log",
+                "log": "folder-log",
+                "docker": "folder-docker",
+                "android": "folder-android",
+                "java": "folder-java",
+                "html": "folder-html",
+                "www": "folder-html",
+                "web": "folder-html",
+                "cloud": "folder-cloud",
+                "dropbox": "folder-dropbox",
+                "gdrive": "folder-gdrive",
+                "drive": "folder-cloud",
+                "torrent": "folder-torrent",
+                "vbox": "folder-vbox",
+                "virtualbox": "folder-vbox",
+                "wine": "folder-wine",
+                "flatpak": "folder-flatpak",
+                "appimage": "folder-appimage",
+                "extensions": "folder-extension",
+                "extension": "folder-extension",
+                "database": "folder-database",
+                "db": "folder-database",
+                "design": "folder-design",
+                "drawing": "folder-drawing",
+                "paint": "folder-paint",
+                "presentation": "folder-presentation",
+                "slides": "folder-presentation",
+                "table": "folder-table",
+                "spreadsheet": "folder-table",
+                "bookmark": "folder-bookmark",
+                "bookmarks": "folder-bookmark",
+                "book": "folder-book",
+                "books": "folder-book",
+                "notes": "folder-notes",
+                "nota": "folder-notes",
+                "notas": "folder-notes",
+                "mail": "folder-mail",
+                "podcasts": "folder-podcast",
+                "podcast": "folder-podcast",
+                "library": "folder-library",
+                "biblioteca": "folder-library",
+                "important": "folder-important",
+                "importante": "folder-important",
+                "root": "folder-root",
                 "trash": "user-trash",
                 "lixeira": "user-trash"
             }
-            return folderIcons[folderKey] || "inode-directory"
+            if (folderIcons[folderKey])
+                return folderIcons[folderKey]
+
+            var containsRules = [
+                { terms: ["github"], icon: "folder-github" },
+                { terms: ["gitlab"], icon: "folder-gitlab" },
+                { terms: ["steam"], icon: "folder-steam" },
+                { terms: ["game", "games", "jogo", "jogos"], icon: "folder-games" },
+                { terms: ["project", "projects", "projeto", "projetos"], icon: "folder-projects" },
+                { terms: ["dev", "development", "desenvolvimento"], icon: "folder-development" },
+                { terms: ["script", "scripts"], icon: "folder-script" },
+                { terms: ["code", "src", "source", "repo"], icon: "folder-code" },
+                { terms: ["build", "dist", "target", "backup"], icon: "folder-build" },
+                { terms: ["temp", "tmp", "cache"], icon: "folder-temp" },
+                { terms: ["log", "logs"], icon: "folder-log" },
+                { terms: ["docker"], icon: "folder-docker" },
+                { terms: ["android"], icon: "folder-android" },
+                { terms: ["java"], icon: "folder-java" },
+                { terms: ["html", "web", "www"], icon: "folder-html" },
+                { terms: ["cloud", "drive"], icon: "folder-cloud" },
+                { terms: ["dropbox"], icon: "folder-dropbox" },
+                { terms: ["gdrive"], icon: "folder-gdrive" },
+                { terms: ["torrent"], icon: "folder-torrent" },
+                { terms: ["vbox", "virtualbox", "vm"], icon: "folder-vbox" },
+                { terms: ["wine"], icon: "folder-wine" },
+                { terms: ["flatpak"], icon: "folder-flatpak" },
+                { terms: ["appimage"], icon: "folder-appimage" },
+                { terms: ["extension", "extensions", "plugin", "plugins"], icon: "folder-extension" },
+                { terms: ["database", "db", "sql"], icon: "folder-database" },
+                { terms: ["design", "ui", "ux"], icon: "folder-design" },
+                { terms: ["draw", "drawing", "paint", "art"], icon: "folder-drawing" },
+                { terms: ["presentation", "slides"], icon: "folder-presentation" },
+                { terms: ["table", "sheet", "spreadsheet"], icon: "folder-table" },
+                { terms: ["bookmark", "bookmarks"], icon: "folder-bookmark" },
+                { terms: ["book", "books", "ebook"], icon: "folder-book" },
+                { terms: ["note", "notes", "nota", "notas"], icon: "folder-notes" },
+                { terms: ["mail", "email"], icon: "folder-mail" },
+                { terms: ["podcast", "podcasts"], icon: "folder-podcast" },
+                { terms: ["library", "biblioteca"], icon: "folder-library" },
+                { terms: ["important", "importante"], icon: "folder-important" }
+            ]
+            for (var i = 0; i < containsRules.length; i++) {
+                var rule = containsRules[i]
+                for (var j = 0; j < rule.terms.length; j++) {
+                    if (folderKey.indexOf(rule.terms[j]) !== -1)
+                        return rule.icon
+                }
+            }
+
+            return "inode-directory"
         }
 
         var ext = fileName.split(".").pop().toLowerCase()
         var map = {
             "pdf": "application-pdf", "doc": "application-msword",
-            "docx": "application-msword", "txt": "text-plain",
+            "docx": "application-vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "odt": "application-vnd.oasis.opendocument.text",
+            "rtf": "application-rtf",
+            "txt": "text-plain", "log": "text-plain",
             "md": "text-x-markdown",
-            "xls": "application-vnd.ms-excel", "xlsx": "application-vnd.ms-excel",
+            "xls": "application-vnd.ms-excel",
+            "xlsx": "application-vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "ods": "application-vnd.oasis.opendocument.spreadsheet",
             "csv": "text-csv",
-            "ppt": "application-vnd.ms-powerpoint", "pptx": "application-vnd.ms-powerpoint",
+            "ppt": "application-vnd.ms-powerpoint",
+            "pptx": "application-vnd.openxmlformats-officedocument.presentationml.presentation",
+            "odp": "application-vnd.oasis.opendocument.presentation",
             "png": "image-x-generic", "jpg": "image-x-generic",
             "jpeg": "image-x-generic", "gif": "image-gif",
             "svg": "image-svg+xml", "webp": "image-x-generic",
             "heic": "image-x-generic", "bmp": "image-bmp",
             "mp3": "audio-mpeg", "flac": "audio-x-flac",
             "wav": "audio-x-wav", "aac": "audio-aac",
+            "ogg": "audio-x-generic", "m4a": "audio-x-generic",
             "mp4": "video-mp4", "mov": "video-quicktime",
             "avi": "video-x-msvideo", "mkv": "video-x-matroska",
-            "webm": "video-webm",
+            "webm": "video-webm", "m4v": "video-x-generic",
             "zip": "application-zip", "tar": "application-x-tar",
             "gz": "application-gzip", "rar": "application-x-rar",
             "7z": "application-x-7z-compressed",
             "dmg": "media-optical", "iso": "media-optical",
-            "sh": "application-x-shellscript", "py": "text-x-python",
-            "js": "application-javascript", "ts": "text-x-typescript",
-            "html": "text-html", "css": "text-css",
-            "json": "application-json", "xml": "text-xml",
+            "sh": "text-x-script", "bash": "text-x-script", "zsh": "text-x-script", "fish": "text-x-script",
+            "py": "text-x-python",
+            "js": "text-x-javascript", "mjs": "text-x-javascript", "cjs": "text-x-javascript",
+            "ts": "text-x-typescript", "tsx": "text-x-typescript",
+            "jsx": "text-x-javascript",
+            "html": "text-html", "htm": "text-html", "css": "text-css", "scss": "text-css",
+            "json": "application-json", "xml": "text-xml", "yaml": "text-yaml", "yml": "text-yaml",
             "qml": "text-x-qml",
+            "rs": "text-rust",
+            "c": "text-x-csrc", "h": "text-x-chdr",
+            "cpp": "text-x-c++src", "cc": "text-x-c++src", "cxx": "text-x-c++src",
+            "hpp": "text-x-c++hdr", "hh": "text-x-c++hdr", "hxx": "text-x-c++hdr",
+            "java": "text-x-java",
+            "go": "text-x-go",
+            "php": "application-x-php",
+            "rb": "application-x-ruby",
+            "swift": "text-x-swift",
+            "kt": "text-x-kotlin",
             "ttf": "font-x-generic", "otf": "font-x-generic"
         }
         return map[ext] || "text-x-generic"
@@ -216,17 +360,37 @@ QtObject {
         var macTahoe = Quickshell.env("HOME") + "/.local/share/icons/MacTahoe-dark"
         var macTahoePlaces = {
             "user-desktop": "user-desktop.svg",
+            "user-home": "user-home.svg",
             "folder-documents": "folder-documents.svg",
             "folder-downloads": "folder-download.svg",
+            "folder-download": "folder-download.svg",
             "folder-pictures": "folder-images.svg",
+            "folder-images": "folder-images.svg",
             "folder-music": "folder-music.svg",
             "folder-videos": "folder-videos.svg",
             "folder-publicshare": "folder-public.svg",
+            "folder-public": "folder-public.svg",
             "folder-templates": "folder-templates.svg",
+            "folder-code": "folder-code.svg",
+            "folder-games": "folder-games.svg",
+            "folder-git": "folder-git.svg",
+            "folder-github": "folder-github.svg",
+            "folder-gitlab": "folder-gitlab.svg",
+            "folder-steam": "folder-steam.svg",
+            "folder-script": "folder-script.svg",
+            "folder-projects": "folder-projects.svg",
+            "folder-build": "folder-build.svg",
+            "folder-cloud": "folder-cloud.svg",
+            "folder-html": "folder-html.svg",
+            "folder-temp": "folder-temp.svg",
+            "folder-root": "folder-root.svg",
+            "folder-torrent": "folder-torrent.svg",
+            "folder-vbox": "folder-vbox.svg",
+            "folder-wine": "folder-wine.svg",
+            "folder-bookmark": "folder-bookmark.svg",
             "user-trash": "user-trash.svg",
             "network-workgroup": "network-workgroup-symbolic.svg",
             "inode-directory": "folder.svg",
-            "folder-home": "folder-home.svg",
             "document-open-recent": "document-open-recent-symbolic.svg"
         }
         var macTahoeActions = {
@@ -235,8 +399,16 @@ QtObject {
         }
         var macTahoeDevices = {
             "drive-harddisk": "drive-harddisk.svg",
-            "drive-removable-media": "drive-removable-media.svg",
-            "media-optical": "media-optical.svg"
+            "drive-removable-media": "drive-removable-media.svg"
+        }
+        var macTahoeMimeSymbolic = {
+            "text-x-markdown": "text-markdown-symbolic.svg",
+            "text-rust": "text-rust-symbolic.svg",
+            "text-x-cpp": "text-x-cpp-symbolic.svg",
+            "text-x-c++src": "text-x-c++src-symbolic.svg",
+            "text-x-javascript": "text-x-javascript-symbolic.svg",
+            "text-x-python": "text-x-python-symbolic.svg",
+            "text-x-script": "text-x-script-symbolic.svg"
         }
 
         if (macTahoePlaces[iconName]) {
@@ -253,6 +425,12 @@ QtObject {
 
         if (macTahoeDevices[iconName])
             return "file://" + macTahoe + "/devices/" + pickSize([16, 22, 24, 32], iconSize) + "/" + macTahoeDevices[iconName]
+
+        if (iconName === "media-optical")
+            return "file://" + macTahoe + "/mimes/scalable/application-x-cd-image.svg"
+
+        if (macTahoeMimeSymbolic[iconName])
+            return "file://" + macTahoe + "/mimes/symbolic/" + macTahoeMimeSymbolic[iconName]
 
         return "file://" + macTahoe + "/mimes/scalable/" + iconName + ".svg"
     }
@@ -304,13 +482,13 @@ QtObject {
     }
 
     function warmCurrentDirectoryThumbnails() {
-        if (!app.currentPath || app.searchActive)
+        if (!app.currentPath || app.searchActive || app.isRecentPath(app.currentPath))
             return
         requestThumbnailWarm(app.currentPath, 0, viewMode === "icon" ? 18 : 24)
     }
 
     function scheduleVisibleThumbnailWarm(firstIndex, lastIndex) {
-        if (!app.currentPath || app.loadingDir)
+        if (!app.currentPath || app.loadingDir || app.isRecentPath(app.currentPath))
             return
         if (firstIndex < 0 || lastIndex < firstIndex)
             return
@@ -395,13 +573,54 @@ QtObject {
         return app.thumbnailScaleStops[thumbnailLevel()]
     }
 
+    function isShellScript(path) {
+        return /\.sh$/i.test(path || "")
+    }
+
+    function openShellScript(path) {
+        if (!path)
+            return
+        shellScriptProcess.command = [
+            "bash", "-lc",
+            "script=\"$1\"; dir=$(dirname -- \"$script\"); " +
+            "cmd='cd -- \"$1\" && bash \"$2\"'; " +
+            "if command -v xdg-terminal-exec >/dev/null 2>&1; then " +
+            "  xdg-terminal-exec bash -lc \"$cmd\" _ \"$dir\" \"$script\" && exit 0; " +
+            "fi; " +
+            "if command -v x-terminal-emulator >/dev/null 2>&1; then " +
+            "  x-terminal-emulator -e bash -lc \"$cmd\" _ \"$dir\" \"$script\" && exit 0; " +
+            "fi; " +
+            "if command -v kitty >/dev/null 2>&1; then " +
+            "  kitty bash -lc \"$cmd\" _ \"$dir\" \"$script\" && exit 0; " +
+            "fi; " +
+            "if command -v foot >/dev/null 2>&1; then " +
+            "  foot -e bash -lc \"$cmd\" _ \"$dir\" \"$script\" && exit 0; " +
+            "fi; " +
+            "if command -v ghostty >/dev/null 2>&1; then " +
+            "  ghostty -e bash -lc \"$cmd\" _ \"$dir\" \"$script\" && exit 0; " +
+            "fi; " +
+            "if command -v alacritty >/dev/null 2>&1; then " +
+            "  alacritty -e bash -lc \"$cmd\" _ \"$dir\" \"$script\" && exit 0; " +
+            "fi; " +
+            "exit 1",
+            "_", path
+        ]
+        shellScriptProcess.running = false
+        shellScriptProcess.running = true
+    }
+
     function openItem(path, isDir, fileUrl) {
+        app.recordRecentItem(path, isDir, fileUrl)
         if (isDir) {
             app.navigateTo(path)
             return
         }
         if (app.dialogActive && (app.dialogMode === "open_file" || app.dialogMode === "save_file")) {
             app.dialogFileActivated(path, fileUrl)
+            return
+        }
+        if (isShellScript(path)) {
+            openShellScript(path)
             return
         }
         Qt.openUrlExternally(fileUrl)
@@ -493,6 +712,15 @@ QtObject {
     property Process quickLookSyncProcess: Process {
         command: []
         running: false
+    }
+
+    property Process shellScriptProcess: Process {
+        command: []
+        running: false
+        onExited: function(exitCode) {
+            if (exitCode !== 0)
+                Qt.openUrlExternally("file://" + command[command.length - 1])
+        }
     }
 
     property Timer quickLookCooldownTimer: Timer {

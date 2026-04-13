@@ -7,12 +7,15 @@ import "components"
 
 ApplicationWindow {
     id: window
+    title: "Astrea Settings"
     visible: true
-    width: 950
-    height: 650
-    minimumWidth: 950
-    minimumHeight: 650
-    maximumWidth: 950
+    readonly property int defaultWidth: 1050
+    readonly property int defaultHeight: 650
+    width: defaultWidth
+    height: defaultHeight
+    minimumWidth: 800
+    minimumHeight: 500
+    maximumWidth: 1400
     maximumHeight: 650
     color: "transparent"
     flags: Qt.Window | Qt.FramelessWindowHint
@@ -27,18 +30,23 @@ ApplicationWindow {
     // ── Navigation state ──────────────────────────────────────────────────
     property int selectedIndex: 0
 
+    function resetWindowSize() {
+        width = defaultWidth
+        height = defaultHeight
+    }
+
     readonly property var pages: [
-        "pages/system/system.qml",
-        "pages/display/display.qml",
-        "pages/apps/apps.qml",
-        "pages/system/performance.qml",
-        "pages/connectivity/internet.qml",
-        "pages/connectivity/bluetooth.qml",
-        "pages/personalization/personalization.qml",
-        "pages/paper/wallpaper.qml",
-        "pages/connectivity/audio.qml",
-        "pages/display/island.qml",
-        "pages/system/storage.qml"
+        "pages/system/System.qml",
+        "pages/display/Display.qml",
+        "pages/apps/Apps.qml",
+        "pages/system/Performance.qml",
+        "pages/connectivity/Internet.qml",
+        "pages/connectivity/Bluetooth.qml",
+        "pages/personalization/Personalization.qml",
+        "pages/paper/Wallpaper.qml",
+        "pages/connectivity/Audio.qml",
+        "pages/display/Island.qml",
+        "pages/system/Storage.qml"
     ]
 
     function navigateTo(index) {
@@ -57,23 +65,27 @@ ApplicationWindow {
 
     function navigateToUserConfig() {
         selectedIndex = -1
-        pageLoader.setSource("pages/personalization/user.qml")
+        pageLoader.setSource("pages/personalization/User.qml")
     }
 
-    Component.onCompleted:  pageLoader.setSource(pages[0])
+    Component.onCompleted: {
+        resetWindowSize()
+        Qt.callLater(resetWindowSize)
+        pageLoader.setSource(pages[0])
+    }
 
     // ── Nav model ─────────────────────────────────────────────────────────
     ListModel {
         id: navModel
         ListElement { label: "System";          sym: "\uf303"; iconSource: "";                                                                          iconKey: "" }           // nf-linux-archlinux
-        ListElement { label: "Display";         sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/icons/settings/display.svg";         iconKey: "display" }
-        ListElement { label: "Apps";            sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/icons/settings/apps.svg";            iconKey: "apps" }
-        ListElement { label: "Performance";     sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/icons/settings/performance.svg";     iconKey: "performance" }
-        ListElement { label: "Internet";        sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/icons/settings/network.svg";         iconKey: "network" }
-        ListElement { label: "Bluetooth";       sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/icons/settings/bluetooth.svg";       iconKey: "bluetooth" }
-        ListElement { label: "Personalization"; sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/icons/settings/theme.svg";           iconKey: "theme" }
-        ListElement { label: "Paper";           sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/icons/settings/wallpaper.svg";       iconKey: "wallpaper" }
-        ListElement { label: "Audio";           sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/icons/settings/audio.svg";           iconKey: "audio" }
+        ListElement { label: "Display";         sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/display.svg";     iconKey: "display" }
+        ListElement { label: "Apps";            sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/apps.svg";        iconKey: "apps" }
+        ListElement { label: "Performance";     sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/performance.svg"; iconKey: "performance" }
+        ListElement { label: "Internet";        sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/network.svg";     iconKey: "network" }
+        ListElement { label: "Bluetooth";       sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/bluetooth.svg";   iconKey: "bluetooth" }
+        ListElement { label: "Personalization"; sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/theme.svg";       iconKey: "theme" }
+        ListElement { label: "Paper";           sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/wallpaper.svg";   iconKey: "wallpaper" }
+        ListElement { label: "Audio";           sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/audio.svg";       iconKey: "audio" }
         ListElement { label: "Island";          sym: "\uf0c2"; iconSource: "";                                                                          iconKey: "" }           // nf-fa-cloud
         ListElement { label: "Storage";         sym: "\uf1c0"; iconSource: "";                                                                          iconKey: "" }           // nf-fa-database
     }
@@ -97,10 +109,24 @@ ApplicationWindow {
     Rectangle {
         anchors.fill: parent
         radius: 14
-        color: Qt.rgba(0.11, 0.11, 0.12, 0.55)
+        color: Theme.windowBackground
         border.width: 1
-        border.color: Qt.rgba(1, 1, 1, 0.08)
+        border.color: Theme.windowBorder
         clip: true
+
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: Theme.windowWash
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: "transparent"
+            border.width: 1
+            border.color: Qt.rgba(1, 1, 1, Theme.shellStyle === 0 ? 0.04 : 0.02)
+        }
 
         // ── Drag handle (barra fina no topo, não bloqueia conteúdo) ───────
         MouseArea {
@@ -119,7 +145,7 @@ ApplicationWindow {
 
             Sidebar {
                 id: sidebar
-                Layout.preferredWidth: 200
+                Layout.preferredWidth: 256
                 Layout.fillHeight: true
                 model:         navModel
                 selectedIndex: window.selectedIndex
@@ -141,9 +167,9 @@ Item {
             ignoreUnknownSignals: true
             function onNavigateTo(page) {
                 if (page === "lockscreen")
-                    pageLoader.setSource("pages/paper/lockscreen.qml")
+                    pageLoader.setSource("pages/paper/Lockscreen.qml")
                 else if (page === "screensaver")
-                    pageLoader.setSource("pages/paper/screensaver.qml")
+                    pageLoader.setSource("pages/paper/Screensaver.qml")
             }
             function onProfileImageChanged() {
                 sidebar.avatarVersion += 1

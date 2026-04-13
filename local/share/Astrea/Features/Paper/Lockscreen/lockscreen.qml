@@ -1,1 +1,0 @@
-../app/lockscreen/lockscreen.qml

@@ -4,9 +4,9 @@ pragma Singleton
 
 QtObject {
     // --- Colors ---
-    readonly property color background: Qt.rgba(0.08, 0.09, 0.12, 0.55)
-    readonly property color surface:    Qt.rgba(1, 1, 1, 0.05)
-    readonly property color border:     Qt.rgba(1, 1, 1, 0.13)
+    readonly property color background: Qt.rgba(0, 0, 0, 0.06)
+    readonly property color surface:    Qt.rgba(1, 1, 1, 0.06)
+    readonly property color border:     Qt.rgba(1, 1, 1, 0.14)
     readonly property color barBorderHover: Qt.rgba(1, 1, 1, 0.28)
     readonly property color separator:  Qt.rgba(1, 1, 1, 0.08)
     readonly property color islandBackground: "#000000"
@@ -37,9 +37,15 @@ QtObject {
     readonly property string fontFamily: "SF Pro Display"
     readonly property string fontFamilyDisplay: "SF Pro Display"
     readonly property string fontFamilyText: "SF Pro Text"
+    readonly property int fontSizeLarge: 18
     readonly property int fontSizeTitle: 14
     readonly property int fontSizeBody: 13
+    readonly property int fontSizeSmall: 12
+    readonly property int fontSizeCaption: 11
+    readonly property int fontSizeExtraSmall: 10
+    readonly property int fontSizeMicro: 9
     readonly property int fontSizeIcon: 16
+    readonly property int fontSizeIconLarge: 18
 
     // --- Workspace Dots ---
     readonly property color workspaceActive:   "#ffffff"

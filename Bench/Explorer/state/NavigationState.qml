@@ -24,6 +24,7 @@ QtObject {
     property string searchRootPath: ""
     property string activeRequestMode: "list"
     property ListModel fileModel: ListModel {}
+    property int fileModelRevision: 0
     property string _pendingParseMode: ""
     property WorkerScript jsonWorker: WorkerScript {
         id: jsonWorker
@@ -134,10 +135,25 @@ QtObject {
     }
 
     function rebuildBreadcrumbs() {
+        if (app.isRecentPath(currentPath)) {
+            breadcrumbParts = [{ label: "Recentes", path: app.recentVirtualPath }]
+            return
+        }
+
         var parts = currentPath.split("/").filter(Boolean)
-        var result = [{ label: "/", path: "/" }]
+        var result = []
         var acc = ""
-        for (var i = 0; i < parts.length; i++) {
+        var startIndex = 0
+
+        if (parts.length >= 2 && parts[0] === "home" && parts[1] === "agony") {
+            result.push({ label: "Pasta pessoal", path: "/home/agony" })
+            acc = "/home/agony"
+            startIndex = 2
+        } else {
+            result.push({ label: "/", path: "/" })
+        }
+
+        for (var i = startIndex; i < parts.length; i++) {
             acc += "/" + parts[i]
             result.push({ label: parts[i], path: acc })
         }
@@ -231,6 +247,17 @@ QtObject {
             return
         }
 
+        if (app.isRecentPath(currentPath)) {
+            loadingDir = false
+            loadError = ""
+            app.previewsEnabled = true
+            activeRequestMode = "recent"
+            activeDirectoryRequestPath = currentPath
+            app.activePreviewRefreshPath = ""
+            replaceFileModel(app.recentModelItems())
+            return
+        }
+
         loadingDir = true
         loadError = ""
         app.previewsEnabled = false
@@ -264,6 +291,7 @@ QtObject {
         fileModel.clear()
         _allItems = filtered
         _fillOffset = 0
+        fileModelRevision++
         fillTimer.restart()
     }
 
@@ -315,6 +343,40 @@ QtObject {
             fileModel.setProperty(modelIndex, "fileSize", updated.fileSize)
             fileModel.setProperty(modelIndex, "fileModified", updated.fileModified)
         }
+        fileModelRevision++
+    }
+
+    function removePathsFromFileModel(paths) {
+        if (!paths || paths.length === 0)
+            return
+
+        var removeSet = {}
+        for (var i = 0; i < paths.length; i++) {
+            if (paths[i])
+                removeSet[paths[i]] = true
+        }
+
+        var changed = false
+        for (var j = fileModel.count - 1; j >= 0; j--) {
+            var item = fileModel.get(j)
+            if (removeSet[item.filePath]) {
+                fileModel.remove(j, 1)
+                changed = true
+            }
+        }
+
+        if (_allItems && _allItems.length > 0) {
+            var kept = []
+            for (var k = 0; k < _allItems.length; k++) {
+                var pendingItem = _allItems[k]
+                if (!removeSet[pendingItem.filePath])
+                    kept.push(pendingItem)
+            }
+            _allItems = kept
+        }
+
+        if (changed)
+            fileModelRevision++
     }
 
     function selectedItem() {

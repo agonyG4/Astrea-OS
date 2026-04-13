@@ -13,6 +13,9 @@ QtObject {
     readonly property string quickLookPidFile: "/tmp/explorer-quicklook.pid"
     readonly property string backendPath: "/home/agony/GitHub/Bench/Explorer/backend/target/release/explorer_backend"
     readonly property string networkRootPath: (Quickshell.env("XDG_RUNTIME_DIR") || ("/run/user/" + Quickshell.env("UID"))) + "/gvfs"
+    readonly property string trashFilesPath: "/home/agony/.local/share/Trash/files"
+    readonly property string trashInfoPath: "/home/agony/.local/share/Trash/info"
+    readonly property string recentVirtualPath: "recent://"
     readonly property real minZoom: 0.75
     readonly property real maxZoom: 1.7
     readonly property real thumbnailZoomThreshold: 1.15
@@ -20,11 +23,14 @@ QtObject {
     readonly property var thumbnailScaleStops: [1.0, 1.08, 1.16, 1.26, 1.38]
     readonly property color themeSelected: Theme.selected
     readonly property color themeHover: Theme.hover
+    property var scrollPositions: ({})
 
     property string sortField: "name"
     property bool sortAsc: true
     property bool showHidden: false
     property bool foldersFirst: true
+    property bool groupingEnabled: true
+    readonly property bool inTrashView: isTrashPath(currentPath)
 
     property alias currentPath: navigationObj.currentPath
     property alias history: navigationObj.history
@@ -44,6 +50,7 @@ QtObject {
     property alias searchQuery: navigationObj.searchQuery
     property alias searchRootPath: navigationObj.searchRootPath
     property alias fileModel: navigationObj.fileModel
+    property alias fileModelRevision: navigationObj.fileModelRevision
 
     property alias selectedFile: selectionObj.selectedFile
     property alias selectedFiles: selectionObj.selectedFiles
@@ -55,6 +62,7 @@ QtObject {
     property alias pasteConflictItems: fileOpsObj.pasteConflictItems
     property alias pendingPasteFiles: fileOpsObj.pendingPasteFiles
     property alias pendingPasteMode: fileOpsObj.pendingPasteMode
+    property alias pendingPasteDestination: fileOpsObj.pendingPasteDestination
     property alias pendingPasteRename: fileOpsObj.pendingPasteRename
 
     property alias showPreview: previewObj.showPreview
@@ -91,6 +99,7 @@ QtObject {
         property alias sortAsc: state.sortAsc
         property alias showHidden: state.showHidden
         property alias foldersFirst: state.foldersFirst
+        property alias groupingEnabled: state.groupingEnabled
         property alias zoomLevel: state.zoomLevel
         property alias autoMountDeviceIdsJson: state.autoMountDeviceIdsJson
     }
@@ -120,6 +129,11 @@ QtObject {
         app: state
     }
 
+    property QtObject recent: StateModules.RecentState {
+        id: recentObj
+        app: state
+    }
+
     Component.onCompleted: {
         navigation.initialize()
         deviceNet.loadSavedAutoMounts()
@@ -143,6 +157,7 @@ QtObject {
     function loadDirectory() { navigation.loadDirectory() }
     function replaceFileModel(items) { navigation.replaceFileModel(items) }
     function updateFileModelMetadata(items) { navigation.updateFileModelMetadata(items) }
+    function removePathsFromFileModel(paths) { navigation.removePathsFromFileModel(paths) }
     function selectedItem() { return navigation.selectedItem() }
     function fileMatchesDialogFilter(fileName, isDir) { return navigation.fileMatchesDialogFilter(fileName, isDir) }
     function hideSearch() { navigation.hideSearch() }
@@ -153,10 +168,12 @@ QtObject {
     function copySelected() { fileOps.copySelected() }
     function cutSelected() { fileOps.cutSelected() }
     function pasteFiles() { fileOps.pasteFiles() }
+    function dropFiles(urls, destinationPath, mode) { fileOps.dropFiles(urls, destinationPath, mode) }
     function resolvePasteConflict(policy) { fileOps.resolvePasteConflict(policy) }
     function renamePasteConflict(newName) { fileOps.renamePasteConflict(newName) }
     function cancelPasteConflict() { fileOps.cancelPasteConflict() }
     function deleteSelected() { fileOps.deleteSelected() }
+    function emptyTrash() { fileOps.emptyTrash() }
 
     function refreshPreviewMetadata() { preview.refreshPreviewMetadata() }
     function openQuickLook() { preview.openQuickLook() }
@@ -181,7 +198,18 @@ QtObject {
     function thumbnailLevel() { return preview.thumbnailLevel() }
     function thumbnailColumnCount() { return preview.thumbnailColumnCount() }
     function thumbnailScale() { return preview.thumbnailScale() }
+    function openShellScript(path) { preview.openShellScript(path) }
     function openItem(path, isDir, fileUrl) { preview.openItem(path, isDir, fileUrl) }
+    function recordRecentItem(path, isDir, fileUrl) { recent.recordAccess(path, isDir, fileUrl) }
+    function recentModelItems() { return recent.recentModelItems() }
+
+    function isTrashPath(path) {
+        return (path || "").replace(/\/+$/, "") === trashFilesPath
+    }
+
+    function isRecentPath(path) {
+        return (path || "") === recentVirtualPath
+    }
 
     function showNetworkConnectDialog() { deviceNet.showNetworkConnectDialog() }
     function hideNetworkConnectDialog() { deviceNet.hideNetworkConnectDialog() }
@@ -201,6 +229,32 @@ QtObject {
     function requestUnmountDevice(devicePath, mountPath) { deviceNet.requestUnmountDevice(devicePath, mountPath) }
     function syncDeviceBusyFlags() { deviceNet.syncDeviceBusyFlags() }
     function startSearch() { navigation.startSearch() }
+
+    function scrollPositionKey(path, viewMode) {
+        return (viewMode || "list") + "::" + (path || "")
+    }
+
+    function rememberScrollPosition(path, viewMode, position) {
+        if (!path || searchActive)
+            return
+        if (typeof position !== "number" || isNaN(position))
+            return
+
+        var key = scrollPositionKey(path, viewMode)
+        var next = {}
+        for (var existingKey in scrollPositions)
+            next[existingKey] = scrollPositions[existingKey]
+        next[key] = Math.max(0, position)
+        scrollPositions = next
+    }
+
+    function savedScrollPosition(path, viewMode) {
+        if (!path || searchActive)
+            return 0
+
+        var key = scrollPositionKey(path, viewMode)
+        return scrollPositions[key] || 0
+    }
 
     signal dialogFileActivated(string path, string fileUrl)
 

@@ -1,0 +1,151 @@
+{
+  "_comment": "Rules applied to files OUTSIDE the home directory. Order defines priority (first match wins).",
+
+  "priority": [
+    "games",
+    "apps",
+    "vms",
+    "archives",
+    "fonts",
+    "app_executables",
+    "images",
+    "videos",
+    "audio",
+    "docs",
+    "code",
+    "tmp",
+    "system"
+  ],
+
+  "rules": {
+    "games": {
+      "label": "Games (system)",
+      "color": "#007AFF",
+      "match_dir_segments": [
+        "steamapps", "games", "heroic", "lutris",
+        "wine", "proton", "compatdata", "gamedata",
+        "gog", "epic"
+      ]
+    },
+
+    "apps": {
+      "label": "Applications",
+      "color": "#FF3B30",
+      "path_prefixes": ["/opt/", "/usr/local/", "/usr/share/applications/"],
+      "extensions": []
+    },
+
+    "vms": {
+      "label": "Virtual Machines",
+      "color": "#5856D6",
+      "extensions": [
+        ".vmdk", ".vdi", ".vhd", ".vhdx",
+        ".qcow2", ".ova", ".ovf"
+      ]
+    },
+
+    "archives": {
+      "label": "Archives",
+      "color": "#5856D6",
+      "extensions": [
+        ".zip", ".tar", ".gz", ".bz2", ".xz", ".zst",
+        ".7z", ".rar", ".lz4", ".lzma", ".deb", ".rpm",
+        ".pkg", ".apk", ".iso", ".img", ".dmg", ".cab",
+        ".flatpak", ".snap"
+      ]
+    },
+
+    "fonts": {
+      "label": "Fonts",
+      "color": "#FF9500",
+      "extensions": [
+        ".ttf", ".otf", ".woff", ".woff2", ".eot", ".pfb", ".pfm"
+      ]
+    },
+
+    "app_executables": {
+      "label": "App Executables",
+      "color": "#FF3B30",
+      "extensions": [
+        ".appimage", ".exe", ".msi", ".bin", ".run"
+      ]
+    },
+
+    "images": {
+      "label": "Images",
+      "color": "#FF9F0A",
+      "extensions": [
+        ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif",
+        ".webp", ".heic", ".heif", ".raw", ".cr2", ".nef", ".arw",
+        ".svg", ".avif", ".dng", ".psd", ".xcf", ".kra", ".ico"
+      ]
+    },
+
+    "videos": {
+      "label": "Videos",
+      "color": "#AF52DE",
+      "extensions": [
+        ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm",
+        ".m4v", ".mpg", ".mpeg", ".ts", ".m2ts", ".vob", ".3gp",
+        ".ogv", ".rmvb"
+      ]
+    },
+
+    "audio": {
+      "label": "Audio",
+      "color": "#FF2D55",
+      "extensions": [
+        ".mp3", ".flac", ".aac", ".ogg", ".wav", ".m4a", ".wma",
+        ".opus", ".aiff", ".mid", ".midi", ".ape", ".mka", ".alac"
+      ]
+    },
+
+    "docs": {
+      "label": "Documents",
+      "color": "#FF9500",
+      "extensions": [
+        ".pdf", ".doc", ".docx", ".odt", ".rtf", ".tex",
+        ".xls", ".xlsx", ".ods", ".ppt", ".pptx", ".odp",
+        ".epub", ".mobi", ".djvu"
+      ]
+    },
+
+    "code": {
+      "label": "Code",
+      "color": "#34C759",
+      "extensions": [
+        ".py", ".js", ".ts", ".rs", ".go", ".c", ".cpp", ".h",
+        ".java", ".rb", ".php", ".lua", ".sh", ".toml", ".yaml",
+        ".yml", ".json", ".xml", ".html", ".css", ".sql", ".qml",
+        ".dart", ".swift", ".kt", ".hs", ".ex", ".exs", ".clj",
+        ".vim", ".el", ".nix"
+      ]
+    },
+
+    "tmp": {
+      "label": "System Temp",
+      "color": "#AEAEB2",
+      "path_prefixes": [
+        "/tmp/", "/var/tmp/", "/var/cache/", "/var/log/"
+      ]
+    },
+
+    "system": {
+      "label": "System",
+      "color": "#AEAEB2",
+      "path_prefixes": [
+        "/usr/", "/lib/", "/lib64/",
+        "/bin/", "/sbin/", "/etc/", "/snap/"
+      ]
+    }
+  },
+
+  "skip_prefixes": [
+    "/proc/", "/sys/", "/dev/", "/run/",
+    "/snap/", "/boot/", "/mnt/", "/media/"
+  ],
+
+  "flush_interval":     10000,
+  "dir_flush_interval": 1000,
+  "print_interval":     100000
+}

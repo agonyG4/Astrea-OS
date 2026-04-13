@@ -83,7 +83,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text:  root.btOn ? "󰂯" : "󰂲"
-                font.pixelSize: 16
+                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
                 color: !root.btOn          ? Theme.iconMuted  :
                        root.connectedCount > 0 ? Theme.iconAccent : Theme.iconMain
                 Behavior on color { ColorAnimation { duration: 150 } }
@@ -96,7 +96,7 @@ Item {
             visible: root.btOn && root.connectedCount > 0
             text:    root.firstDeviceName
             color:   Theme.textDim
-            font { pixelSize: 11; weight: Font.Medium }
+            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption; weight: Font.Medium }
             elide: Text.ElideRight
             width: Math.min(implicitWidth, 80)
         }
@@ -109,8 +109,8 @@ Item {
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         onClicked: {
             if (!root.btPopupRef) return
-            root.updatePopupAnchor()
-            root.btPopupRef.shown = !root.btPopupRef.shown
+            const point = root.mapToItem(null, root.width / 2, root.height / 2)
+            root.btPopupRef.toggleAt(point.x)
         }
     }
 }
