@@ -6,11 +6,11 @@ Requires Python 3.10+
 
 import os
 import sys
-import stat as stat_mod
-import time
 import json
+import shutil
 import sqlite3
 import argparse
+import subprocess
 from pathlib import Path
 from collections import defaultdict
 
@@ -18,9 +18,16 @@ from collections import defaultdict
 # PATHS
 # -----------------------------------------
 HOME       = str(Path.home())
-HOME_SEP   = HOME + "/"
 SCRIPT_DIR = Path(__file__).resolve().parent
+
+# Config files (next to sense.py)
 CAT_FILE   = SCRIPT_DIR / "categories.json"
+RULES_FILE = SCRIPT_DIR / "system_rules.json"
+
+# Rust scanner binary (next to sense.py, or on PATH)
+SCANNER_BIN = SCRIPT_DIR / "target" / "release" / "scanner"
+if not SCANNER_BIN.exists():
+    SCANNER_BIN = shutil.which("storagesense-scanner") or "scanner"
 
 CACHE_DIR = Path(HOME) / ".cache" / "storagesense"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -259,11 +266,8 @@ def load_dir_cache(conn: sqlite3.Connection) -> dict[str, float]:
     return {row[0]: row[1] for row in cur}
 
 
-def flush(conn: sqlite3.Connection, entries: list) -> None:
-    if entries:
-        conn.executemany("INSERT OR REPLACE INTO files VALUES (?,?,?,?)", entries)
-        conn.commit()
-
+def sep(char: str = "-") -> None:
+    print(char * W)
 
 def flush_dirs(conn: sqlite3.Connection, entries: list[tuple[str, float]]) -> None:
     if entries:
@@ -278,6 +282,9 @@ def prune(conn: sqlite3.Connection, old: set, current: set) -> int:
         conn.commit()
     return len(stale)
 
+# ─────────────────────────────────────────────────────────────
+# SCANNER INVOCATION
+# ─────────────────────────────────────────────────────────────
 
 # -----------------------------------------
 # MOUNTINFO -- allowed devices
@@ -411,6 +418,14 @@ def _walk_and_classify(
     conn.close()
     return stats, scanned_paths, scanned, updated, errors, pruned
 
+    cmd = [
+        str(SCANNER_BIN),
+        "--rules", str(RULES_FILE),
+        "--db",    str(DB_PATH),
+        "--home",  HOME,
+    ]
+    if quiet:
+        cmd.append("--quiet")
 
 def scan_all(compiled: dict, quiet: bool) -> tuple[dict[str, int], int, int, int, int, float]:
     if not quiet:
@@ -431,6 +446,19 @@ def scan_all(compiled: dict, quiet: bool) -> tuple[dict[str, int], int, int, int
 # -----------------------------------------
 W = 68
 
+    try:
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=None,   # let stderr (progress) pass through directly
+            check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"Scanner exited with code {e.returncode}", file=sys.stderr)
+        sys.exit(1)
+    except FileNotFoundError:
+        print(f"Scanner binary not found: {SCANNER_BIN}", file=sys.stderr)
+        sys.exit(1)
 
 def sep(char: str = "-") -> None:
     print(char * W)
@@ -441,17 +469,21 @@ def _print_rows(rows: list[tuple[str, str, int]], total: int) -> None:
         frac = size / total
         print(f"  {label:<26}  {format_size(size):>9}  {frac*100:>4.1f}%  {bar(frac)}")
 
+def print_scan_report(scan: dict, cat_meta: dict) -> None:
+    scanned  = scan["scanned"]
+    updated  = scan["updated"]
+    pruned   = scan["pruned"]
+    errors   = scan["errors"]
+    elapsed  = scan["elapsed_secs"]
+    raw_stats = {s["cat"]: s["size"] for s in scan["stats"]}
 
-def print_scan_report(stats: dict, cat_meta: dict,
-                      scanned: int, updated: int, pruned: int,
-                      errors: int, elapsed: float) -> None:
-    total = sum(stats.values()) or 1
+    total = sum(raw_stats.values()) or 1
     rate  = scanned / elapsed if elapsed > 0 else 0
 
     home_rows: list[tuple[str, str, int]] = []
     sys_rows:  list[tuple[str, str, int]] = []
 
-    for cat_id, size in stats.items():
+    for cat_id, size in raw_stats.items():
         if size == 0:
             continue
         label, emoji = cat_meta.get(cat_id, (cat_id, ""))
@@ -472,12 +504,16 @@ def print_scan_report(stats: dict, cat_meta: dict,
     sep()
     print("  ~ HOME")
     sep()
-    _print_rows(home_rows, total)
+    for label, _, size in home_rows:
+        frac = size / total
+        print(f"  {label:<26}  {format_size(size):>9}  {frac*100:>4.1f}%  {bar(frac)}")
 
     sep()
     print("  / SYSTEM")
     sep()
-    _print_rows(sys_rows, total)
+    for label, _, size in sys_rows:
+        frac = size / total
+        print(f"  {label:<26}  {format_size(size):>9}  {frac*100:>4.1f}%  {bar(frac)}")
 
     sep()
     print(f"  {'TOTAL':<26}  {format_size(total):>9}")
@@ -493,7 +529,7 @@ def print_cache_info(cat_meta: dict) -> None:
         print("No cache found. Run `storagesense scan`.")
         return
 
-    conn    = get_conn()
+    conn    = open_db()
     n_files = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
     vol     = conn.execute("SELECT SUM(size) FROM files").fetchone()[0] or 0
     db_size = DB_PATH.stat().st_size
@@ -551,14 +587,13 @@ def print_json(compiled: dict, cat_meta: dict) -> None:
         print(json.dumps({"error": "No cache found", "total": 0, "data": []}))
         return
 
-    import shutil
-    du = shutil.disk_usage("/")
+    du         = shutil.disk_usage("/")
     disk_total = du.total
     disk_used  = du.used
 
-    conn = get_conn()
-    total_scanned = conn.execute("SELECT SUM(size) FROM files").fetchone()[0] or 0
-    rows = conn.execute(
+    conn           = open_db()
+    total_scanned  = conn.execute("SELECT SUM(size) FROM files").fetchone()[0] or 0
+    rows           = conn.execute(
         "SELECT cat, COUNT(*), SUM(size) FROM files GROUP BY cat ORDER BY SUM(size) DESC"
     ).fetchall()
     conn.close()
@@ -657,6 +692,8 @@ examples:
   storagesense scan --quiet
   storagesense list
   storagesense info
+  storagesense get downloads --limit 20
+  storagesense json
   storagesense clear-cache
         """,
     )
@@ -678,20 +715,25 @@ def main() -> None:
         parser.print_help()
         sys.exit(0)
 
-    categories = load_categories()
-    compiled   = compile_categories(categories)
-    cat_meta   = build_cat_meta(compiled)
+    cat_meta = build_cat_meta()
 
     match args.command:
         case "scan":
-            stats, scanned, updated, pruned, errors, elapsed = scan_all(compiled, args.quiet)
-            print_scan_report(stats, cat_meta, scanned, updated, pruned, errors, elapsed)
+            scan = run_scanner(args.quiet)
+            print_scan_report(scan, cat_meta)
+
         case "list":
-            print_list(compiled)
+            print_list(cat_meta)
+
         case "info":
             print_cache_info(cat_meta)
+
         case "json":
-            print_json(compiled, cat_meta)
+            print_json_output(cat_meta)
+
+        case "get":
+            cmd_get(args.category, cat_meta, args.limit)
+
         case "clear-cache":
             if DB_PATH.exists():
                 DB_PATH.unlink()

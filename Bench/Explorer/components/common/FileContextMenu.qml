@@ -3,36 +3,45 @@ import QtQuick.Controls 2.15
 import Quickshell.Io
 import "../.."
 import "." as Common
+import "file:///home/agony/.local/share/Astrea/Features/System" as AstreaSystem
 
 Item {
     id: menuRoot
     anchors.fill: parent
-    visible: menuOpen || creatingFolder || renamingItem
+    visible: menuFrame.menuOpen || creatingFolder || renamingItem
     z: 999
 
     property string itemPath: ""
     property string itemUrl: ""
     property bool itemIsDir: false
     property var clipboardProxy
-    property real menuX: 0
-    property real menuY: 0
-    property bool menuOpen: false
     property bool creatingFolder: false
     property bool renamingItem: false
     property string pendingFolderName: ""
     property string pendingRenameName: ""
     readonly property bool isBackgroundTarget: itemPath === AppState.currentPath && itemIsDir
+    readonly property bool isArchiveTarget: !itemIsDir && /\.(zip|tar|tgz|tar\.gz|tar\.bz2|tbz2|tar\.xz|txz|7z|rar)$/i.test(itemPath)
+
+    function dismissTransientUi() {
+        menuFrame.closeMenu()
+        creatingFolder = false
+        renamingItem = false
+    }
 
     function openAt(x, y, path, isDir, url) {
         itemPath = path
         itemIsDir = isDir
         itemUrl = url
-        menuX = Math.max(10, Math.min(x, width - menuCard.width - 10))
-        menuY = Math.max(10, Math.min(y, height - menuCard.height - 10))
-        menuOpen = true
+        menuFrame.openAt(x, y)
     }
 
-    function closeMenu() { menuOpen = false }
+    function closeMenu() { menuFrame.closeMenu() }
+
+    Shortcut {
+        sequence: "Esc"
+        enabled: menuRoot.visible
+        onActivated: menuRoot.dismissTransientUi()
+    }
 
     function runOpen() {
         closeMenu()
@@ -58,6 +67,43 @@ Item {
         pendingRenameName = itemPath.split("/").pop()
         renamingItem = true
         Qt.callLater(function() { renameField.forceActiveFocus(); renameField.selectAll() })
+    }
+
+    function extractionFolderName() {
+        var name = itemPath.split("/").pop()
+        return name
+            .replace(/\.tar\.gz$/i, "")
+            .replace(/\.tgz$/i, "")
+            .replace(/\.tar\.bz2$/i, "")
+            .replace(/\.tbz2$/i, "")
+            .replace(/\.tar\.xz$/i, "")
+            .replace(/\.txz$/i, "")
+            .replace(/\.(zip|tar|7z|rar)$/i, "")
+    }
+
+    function runExtract() {
+        if (!isArchiveTarget)
+            return
+        closeMenu()
+        extractProcess.command = [
+            "bash", "-lc",
+            "archive=\"$1\"; parent=$(dirname -- \"$archive\"); base=\"$2\"; " +
+            "dest=\"$parent/$base\"; n=2; while [ -e \"$dest\" ]; do dest=\"$parent/$base $n\"; n=$((n+1)); done; " +
+            "mkdir -p -- \"$dest\" || exit 1; " +
+            "lower=$(printf '%s' \"$archive\" | tr '[:upper:]' '[:lower:]'); " +
+            "if [[ \"$lower\" =~ \\.zip$ ]]; then " +
+            "  if command -v unzip >/dev/null 2>&1; then unzip -o \"$archive\" -d \"$dest\"; else bsdtar -xf \"$archive\" -C \"$dest\"; fi; " +
+            "elif [[ \"$lower\" =~ \\.7z$ ]]; then " +
+            "  7z x -y -o\"$dest\" \"$archive\"; " +
+            "elif [[ \"$lower\" =~ \\.rar$ ]]; then " +
+            "  if command -v unrar >/dev/null 2>&1; then unrar x -o+ \"$archive\" \"$dest/\"; else 7z x -y -o\"$dest\" \"$archive\"; fi; " +
+            "else " +
+            "  bsdtar -xf \"$archive\" -C \"$dest\"; " +
+            "fi",
+            "_", itemPath, extractionFolderName()
+        ]
+        extractProcess.running = false
+        extractProcess.running = true
     }
 
     function runShowProperties() {
@@ -107,21 +153,9 @@ Item {
         closeMenu()
     }
 
-    // Backdrop
-    MouseArea {
+    AstreaSystem.FileContextMenu {
+        id: menuFrame
         anchors.fill: parent
-        enabled: menuRoot.menuOpen
-        onClicked: menuRoot.closeMenu()
-    }
-
-    // ─────────────────────────────────────────────────────────────
-    // CONTEXT MENU  flat dark, text only
-    // ─────────────────────────────────────────────────────────────
-    Common.ContextMenuPopup {
-        id: menuCard
-        menuVisible: menuRoot.menuOpen
-        menuX: menuRoot.menuX
-        menuY: menuRoot.menuY
 
         Common.ContextMenuAction {
             label: "Abrir"
@@ -147,6 +181,12 @@ Item {
             onTriggered: menuRoot.runRename()
         }
         Common.ContextMenuAction {
+            label: "Extrair"
+            actionEnabled: true
+            visible: menuRoot.isArchiveTarget
+            onTriggered: menuRoot.runExtract()
+        }
+        Common.ContextMenuAction {
             label: "Propriedades"
             actionEnabled: true
             onTriggered: menuRoot.runShowProperties()
@@ -161,9 +201,6 @@ Item {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // PROPERTIES  separate OS window
-    // ─────────────────────────────────────────────────────────────
     Window {
         id: propertiesWin
         title: "Propriedades"
@@ -239,7 +276,6 @@ Item {
             propProcess.running = true
         }
 
-        // Title bar
         Rectangle {
             id: propTitleBar
             anchors { top: parent.top; left: parent.left; right: parent.right }
@@ -266,7 +302,6 @@ Item {
             }
         }
 
-        // Preview image for image files
         Rectangle {
             id: propPreview
             anchors { top: propTitleBar.bottom; left: parent.left; right: parent.right }
@@ -290,7 +325,6 @@ Item {
             }
         }
 
-        // Info area
         Item {
             anchors {
                 top: propPreview.bottom
@@ -311,15 +345,15 @@ Item {
                     id: infoRepeater
                     model: {
                         var rows = [
-                            { lbl: propertiesWin.isMulti ? "Local" : "Caminho",    val: propertiesWin.isMulti ? AppState.currentPath : propertiesWin.targetPath },
-                            { lbl: "Tipo",       val: propertiesWin.propType },
-                            { lbl: "Tamanho",    val: propertiesWin.propSize }
+                            { lbl: propertiesWin.isMulti ? "Local" : "Caminho", val: propertiesWin.isMulti ? AppState.currentPath : propertiesWin.targetPath },
+                            { lbl: "Tipo", val: propertiesWin.propType },
+                            { lbl: "Tamanho", val: propertiesWin.propSize }
                         ]
                         if (propertiesWin.targetIsDir || (propertiesWin.isMulti && propertiesWin.targetPaths.length > 0))
                             rows.push({ lbl: propertiesWin.isMulti ? "Itens" : "Conteudo", val: propertiesWin.propContains })
                         if (!propertiesWin.isMulti) {
-                            rows.push({ lbl: "Modificado",  val: propertiesWin.propModified })
-                            rows.push({ lbl: "Permissoes",  val: propertiesWin.propPerms })
+                            rows.push({ lbl: "Modificado", val: propertiesWin.propModified })
+                            rows.push({ lbl: "Permissoes", val: propertiesWin.propPerms })
                         }
                         return rows
                     }
@@ -356,7 +390,6 @@ Item {
             }
         }
 
-        // Footer
         Rectangle {
             id: propFooter
             anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
@@ -391,7 +424,6 @@ Item {
             }
         }
 
-        // Process
         Process {
             id: propProcess
             command: []
@@ -410,12 +442,12 @@ Item {
                         propertiesWin.errorText = parts.length > 1 ? parts.slice(1).join("|") : "Erro ao carregar."
                         return
                     }
-                    propertiesWin.errorText   = ""
-                    propertiesWin.propType    = parts[1] || (propertiesWin.targetIsDir ? "Pasta" : "Arquivo")
-                    propertiesWin.propSize    = AppState.formatSize(Number(parts[2] || 0))
+                    propertiesWin.errorText = ""
+                    propertiesWin.propType = parts[1] || (propertiesWin.targetIsDir ? "Pasta" : "Arquivo")
+                    propertiesWin.propSize = AppState.formatSize(Number(parts[2] || 0))
                     propertiesWin.propModified = propertiesWin.fmtDate(parts[3])
                     propertiesWin.propAccessed = propertiesWin.fmtDate(parts[4])
-                    propertiesWin.propPerms   = parts[5] || "--"
+                    propertiesWin.propPerms = parts[5] || "--"
                     if (propertiesWin.targetIsDir) {
                         var cnt = Number(parts[6] || 0)
                         propertiesWin.propContains = cnt + (cnt === 1 ? " item" : " itens")
@@ -433,15 +465,19 @@ Item {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // CREATE FOLDER overlay
-    // ─────────────────────────────────────────────────────────────
     Rectangle {
         anchors.fill: parent
         visible: creatingFolder
         color: Qt.rgba(0, 0, 0, 0.5)
 
-        MouseArea { anchors.fill: parent; onClicked: menuRoot.creatingFolder = false }
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            onPressed: function(mouse) {
+                mouse.accepted = true
+                menuRoot.creatingFolder = false
+            }
+        }
 
         Rectangle {
             id: createDialog
@@ -489,15 +525,19 @@ Item {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // RENAME overlay
-    // ─────────────────────────────────────────────────────────────
     Rectangle {
         anchors.fill: parent
         visible: renamingItem
         color: Qt.rgba(0, 0, 0, 0.5)
 
-        MouseArea { anchors.fill: parent; onClicked: menuRoot.renamingItem = false }
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            onPressed: function(mouse) {
+                mouse.accepted = true
+                menuRoot.renamingItem = false
+            }
+        }
 
         Rectangle {
             width: 320
@@ -544,9 +584,6 @@ Item {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // PROCESSES
-    // ─────────────────────────────────────────────────────────────
     Process {
         id: createFolderProcess
         command: [
@@ -577,9 +614,6 @@ Item {
         }
     }
 
-    // ─────────────────────────────────────────────────────────────
-    // INLINE COMPONENTS
-    // ─────────────────────────────────────────────────────────────
     component FlatButton: Rectangle {
         id: fbRoot
         property string label: ""
@@ -597,7 +631,7 @@ Item {
             anchors.centerIn: parent
             text: fbRoot.label
             color: "#f2f2f7"
-            font { pixelSize: 13; weight: fbRoot.primary ? Font.Medium : Font.Normal }
+            font { pixelSize: 13; weight: fbRoot.primary ? Font.DemiBold : Font.Normal }
         }
 
         MouseArea {
@@ -606,6 +640,14 @@ Item {
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: fbRoot.clicked()
+        }
+    }
+
+    property Process extractProcess: Process {
+        command: []
+        running: false
+        onExited: function() {
+            AppState.refreshCurrentFolder()
         }
     }
 }

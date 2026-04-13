@@ -29,7 +29,7 @@ Rectangle {
             width: parent.width
             text: AppState.selectedFile
             wrapMode: Text.WrapAtWordBoundaryOrAnywhere
-            font { pixelSize: 13; weight: Font.Medium }
+            font { pixelSize: 13; weight: Font.Normal }
             color: Theme.text
             horizontalAlignment: Text.AlignHCenter
         }

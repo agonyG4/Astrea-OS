@@ -25,7 +25,7 @@ Rectangle {
             return isNotch ? 210 : 120
         if (island.isExpanded)
             return isNotch ? 380 : 360
-        if (island.idleHidden)
+        if (!island.showCompactMusic)
             return isNotch ? 210 : 120
         return isNotch ? 210 : 180
     }
@@ -36,7 +36,7 @@ Rectangle {
             return isNotch ? 32 : 34
         if (island.isExpanded)
             return 160 + (showTabBar ? tabBarHeight : 0)
-        if (island.idleHidden)
+        if (!island.showCompactMusic)
             return isNotch ? 32 : 34
         return isNotch ? 32 : 34
     }
@@ -91,7 +91,7 @@ Rectangle {
     Item {
         anchors.fill: parent
         visible:      opacity > 0
-        opacity:      (!isGamemodeNotify && island.hasMusic && !island.idleHidden && !isMouseOver && !suppressMusicInSmallDrag) ? 1 : 0
+        opacity:      (!isGamemodeNotify && island.showCompactMusic && !isMouseOver && !suppressMusicInSmallDrag) ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
         Row {
@@ -458,7 +458,7 @@ Rectangle {
     Item {
         id:      floatingArt
         visible: opacity > 0
-        opacity: (island.hasMusic && !isGamemodeNotify && !suppressMusicInSmallDrag && !filesTabActive && (!island.idleHidden || island.isExpanded)) ? 1 : 0
+        opacity: (island.hasMusic && !isGamemodeNotify && !suppressMusicInSmallDrag && !filesTabActive && (island.showCompactMusic || island.isExpanded)) ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: 200 } }
 
         readonly property bool artExpanded: island.isExpanded && island.hasMusic && !isGamemodeNotify

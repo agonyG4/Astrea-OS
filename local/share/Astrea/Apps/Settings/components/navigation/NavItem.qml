@@ -18,6 +18,10 @@ Item {
     signal clicked()
 
     readonly property color accent: Components.Theme.accent
+    readonly property color idleForeground: Components.Theme.themeMode === 1
+        ? "#5f6368"
+        : Qt.rgba(1, 1, 1, 0.78)
+    readonly property color activeForeground: "#ffffff"
 
     // ── Fundo ─────────────────────────────────────────────────────────────
     Rectangle {
@@ -70,7 +74,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text:           root.sym
-                color:          root.selected ? "#ffffff" : (hma.containsMouse ? "#ffffff" : "#98989f")
+                color:          root.selected ? root.activeForeground : (hma.containsMouse ? root.activeForeground : root.idleForeground)
                 font.pixelSize: Components.Theme.fontSizeNormal
                 font.family:    "JetBrainsMono Nerd Font"
                 visible:        root.iconSource === ""
@@ -95,28 +99,27 @@ Item {
                 // Build themed path when iconKey is set and a theme is active.
                 readonly property string themedPath: {
                     if (root.iconKey !== "" && Components.Theme.iconTheme !== "")
-                        return "file:///home/agony/.local/share/Astrea/icons/settings/icon/"
+                        return "file:///home/agony/.local/share/Astrea/Assets/icons/settings/icon/"
                                + Components.Theme.iconTheme + "/" + root.iconKey + ".svg"
                     return ""
                 }
-                readonly property bool themedLoading: themedPath !== ""
+                readonly property string fallbackSource: root.iconSource !== "" ? root.iconSource : ""
+                readonly property string resolvedSource: {
+                    if (themedPath !== "" && !themedFailed)
+                        return themedPath
+                    return fallbackSource
+                }
                 property bool themedFailed: false
 
                 // Reset failed state when theme or key changes
                 onThemedPathChanged: themedFailed = false
 
-                source: {
-                    if (themedLoading && !themedFailed)
-                        return themedPath
-                    if (root.iconSource !== "")
-                        return root.iconSource
-                    return ""
-                }
-                visible: source !== ""
+                source: resolvedSource
+                visible: resolvedSource !== ""
 
                 onStatusChanged: {
-                    if (status === Image.Error && themedLoading && !themedFailed) {
-                        themedFailed = true   // triggers re-evaluation → falls back to iconSource
+                    if (status === Image.Error && source === themedPath && !themedFailed) {
+                        themedFailed = true
                     }
                 }
 
@@ -129,7 +132,7 @@ Item {
                 // clear mode (0) / light mode (2): apply color tint
                 layer.enabled: visible && Components.Theme.iconStyle !== 1
                 layer.effect: MultiEffect {
-                    colorizationColor: root.selected ? "#ffffff" : (hma.containsMouse ? "#ffffff" : "#98989f")
+                    colorizationColor: root.selected ? root.activeForeground : (hma.containsMouse ? root.activeForeground : root.idleForeground)
                     colorization: 1.0
                     shadowEnabled: root.selected
                     shadowColor: root.accent
@@ -142,7 +145,7 @@ Item {
 
         Text {
             text:        root.label
-            color:       root.selected ? "#ffffff" : (hma.containsMouse ? "#ffffff" : "#98989f")
+            color:       root.selected ? root.activeForeground : (hma.containsMouse ? root.activeForeground : root.idleForeground)
             font.family: Components.Theme.fontFamily
             font.pixelSize: Components.Theme.fontSizeNormal
             font.weight: root.selected ? Components.Theme.fontWeightDemiBold : Components.Theme.fontWeightMedium

@@ -11,6 +11,7 @@ struct Entry {
     name: String,
     path: String,
     is_dir: bool,
+    is_hidden: bool,
     size: u64,
     modified_ms: i64,
     kind: String,
@@ -155,7 +156,10 @@ fn run_warm_thumbnails(args: &[String]) -> Result<(), String> {
     let targets: Vec<_> = entries
         .into_iter()
         .skip(offset)
-        .filter(|e| !e.is_dir && is_previewable(Path::new(&e.path)))
+        .filter(|e| {
+            let path = Path::new(&e.path);
+            !e.is_dir && is_previewable(path) && !is_svg(path)
+        })
         .take(limit)
         .collect();
 
@@ -198,7 +202,8 @@ fn read_dir_parallel(dir: &Path, show_hidden: bool) -> Result<Vec<Entry>, String
             let meta = item.metadata().ok()?;
             let is_dir = meta.is_dir();
             let name = item.file_name().to_string_lossy().into_owned();
-            if !show_hidden && name.starts_with('.') {
+            let is_hidden = name.starts_with('.');
+            if !show_hidden && is_hidden {
                 return None;
             }
             let modified_ms = meta
@@ -213,6 +218,7 @@ fn read_dir_parallel(dir: &Path, show_hidden: bool) -> Result<Vec<Entry>, String
                 name,
                 path: path.to_string_lossy().into_owned(),
                 is_dir,
+                is_hidden,
                 size: if is_dir { 0 } else { meta.len() },
                 modified_ms,
             })
@@ -239,8 +245,9 @@ fn search_dir_recursive(
         };
         let is_dir = meta.is_dir();
         let name = item.file_name().to_string_lossy().into_owned();
+        let is_hidden = name.starts_with('.');
 
-        if !show_hidden && name.starts_with('.') {
+        if !show_hidden && is_hidden {
             continue;
         }
 
@@ -258,6 +265,7 @@ fn search_dir_recursive(
                 name,
                 path: path.to_string_lossy().into_owned(),
                 is_dir,
+                is_hidden,
                 size: if is_dir { 0 } else { meta.len() },
                 modified_ms,
             });
@@ -475,12 +483,13 @@ fn is_system_mount(m: &str) -> bool {
 fn entry_to_json(e: &Entry) -> String {
     format!(
         "{{\"fileName\":\"{}\",\"filePath\":\"{}\",\"fileUrl\":\"file://{}\",\
-         \"fileIsDir\":{},\"fileSize\":{},\"fileModified\":{},\
+         \"fileIsDir\":{},\"fileHidden\":{},\"fileSize\":{},\"fileModified\":{},\
          \"fileKind\":\"{}\",\"filePreviewUrl\":\"{}\"}}",
         escape(&e.name),
         escape(&e.path),
         escape(&e.path),
         e.is_dir,
+        e.is_hidden,
         e.size,
         e.modified_ms,
         escape(&e.kind),
@@ -515,6 +524,13 @@ fn is_small_svg(path: &Path) -> bool {
     let width = parts.next().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
     let height = parts.next().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
     width > 0 && height > 0 && width <= 64 && height <= 64
+}
+
+fn is_svg(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("svg"))
+        .unwrap_or(false)
 }
 
 fn svg_preview_density(path: &Path) -> &'static str {
@@ -618,6 +634,10 @@ fn cache_key(path: &Path, modified_ms: i64) -> String {
 fn preview_url(path: &Path, is_dir: bool, modified_ms: i64) -> String {
     if is_dir || file_media_type(path).is_none() {
         return String::new();
+    }
+
+    if is_svg(path) {
+        return format!("file://{}", path.to_string_lossy());
     }
 
     if let Ok(p) = cache_dir().map(|d| d.join(format!("{}.png", cache_key(path, modified_ms)))) {

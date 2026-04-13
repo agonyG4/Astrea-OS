@@ -42,12 +42,22 @@ Item {
         radius: Theme.radiusLarge - 2
         color:  "transparent"
 
-        Rectangle { anchors.fill: parent; radius: parent.radius; color: Theme.background }
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: Theme.background
+        }
         Rectangle {
             anchors.fill: parent; radius: parent.radius
             color: "transparent"
             border { width: 1; color: Theme.border }
         }
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        radius: Theme.radiusLarge - 2
+        color: "transparent"
     }
 
     // ─── Hover glow ───────────────────────────────────────────────
@@ -86,8 +96,8 @@ Item {
                 hoverEnabled: true
                 onClicked: {
                     if (!astreaPopupRef) return
-                    root.updateAstreaAnchor()
-                    astreaPopupRef.shown = !astreaPopupRef.shown
+                    const point = logoButton.mapToItem(null, logoButton.width / 2, logoButton.height / 2)
+                    astreaPopupRef.toggleAt(point.x)
                 }
             }
         }

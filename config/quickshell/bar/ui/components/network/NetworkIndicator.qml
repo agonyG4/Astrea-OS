@@ -49,7 +49,7 @@ Item {
             color: !root.netConnected
                 ? Theme.iconWarning
                 : Theme.iconMain
-            font.pixelSize: 16
+            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
             anchors.verticalCenter: parent.verticalCenter
             Behavior on color { ColorAnimation { duration: 150 } }
         }
@@ -62,12 +62,8 @@ Item {
 
         onClicked: {
             if (root.netPopupRef) {
-                root.updatePopupAnchor()
-                if (root.netPopupRef.shown) {
-                    root.netPopupRef.shown = false;
-                } else {
-                    root.netPopupRef.shown = true;
-                }
+                const point = root.mapToItem(null, root.width / 2, root.height / 2)
+                root.netPopupRef.toggleAt(point.x)
             }
         }
     }

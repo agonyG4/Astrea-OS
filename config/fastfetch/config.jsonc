@@ -1,15 +1,5 @@
 {
   "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
-  "display": {
-    "color": {
-      "keys": "38;2;186;48;62",
-      "title": "38;2;186;48;62"
-    }
-  },
-  "logo": {
-    "source": "~/.local/share/Astrea/ASCII/astrea.txt",
-    "type": "file"
-  },
   "modules": [
     "title",
     "separator",

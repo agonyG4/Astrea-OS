@@ -158,6 +158,7 @@ PanelWindow {
 
     ControlCenterPopup {
         id: ccPopup
+        anchorWindow: bar
     }
 
     AstreaPopup {

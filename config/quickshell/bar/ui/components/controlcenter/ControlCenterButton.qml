@@ -53,8 +53,8 @@ Item {
         id: tapHandler
         onTapped: {
             if (root.ccPopupRef) {
-                root.updatePopupAnchor()
-                root.ccPopupRef.shown = !root.ccPopupRef.shown
+                const point = root.mapToItem(null, root.width / 2, root.height / 2)
+                root.ccPopupRef.toggleAt(point.x)
             }
         }
     }

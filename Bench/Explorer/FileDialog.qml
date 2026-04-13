@@ -216,6 +216,7 @@ Dialog {
 
             LayoutComponents.Sidebar {
                 Layout.fillHeight: true
+                Layout.preferredWidth: 256
             }
 
             Rectangle {

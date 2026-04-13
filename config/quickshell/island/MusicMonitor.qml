@@ -14,13 +14,13 @@ Item {
     property string artSource: ""
     property string artPath: ""
     property bool   isPlaying: false
+    property bool   shouldDisplayMusic: false
     property bool   isShuffle: false
     property bool   isLoop: false
     property bool   isLoopTrack: false
     property bool   isLoopPlaylist: false
     property string loopMode: "none"
 
-    property bool _sinkInitialized: false
     property bool _playerMonitorStarting: false
 
     function setDominantColor(path) {
@@ -69,23 +69,33 @@ Item {
     }
 
     function clearState() {
+        inactiveTimer.stop()
+        artUrlCache = ""
+        musicPosition = 0
+        musicLength = 1
         musicTitleText = ""
         musicArtistText = ""
+        artSource = ""
+        artPath = ""
+        dominantCol = "#ffffff"
         isPlaying = false
+        shouldDisplayMusic = false
         isShuffle = false
         isLoop = false
         isLoopTrack = false
         isLoopPlaylist = false
         loopMode = "none"
-        artUrlCache = ""
-        artSource = ""
-        artPath = ""
-        dominantCol = "#ffffff"
-        musicPosition = 0
-        musicLength = 1
         cavaBars = [0, 0, 0, 0, 0, 0]
         cavaProcess.running = false
-        _sinkInitialized = false
+    }
+
+    function scheduleInactiveReset() {
+        inactiveTimer.restart()
+    }
+
+    function handlePlayerUnavailable() {
+        inactiveTimer.stop()
+        clearState()
     }
 
     function ensureMonitoring() {
@@ -113,18 +123,6 @@ Item {
     }
 
     Process {
-        id: spotifySink
-        command: ["bash", Qt.resolvedUrl("scripts/spotify-sink.sh").toString().replace("file://", "")]
-        running: false
-        stdout: SplitParser {
-            onRead: _ => {
-                cavaProcess.running = false
-                Qt.callLater(() => { cavaProcess.running = true })
-            }
-        }
-    }
-
-    Process {
         id: cavaProcess
         command: ["cava", "-p", Qt.resolvedUrl("config/cava.conf").toString().replace("file://", "")]
         running: false
@@ -137,6 +135,13 @@ Item {
                 for (var i = 0; i < 6; i++)
                     nextBars.push(parseInt(parts[i]) || 0)
                 root.cavaBars = nextBars
+            }
+        }
+        stderr: SplitParser {
+            splitMarker: "\n"
+            onRead: data => {
+                if ((data || "").trim() !== "")
+                    root.cavaBars = [0, 0, 0, 0, 0, 0]
             }
         }
     }
@@ -161,21 +166,29 @@ Item {
                 var shuffle = p[6].trim().toLowerCase()
 
                 if (!title || status === "stopped") {
-                    root.clearState()
+                    root.isPlaying = false
+                    root.scheduleInactiveReset()
                     return
                 }
 
                 root.isPlaying = status === "playing"
+                root.shouldDisplayMusic = true
                 root.musicTitleText = title
                 root.musicArtistText = artist
                 root.musicPosition = pos
                 root.musicLength = len
                 root.isShuffle = shuffle === "true" || shuffle === "1"
 
-                if (!root._sinkInitialized) {
-                    root._sinkInitialized = true
-                    spotifySink.running = false
-                    Qt.callLater(() => { spotifySink.running = true })
+                if (root.isPlaying) {
+                    inactiveTimer.stop()
+                    if (!cavaProcess.running) {
+                        cavaProcess.running = false
+                        Qt.callLater(() => { cavaProcess.running = true })
+                    }
+                } else {
+                    cavaProcess.running = false
+                    root.cavaBars = [0, 0, 0, 0, 0, 0]
+                    root.scheduleInactiveReset()
                 }
 
                 if (artUrl === root.artUrlCache)
@@ -203,13 +216,14 @@ Item {
         stderr: SplitParser {
             onRead: data => {
                 if (data.includes("No players found"))
-                    root.clearState()
+                    root.handlePlayerUnavailable()
             }
         }
         onRunningChanged: {
             if (running) {
                 root._playerMonitorStarting = false
             } else if (!root._playerMonitorStarting) {
+                root.handlePlayerUnavailable()
                 retryTimer.restart()
             }
         }
@@ -257,6 +271,13 @@ Item {
         interval: 5000
         repeat: false
         onTriggered: root.ensureMonitoring()
+    }
+
+    Timer {
+        id: inactiveTimer
+        interval: 5000
+        repeat: false
+        onTriggered: root.clearState()
     }
 
     Component.onCompleted: ensureMonitoring()

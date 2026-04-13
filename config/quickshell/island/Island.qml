@@ -7,7 +7,7 @@ import "."
 PanelWindow {
     id: island
     property QtObject sharedMusicState: null
-
+    
     anchors.top: true
     implicitWidth:  screen.width
     implicitHeight: islandConfig.enabled ? islandContent.height + 100 : 0
@@ -38,6 +38,7 @@ property QtObject islandConfig: QtObject {
     property real   smoothPosition: 0
     readonly property string musicTitleText: sharedMusicState ? sharedMusicState.musicTitleText : ""
     readonly property string musicArtistText: sharedMusicState ? sharedMusicState.musicArtistText : ""
+    readonly property bool   shouldDisplayMusic: sharedMusicState ? sharedMusicState.shouldDisplayMusic : false
     property string artSource:       ""
     readonly property bool   isPlaying: sharedMusicState ? sharedMusicState.isPlaying : false
     property int    cavaMinHeight:         4
@@ -46,6 +47,7 @@ property QtObject islandConfig: QtObject {
 
     property bool idleHidden:         false
     property bool hasMusic:           islandConfig.music && musicTitleText !== ""
+    property bool showCompactMusic:   hasMusic && shouldDisplayMusic && !idleHidden
     property bool isExpanded:         islandContent.isMouseOver
     property bool cavaActive:         hasMusic && !showGamemodeNotify
     property bool gamemodeActive:     false

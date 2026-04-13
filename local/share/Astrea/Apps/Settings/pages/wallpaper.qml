@@ -1,1 +1,0 @@
-paper/wallpaper.qml

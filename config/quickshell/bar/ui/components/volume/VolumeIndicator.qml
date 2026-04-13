@@ -52,7 +52,7 @@ Item {
             color: root.volMuted
                 ? Theme.iconMuted
                 : Theme.iconMain
-            font.pixelSize: 16
+            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
             anchors.verticalCenter: parent.verticalCenter
             Behavior on color { ColorAnimation { duration: 150 } }
         }
@@ -65,12 +65,8 @@ Item {
 
         onClicked: {
             if (root.volPopupRef) {
-                root.updatePopupAnchor()
-                if (root.volPopupRef.shown) {
-                    root.volPopupRef.shown = false;
-                } else {
-                    root.volPopupRef.shown = true;
-                }
+                const point = root.mapToItem(null, root.width / 2, root.height / 2)
+                root.volPopupRef.toggleAt(point.x)
             }
         }
 

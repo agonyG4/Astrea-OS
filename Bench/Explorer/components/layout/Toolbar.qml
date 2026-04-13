@@ -2,17 +2,25 @@ import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.impl 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Window 2.15
 import Quickshell.Io
 import "../.."
 import "../common" as CommonComponents
+import "file:///home/agony/.local/share/Astrea/Features/System" as AstreaSystem
 
 Rectangle {
     id: toolbar
     height: 46
     color: Theme.bg
+    readonly property Item overlayParent: Window.window && Window.window.contentItem
+                                          ? Window.window.contentItem
+                                          : toolbar
+    readonly property int locationFieldHeight: 32
+    readonly property int locationFieldRadius: 10
     property bool editingPath: false
     property int selectedSuggestionIndex: -1
     readonly property bool searching: AppState.searchVisible || AppState.searchActive
+    property bool emptyTrashConfirmVisible: false
 
     // ── Helpers ──────────────────────────────────────────────────
     function normalizePathInput(text) {
@@ -153,82 +161,239 @@ Rectangle {
 
         // ── Location Pill ───────────────────────────────────────
         Rectangle {
+            id: editPathPill
+            Layout.fillWidth: true
+            height: toolbar.locationFieldHeight
+            visible: toolbar.editingPath && !toolbar.searching
+            radius: toolbar.locationFieldRadius
+            color: pathField.activeFocus
+                ? Qt.rgba(1, 1, 1, 0.07)
+                : Qt.rgba(1, 1, 1, 0.05)
+            border.color: pathField.activeFocus
+                ? Qt.rgba(0.25, 0.55, 1.0, 0.72)
+                : Qt.rgba(1, 1, 1, 0.12)
+            border.width: 1
+
+            Behavior on color { ColorAnimation { duration: 100 } }
+            Behavior on border.color { ColorAnimation { duration: 100 } }
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 10
+                anchors.rightMargin: 6
+                spacing: 4
+
+                TextField {
+                    id: pathField
+                    Layout.fillWidth: true
+                    height: parent.height
+                    color: Theme.text
+                    font.pixelSize: 13
+                    selectByMouse: true
+                    placeholderText: "/home/agony"
+                    placeholderTextColor: Theme.textTer
+                    verticalAlignment: TextInput.AlignVCenter
+                    leftPadding: 0
+                    rightPadding: 0
+                    background: null
+
+                    onTextChanged: toolbar.refreshSuggestions()
+                    onAccepted: toolbar.commitPathEditing()
+                    onActiveFocusChanged: {
+                        if (!activeFocus && toolbar.editingPath)
+                            focusLossTimer.restart()
+                    }
+
+                    Keys.onPressed: function(event) {
+                        if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_A) {
+                            pathField.selectAll()
+                            event.accepted = true
+                            return
+                        }
+                        if (event.key === Qt.Key_Down) {
+                            toolbar.moveSuggestionSelection(1)
+                            event.accepted = true
+                            return
+                        }
+                        if (event.key === Qt.Key_Up) {
+                            toolbar.moveSuggestionSelection(-1)
+                            event.accepted = true
+                            return
+                        }
+                        if (event.key === Qt.Key_Tab) {
+                            if (toolbar.selectedSuggestionIndex >= 0 && toolbar.selectedSuggestionIndex < pathSuggestions.count) {
+                                pathField.text = pathSuggestions.get(toolbar.selectedSuggestionIndex).path + "/"
+                                pathField.cursorPosition = pathField.text.length
+                                toolbar.selectedSuggestionIndex = -1
+                                toolbar.refreshSuggestions()
+                                event.accepted = true
+                            }
+                            return
+                        }
+                        if (event.key === Qt.Key_Escape) {
+                            toolbar.stopPathEditing()
+                            event.accepted = true
+                        }
+                    }
+                }
+
+                Rectangle {
+                    id: pathDismissBg
+                    width: 20
+                    height: 20
+                    radius: 10
+                    color: pathDismissMouse.containsMouse
+                        ? Qt.rgba(1, 1, 1, 0.12)
+                        : "transparent"
+
+                    Behavior on color { ColorAnimation { duration: 80 } }
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "×"
+                        color: Theme.textSec
+                        font.pixelSize: 15
+                    }
+
+                    MouseArea {
+                        id: pathDismissMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: toolbar.stopPathEditing()
+                    }
+                }
+            }
+        }
+
+        Rectangle {
             id: locationPill
             Layout.fillWidth: true
-            height: 32
-            radius: 10
-            color: toolbar.searching || editingPath
+            height: toolbar.locationFieldHeight
+            visible: !toolbar.editingPath || toolbar.searching
+            opacity: visible ? 1 : 0
+            radius: toolbar.locationFieldRadius
+            color: toolbar.searching
                 ? Qt.rgba(1, 1, 1, 0.07)
-                : pillMouse.containsMouse
+                : pillHover.hovered
                     ? Qt.rgba(1, 1, 1, 0.07)
                     : Qt.rgba(1, 1, 1, 0.04)
-            border.color: toolbar.searching || editingPath
-                ? Qt.rgba(0.25, 0.55, 1.0, toolbar.searching ? 0.72 : 0.6)
+            border.color: toolbar.searching
+                ? Qt.rgba(0.25, 0.55, 1.0, 0.72)
                 : Qt.rgba(1, 1, 1, 0.1)
             border.width: 1
 
             Behavior on color { ColorAnimation { duration: 100 } }
             Behavior on border.color { ColorAnimation { duration: 100 } }
 
+            MouseArea {
+                anchors.fill: parent
+                enabled: !toolbar.editingPath && !toolbar.searching
+                acceptedButtons: Qt.LeftButton
+                cursorShape: Qt.IBeamCursor
+                onClicked: toolbar.startPathEditing(AppState.currentPath)
+            }
+
+            HoverHandler {
+                id: pillHover
+                enabled: !toolbar.editingPath && !toolbar.searching
+            }
+
             // ── Breadcrumb row (display mode) ─────────────────
-            Row {
-                id: breadcrumbRow
+            Flickable {
+                id: breadcrumbFlick
                 anchors {
                     left: parent.left
                     right: parent.right
-                    leftMargin: 12
-                    rightMargin: 12
-                    verticalCenter: parent.verticalCenter
+                    leftMargin: 8
+                    rightMargin: 8
+                    top: parent.top
+                    bottom: parent.bottom
                 }
-                spacing: 0
                 visible: !toolbar.editingPath && !toolbar.searching
                 clip: true
+                contentWidth: breadcrumbRow.width
+                contentHeight: height
+                boundsBehavior: Flickable.StopAtBounds
+                flickableDirection: Flickable.HorizontalFlick
+                interactive: contentWidth > width
 
-                Repeater {
-                    model: AppState.breadcrumbParts
+                Row {
+                    id: breadcrumbRow
+                    height: parent.height
+                    spacing: 4
 
-                    Row {
-                        spacing: 0
+                    Repeater {
+                        model: AppState.breadcrumbParts
 
-                        Text {
-                            visible: index > 0
-                            text: " / "
-                            color: Theme.textTer
-                            font.pixelSize: 12
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-
-                        Text {
-                            text: {
-                                var label = modelData.label
-                                if (modelData.path === "/home/agony") return "Início"
-                                if (label === "/") return "/"
-                                return label
-                            }
-                            color: index === AppState.breadcrumbParts.length - 1
-                                ? Theme.text
-                                : Theme.textSec
-                            font {
-                                pixelSize: 13
-                                weight: index === AppState.breadcrumbParts.length - 1
-                                    ? Font.DemiBold : Font.Normal
-                            }
+                        Row {
+                            spacing: 4
                             anchors.verticalCenter: parent.verticalCenter
 
-                            MouseArea {
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    if (index < AppState.breadcrumbParts.length - 1)
-                                        AppState.navigateTo(modelData.path)
-                                    else
-                                        toolbar.startPathEditing(AppState.currentPath)
+                            Text {
+                                visible: index > 0
+                                text: "/"
+                                color: Theme.textTer
+                                opacity: 0.72
+                                font.pixelSize: 11
+                                anchors.verticalCenter: parent.verticalCenter
+                            }
+
+                            Rectangle {
+                                height: 24
+                                radius: 12
+                                color: {
+                                    if (crumbMouse.containsMouse)
+                                        return index === AppState.breadcrumbParts.length - 1
+                                            ? Qt.rgba(1, 1, 1, 0.18)
+                                            : Qt.rgba(1, 1, 1, 0.12)
+                                    return index === AppState.breadcrumbParts.length - 1
+                                        ? Qt.rgba(1, 1, 1, 0.14)
+                                        : Qt.rgba(1, 1, 1, 0.07)
+                                }
+                                border.width: 1
+                                border.color: index === AppState.breadcrumbParts.length - 1
+                                    ? Qt.rgba(1, 1, 1, 0.16)
+                                    : Qt.rgba(1, 1, 1, 0.10)
+
+                                Behavior on color { ColorAnimation { duration: 100 } }
+                                Behavior on border.color { ColorAnimation { duration: 100 } }
+
+                                width: crumbLabel.width + 18
+
+                                Text {
+                                    id: crumbLabel
+                                    anchors.centerIn: parent
+                                    text: {
+                                        var label = modelData.label
+                                        if (label === "/") return "/"
+                                        return label
+                                    }
+                                    color: index === AppState.breadcrumbParts.length - 1
+                                        ? Theme.text
+                                        : Theme.textSec
+                                    font {
+                                        pixelSize: 12
+                                        weight: index === AppState.breadcrumbParts.length - 1
+                                            ? Font.DemiBold : Font.Normal
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: crumbMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: AppState.navigateTo(modelData.path)
                                 }
                             }
                         }
                     }
                 }
+
+                Component.onCompleted: contentX = Math.max(0, contentWidth - width)
+                onContentWidthChanged: contentX = Math.max(0, contentWidth - width)
+                onWidthChanged: contentX = Math.max(0, contentWidth - width)
             }
 
             // ── Search field ──────────────────────────────────
@@ -305,97 +470,35 @@ Rectangle {
                 }
             }
 
-            // ── Edit field ────────────────────────────────────
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 10
-                anchors.rightMargin: 6
-                spacing: 4
-                visible: toolbar.editingPath && !toolbar.searching
+        }
 
-                TextField {
-                    id: pathField
-                    Layout.fillWidth: true
-                    height: parent.height
-                    color: Theme.text
-                    font.pixelSize: 13
-                    selectByMouse: true
-                    background: null
-                    placeholderText: "/home/agony"
-                    placeholderTextColor: Theme.textTer
-                    verticalAlignment: TextInput.AlignVCenter
-                    leftPadding: 2
+        Rectangle {
+            id: emptyTrashBtn
+            visible: AppState.inTrashView
+            implicitWidth: emptyTrashLabel.implicitWidth + 20
+            height: 32
+            radius: 8
+            color: emptyTrashMouse.containsMouse
+                ? Qt.rgba(0.82, 0.22, 0.22, 0.18)
+                : Qt.rgba(0.82, 0.22, 0.22, 0.10)
 
-                    onTextChanged: toolbar.refreshSuggestions()
-                    onAccepted: toolbar.commitPathEditing()
-                    onActiveFocusChanged: {
-                        if (!activeFocus && toolbar.editingPath)
-                            focusLossTimer.restart()
-                    }
+            Behavior on color { ColorAnimation { duration: 80 } }
 
-                    Keys.onPressed: function(event) {
-                        if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_A) {
-                            pathField.selectAll()
-                            event.accepted = true
-                            return
-                        }
-                        if (event.key === Qt.Key_Down) {
-                            toolbar.moveSuggestionSelection(1)
-                            event.accepted = true
-                            return
-                        }
-                        if (event.key === Qt.Key_Up) {
-                            toolbar.moveSuggestionSelection(-1)
-                            event.accepted = true
-                            return
-                        }
-                        if (event.key === Qt.Key_Tab) {
-                            if (toolbar.selectedSuggestionIndex >= 0 && toolbar.selectedSuggestionIndex < pathSuggestions.count) {
-                                pathField.text = pathSuggestions.get(toolbar.selectedSuggestionIndex).path + "/"
-                                pathField.cursorPosition = pathField.text.length
-                                toolbar.selectedSuggestionIndex = -1
-                                toolbar.refreshSuggestions()
-                                event.accepted = true
-                            }
-                            return
-                        }
-                        if (event.key === Qt.Key_Escape) {
-                            toolbar.stopPathEditing()
-                            event.accepted = true
-                        }
-                    }
-                }
-
-                Rectangle {
-                    width: 20; height: 20; radius: 10
-                    color: dismissHover.containsMouse
-                        ? Qt.rgba(1, 1, 1, 0.12) : "transparent"
-                    visible: toolbar.editingPath
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "×"
-                        color: Theme.textSec
-                        font.pixelSize: 15
-                    }
-
-                    MouseArea {
-                        id: dismissHover
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: toolbar.stopPathEditing()
-                    }
-                }
+            Text {
+                id: emptyTrashLabel
+                anchors.centerIn: parent
+                text: "Esvaziar lixeira"
+                color: "#ffb3b3"
+                font.pixelSize: 12
+                font.weight: Font.Normal
             }
 
             MouseArea {
-                id: pillMouse
+                id: emptyTrashMouse
                 anchors.fill: parent
                 hoverEnabled: true
-                enabled: !toolbar.editingPath && !toolbar.searching
-                cursorShape: Qt.IBeamCursor
-                onClicked: toolbar.startPathEditing(AppState.currentPath)
+                cursorShape: Qt.PointingHandCursor
+                onClicked: toolbar.emptyTrashConfirmVisible = true
             }
         }
 
@@ -424,9 +527,10 @@ Rectangle {
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
-                    settingsMenu.x = toolbar.width - settingsMenu.width - 10
-                    settingsMenu.y = toolbar.height + 2
-                    settingsMenu.open()
+                    const pt = toolbar.mapToItem(settingsMenu,
+                                                 toolbar.width - settingsMenu.menuWidth - 10,
+                                                 toolbar.height + 2)
+                    settingsMenu.openAt(pt.x, pt.y)
                 }
             }
         }
@@ -495,7 +599,7 @@ Rectangle {
                         anchors.verticalCenter: parent.verticalCenter
                         text: model.path.split("/").pop()
                         color: index === toolbar.selectedSuggestionIndex ? Theme.text : Theme.textSec
-                        font { pixelSize: 12; weight: Font.Medium }
+                        font { pixelSize: 12; weight: Font.Normal }
 
                         width: parent.width - 20
                         elide: Text.ElideRight
@@ -520,23 +624,104 @@ Rectangle {
         }
     }
 
-    // ── Settings panel popup ──────────────────────────────────────
     Popup {
-        id: settingsMenu
-        modal: false
+        id: emptyTrashPopup
+        anchors.centerIn: Overlay.overlay
+        modal: true
         focus: true
-        padding: 6
-        width: 230
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+        padding: 0
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        visible: toolbar.emptyTrashConfirmVisible
+        onClosed: toolbar.emptyTrashConfirmVisible = false
 
         background: Rectangle {
-            radius: 12
-            color: Qt.rgba(0.14, 0.14, 0.16, 0.97)
-            border.color: Qt.rgba(1, 1, 1, 0.1)
+            radius: 14
+            color: Theme.panel
+            border.color: Theme.border
             border.width: 1
         }
 
         contentItem: Column {
+            spacing: 12
+            padding: 16
+
+            Text {
+                text: "Esvaziar lixeira?"
+                color: Theme.text
+                font.pixelSize: 15
+                font.weight: Font.DemiBold
+            }
+
+            Text {
+                width: 320
+                wrapMode: Text.WordWrap
+                text: "Todos os itens da lixeira serão removidos permanentemente."
+                color: Theme.textSec
+                font.pixelSize: 12
+            }
+
+            Row {
+                spacing: 8
+
+                Rectangle {
+                    width: 88
+                    height: 34
+                    radius: 8
+                    color: cancelTrashMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.06)
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Cancelar"
+                        color: Theme.text
+                        font.pixelSize: 12
+                    }
+
+                    MouseArea {
+                        id: cancelTrashMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: emptyTrashPopup.close()
+                    }
+                }
+
+                Rectangle {
+                    width: 128
+                    height: 34
+                    radius: 8
+                    color: confirmTrashMouse.containsMouse ? Qt.rgba(0.82, 0.22, 0.22, 0.28) : Qt.rgba(0.82, 0.22, 0.22, 0.20)
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "Esvaziar"
+                        color: "#ffd6d6"
+                        font.pixelSize: 12
+                        font.weight: Font.Normal
+                    }
+
+                    MouseArea {
+                        id: confirmTrashMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            emptyTrashPopup.close()
+                            AppState.emptyTrash()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Settings panel popup ──────────────────────────────────────
+    AstreaSystem.FileContextMenu {
+        id: settingsMenu
+        parent: toolbar.overlayParent
+        anchors.fill: parent
+        menuWidth: 230
+
+        Column {
             spacing: 2
 
             // Section label
@@ -620,6 +805,13 @@ Rectangle {
                 icon: AppState.foldersFirst ? "◉" : "○"
                 checked: AppState.foldersFirst
                 onTriggered: AppState.foldersFirst = !AppState.foldersFirst
+            }
+
+            SettingsAction {
+                label: "Separar por seções"
+                icon: AppState.groupingEnabled ? "◉" : "○"
+                checked: AppState.groupingEnabled
+                onTriggered: AppState.groupingEnabled = !AppState.groupingEnabled
             }
 
             SettingsAction {
@@ -750,7 +942,7 @@ Rectangle {
         property bool isEnabled: true
         signal triggered()
 
-        width: settingsMenu.width - settingsMenu.leftPadding - settingsMenu.rightPadding
+        width: settingsMenu.menuWidth - 12
         height: 30
 
         Rectangle {

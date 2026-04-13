@@ -1,1 +1,0 @@
-../app/lockscreen/auth_helper.c

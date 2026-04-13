@@ -187,12 +187,57 @@ ShellRoot {
         id: spotlight
         property bool open: false
         property var results: []
+        property var usageCounts: ({})
+        readonly property string usageFilePath: Quickshell.env("HOME") + "/.local/state/Astrea/spotlight-usage.json"
+        property string usageLoadBuffer: ""
 
         function toggle() { if (open) close(); else open = true }
 
         function close() {
             open = false
             results = []
+        }
+
+        function entryKey(entry) {
+            return entry.desktopId || entry.id || entry.fileName || [entry.name || "", entry.exec || entry.execString || ""].join("|")
+        }
+
+        function usageCountFor(entry) {
+            const key = entryKey(entry)
+            return Number(usageCounts[key] || 0)
+        }
+
+        function bumpUsage(entry) {
+            const key = entryKey(entry)
+            usageCounts = Object.assign({}, usageCounts, {
+                [key]: usageCountFor(entry) + 1
+            })
+            persistUsage()
+        }
+
+        function matchTier(searchableName, searchableExec, query, searchTerms) {
+            if (searchableName.startsWith(query)) return 0
+            if (searchTerms.every(term => searchableName.includes(term))) return 1
+            if (searchableExec.startsWith(query)) return 2
+            return 3
+        }
+
+        function persistUsage() {
+            usageSaveProc.command = [
+                "python3",
+                "-c",
+                "import json, os, sys, tempfile; path = sys.argv[1]; data = json.loads(sys.argv[2]); os.makedirs(os.path.dirname(path), exist_ok=True); fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix='.spotlight-', suffix='.json'); os.close(fd); open(tmp, 'w', encoding='utf-8').write(json.dumps(data)); os.replace(tmp, path)",
+                usageFilePath,
+                JSON.stringify(usageCounts)
+            ]
+            usageSaveProc.running = false
+            usageSaveProc.running = true
+        }
+
+        function loadUsage() {
+            usageLoadBuffer = ""
+            usageLoadProc.running = false
+            usageLoadProc.running = true
         }
 
         function updateResults(query) {
@@ -202,34 +247,45 @@ ShellRoot {
             let items = []
             if (typeof DesktopEntries !== "undefined") {
                 let apps = DesktopEntries.applications.values
-                let searchTerms = q.split(/[\s-]+/)
+                let searchTerms = q.split(/[\s-]+/).filter(term => term.length > 0)
                 let seenNames = new Set()
 
                 for (let entry of apps) {
                     if (!entry || entry.noDisplay) continue
-                    
+
                     let searchableName = (entry.name || "").toLowerCase()
                     if (seenNames.has(searchableName)) continue
 
                     let searchableExec = (entry.exec || entry.execString || "").toLowerCase()
-
                     let matches = searchTerms.every(term =>
                         searchableName.includes(term) || searchableExec.includes(term)
                     )
 
-                    if (matches) {
-                        items.push(entry)
-                        seenNames.add(searchableName)
-                    }
-                    if (items.length >= 6) break
+                    if (!matches) continue
+
+                    items.push({
+                        entry,
+                        name: searchableName,
+                        exec: searchableExec,
+                        tier: matchTier(searchableName, searchableExec, q, searchTerms),
+                        usage: usageCountFor(entry)
+                    })
+                    seenNames.add(searchableName)
                 }
+
+                items.sort((a, b) => {
+                    if (a.tier !== b.tier) return a.tier - b.tier
+                    if (a.usage !== b.usage) return b.usage - a.usage
+                    return a.name.localeCompare(b.name)
+                })
             }
-            results = items
+            results = items.slice(0, 6).map(item => item.entry)
         }
 
         function launch(index) {
             if (index < 0 || index >= results.length) return
             let entry = results[index]
+            bumpUsage(entry)
 
             // Fecha primeiro para liberar o foco do Wayland
             close()
@@ -240,6 +296,36 @@ ShellRoot {
             Qt.callLater(() => {
                 entry.execute()
             })
+        }
+
+        Component.onCompleted: loadUsage()
+
+        property var usageLoadProc: Process {
+            id: usageLoadProc
+            command: [
+                "python3",
+                "-c",
+                "import json, os, sys; path = sys.argv[1]; print(json.dumps(json.load(open(path, encoding='utf-8'))) if os.path.exists(path) else '{}')",
+                spotlight.usageFilePath
+            ]
+            running: false
+            stdout: SplitParser {
+                onRead: data => spotlight.usageLoadBuffer += data
+            }
+            onExited: (code, _) => {
+                if (code !== 0) return
+                try {
+                    spotlight.usageCounts = JSON.parse(spotlight.usageLoadBuffer || "{}")
+                } catch (e) {
+                    spotlight.usageCounts = ({})
+                }
+            }
+        }
+
+        property var usageSaveProc: Process {
+            id: usageSaveProc
+            command: []
+            running: false
         }
     }
 }

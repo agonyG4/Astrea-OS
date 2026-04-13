@@ -1,97 +1,103 @@
+import Quickshell
 import Quickshell.Io
 import QtQuick
 
 QtObject {
     id: root
 
-    property bool   powered:     false
-    property string deviceName:  ""
+    readonly property string scriptPath: Quickshell.env("HOME") + "/.local/share/Astrea/System/scripts/bluetooth_manager.py"
+
+    property bool powered: false
+    property string deviceName: ""
     property string devicesJson: "[]"
     property string scannedJson: "[]"
-    property bool   scanning:    false
-
+    property bool scanning: false
     property var _scannedList: []
+    property string _statusBuf: ""
 
     function refresh() {
-        btProc.running = false
-        btProc.running = true
+        if (statusProc.running)
+            statusProc.running = false
+        statusProc.running = true
+    }
+
+    function autoConnect(force) {
+        if (scanning)
+            return
+        autoConnectProc.command = ["python3", root.scriptPath, force ? "force_autoconnect" : "autoconnect"]
+        autoConnectProc.running = false
+        autoConnectProc.running = true
     }
 
     function startScan() {
-        if (!root.powered) return
-        root.scanning     = true
+        if (!root.powered)
+            return
+        root.scanning = true
         root._scannedList = []
-        root.scannedJson  = "[]"
-        scanProc.running  = false
-        scanProc.running  = true
+        root.scannedJson = "[]"
+        scanProc.running = false
+        scanProc.running = true
     }
 
     function stopScan() {
-        scanProc.running     = false
+        scanProc.running = false
         scanStopProc.running = false
         scanStopProc.running = true
-        root.scanning        = false
+        root.scanning = false
     }
 
     function _addScanned(mac, name) {
         var paired = []
-        try { paired = JSON.parse(root.devicesJson) } catch(e) {}
+        try { paired = JSON.parse(root.devicesJson) } catch (e) {}
         for (var i = 0; i < paired.length; i++) {
-            if (paired[i].mac === mac) return
+            if (paired[i].mac === mac)
+                return
         }
         for (var j = 0; j < root._scannedList.length; j++) {
-            if (root._scannedList[j].mac === mac) return
+            if (root._scannedList[j].mac === mac)
+                return
         }
         var updated = root._scannedList.slice()
-        updated.push({ mac: mac, name: name, connected: false })
+        updated.push({ mac: mac, name: name, connected: false, trusted: false, auto_connect: true })
         root._scannedList = updated
-        root.scannedJson  = JSON.stringify(updated)
+        root.scannedJson = JSON.stringify(updated)
     }
 
-    property var btProc: Process {
-        command: ["bash", "-c", "
-            while true; do
-                POWERED=$(bluetoothctl show < /dev/null | grep -q 'Powered: yes' && echo true || echo false);
-                CON_DEV=$(bluetoothctl devices Connected < /dev/null | head -n1 | cut -d ' ' -f 2);
-                if [ -n \"$CON_DEV\" ]; then
-                    DEVICE=$(bluetoothctl info \"$CON_DEV\" < /dev/null | grep -m1 'Name:' | cut -d ' ' -f 2- || echo '');
-                else
-                    DEVICE='';
-                fi
-                DEVICES=$(bluetoothctl devices Paired < /dev/null);
-                DEVICES_JSON=\"[\";
-                if [ -n \"$DEVICES\" ]; then
-                    FIRST=1;
-                    while read -r line; do
-                        if [ -z \"$line\" ]; then continue; fi;
-                        MAC=$(echo \"$line\" | cut -d ' ' -f 2);
-                        if [ -z \"$MAC\" ]; then continue; fi;
-                        NAME=$(echo \"$line\" | cut -d ' ' -f 3-);
-                        NAME=$(echo \"$NAME\" | tr -d '\"');
-                        CONN=$(bluetoothctl info \"$MAC\" < /dev/null | grep -q 'Connected: yes' && echo true || echo false);
-                        if [ $FIRST -eq 0 ]; then DEVICES_JSON=\"$DEVICES_JSON,\"; else FIRST=0; fi;
-                        DEVICES_JSON=\"$DEVICES_JSON{\\\"mac\\\":\\\"$MAC\\\",\\\"name\\\":\\\"$NAME\\\",\\\"connected\\\":$CONN}\";
-                    done <<< \"$DEVICES\";
-                fi;
-                DEVICES_JSON=\"$DEVICES_JSON]\";
-                echo \"paired|$POWERED|$DEVICE|$DEVICES_JSON\";
-                sleep 2;
-            done
-        "]
-        running: true
+    property var statusProc: Process {
+        id: statusProc
+        command: ["python3", root.scriptPath, "status"]
+        running: false
         stdout: SplitParser {
             onRead: data => {
-                var p = data.split('|')
-                if (p.length >= 4 && p[0] === 'paired') {
-                    root.powered     = (p[1] === 'true')
-                    root.deviceName  = p[2]
-                    root.devicesJson = p[3]
-                }
+                root._statusBuf += data
             }
         }
+        onExited: exitCode => {
+            if (exitCode !== 0 || !root._statusBuf.trim()) {
+                root._statusBuf = ""
+                return
+            }
+            try {
+                const payload = JSON.parse(root._statusBuf)
+                root.powered = !!payload.powered
+                root.deviceName = payload.connected_name || ""
+                root.devicesJson = JSON.stringify(payload.paired_devices || [])
+            } catch (e) {
+                console.log("Bluetooth status parse error:", e)
+            }
+            root._statusBuf = ""
+        }
+    }
+
+    property var autoConnectProc: Process {
+        id: autoConnectProc
+        command: ["python3", root.scriptPath, "autoconnect"]
+        running: false
+        onExited: () => refresh()
     }
 
     property var scanProc: Process {
+        id: scanProc
         command: ["bash", "-c", "
             (
                 echo 'scan on'
@@ -118,34 +124,51 @@ QtObject {
                 var line = data.trim()
                 if (line === "scan_done") {
                     root.scanning = false
+                    root.refresh()
                 } else if (line.indexOf("found|") === 0) {
-                    var p = line.split('|')
-                    if (p.length >= 3) {
+                    var p = line.split("|")
+                    if (p.length >= 3)
                         root._addScanned(p[1], p[2])
-                    }
                 }
             }
         }
         onRunningChanged: {
-            if (!running) root.scanning = false
+            if (!running)
+                root.scanning = false
         }
     }
 
     property var scanStopProc: Process {
+        id: scanStopProc
         command: ["bluetoothctl", "scan", "off"]
         running: false
     }
 
     property var pairProc: Process {
+        id: pairProc
         property string targetMac: ""
-        command: ["bluetoothctl", "pair", targetMac]
+        command: ["bash", "-lc", "bluetoothctl pair \"$1\" && bluetoothctl trust \"$1\"", "--", targetMac]
         running: false
-        onRunningChanged: {
-            if (!running) {
-                root.refresh()
-                root._scannedList = []
-                root.scannedJson  = "[]"
-            }
+        onExited: () => {
+            root.refresh()
+            root._scannedList = []
+            root.scannedJson = "[]"
+            root.autoConnect(true)
         }
+    }
+
+    property var refreshTimer: Timer {
+        interval: 5000
+        running: true
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: root.refresh()
+    }
+
+    property var autoConnectTimer: Timer {
+        interval: 4000
+        running: true
+        repeat: true
+        onTriggered: root.autoConnect(false)
     }
 }
