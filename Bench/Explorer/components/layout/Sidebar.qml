@@ -24,6 +24,7 @@ Item {
     property bool   driveMenuMounted:     false
     property bool   driveMenuCanMount:    false
     property bool   driveMenuCanUnmount:  false
+    property bool   driveMenuCanRemount:  false
     property bool   driveMenuAutoMount:   false
     property bool   driveMenuBusy:        false
 
@@ -34,6 +35,7 @@ Item {
         driveMenuMounted     = item.mounted
         driveMenuCanMount    = item.canMount
         driveMenuCanUnmount  = item.canUnmount
+        driveMenuCanRemount  = item.canRemount
         driveMenuAutoMount   = item.autoMount
         driveMenuBusy        = item.busy
 
@@ -163,6 +165,7 @@ Item {
                 mounted:     model.mounted
                 canMount:    model.canMount
                 canUnmount:  model.canUnmount
+                canRemount:  model.canRemount
                 autoMount:   model.autoMount
                 busy:        model.busy
             }
@@ -235,6 +238,16 @@ Item {
                 onTriggered: {
                     root.closeDriveMenu()
                     AppState.requestUnmountDevice(root.driveMenuDevicePath, root.driveMenuPath)
+                }
+            }
+
+            Common.ContextMenuAction {
+                label: "Remontar com nome"
+                visible: root.driveMenuCanRemount
+                actionEnabled: !root.driveMenuBusy && root.driveMenuCanRemount
+                onTriggered: {
+                    root.closeDriveMenu()
+                    AppState.requestRemountDevice(root.driveMenuDevicePath, root.driveMenuPath, true)
                 }
             }
 
@@ -426,6 +439,7 @@ Item {
         property bool   mounted
         property bool   canMount
         property bool   canUnmount
+        property bool   canRemount
         property bool   autoMount
         property bool   busy
 

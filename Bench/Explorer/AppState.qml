@@ -227,6 +227,7 @@ QtObject {
     function ensureAutoMountDevices() { deviceNet.ensureAutoMountDevices() }
     function requestMountDevice(devicePath, fromAutoMount, openAfterMount) { deviceNet.requestMountDevice(devicePath, fromAutoMount, openAfterMount) }
     function requestUnmountDevice(devicePath, mountPath) { deviceNet.requestUnmountDevice(devicePath, mountPath) }
+    function requestRemountDevice(devicePath, mountPath, openAfterMount) { deviceNet.requestRemountDevice(devicePath, mountPath, openAfterMount) }
     function syncDeviceBusyFlags() { deviceNet.syncDeviceBusyFlags() }
     function startSearch() { navigation.startSearch() }
 

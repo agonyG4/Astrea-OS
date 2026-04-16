@@ -47,9 +47,10 @@ fn run() -> Result<(), String> {
         Some("devices") => run_devices(),
         Some("mount") => run_mount_cmd(&args[2..], "mount", "mounted"),
         Some("unmount") => run_mount_cmd(&args[2..], "unmount", "unmounted"),
+        Some("remount") => run_remount_cmd(&args[2..]),
         Some("warm-thumbnails") => run_warm_thumbnails(&args[2..]),
         _ if args.len() >= 6 => run_list(&args[1..]),
-        _ => Err("usage: explorer_backend list|search|devices|mount|unmount|warm-thumbnails ...".into()),
+        _ => Err("usage: explorer_backend list|search|devices|mount|unmount|remount|warm-thumbnails ...".into()),
     }
 }
 
@@ -103,11 +104,7 @@ fn run_mount_cmd(args: &[String], verb: &str, msg: &str) -> Result<(), String> {
         .ok_or_else(|| format!("usage: explorer_backend {verb} <device_path>"))?;
 
     if verb == "mount" {
-        if let Some(dev) = lsblk(Some(path))?
-            .lines()
-            .filter_map(parse_lsblk_line)
-            .find(|d| &d.path == path)
-        {
+        if let Some(dev) = device_by_path(path)? {
             if let Some(existing) = primary_mount(&dev) {
                 println!(
                     "{{\"ok\":true,\"mountPath\":\"{}\",\"message\":\"already-mounted\"}}",
@@ -123,11 +120,9 @@ fn run_mount_cmd(args: &[String], verb: &str, msg: &str) -> Result<(), String> {
     let mount_path = if verb == "mount" {
         parse_udisks_path(&out)
             .or_else(|| {
-                lsblk(Some(path))
-                    .ok()?
-                    .lines()
-                    .filter_map(parse_lsblk_line)
-                    .find(|d| &d.path == path)
+                device_by_path(path)
+                    .ok()
+                    .flatten()
                     .and_then(|d| primary_mount(&d).map(str::to_string))
             })
             .unwrap_or_default()
@@ -137,6 +132,34 @@ fn run_mount_cmd(args: &[String], verb: &str, msg: &str) -> Result<(), String> {
 
     println!(
         "{{\"ok\":true,\"mountPath\":\"{}\",\"message\":\"{msg}\"}}",
+        escape(&mount_path)
+    );
+    Ok(())
+}
+
+fn run_remount_cmd(args: &[String]) -> Result<(), String> {
+    let path = args
+        .first()
+        .ok_or_else(|| "usage: explorer_backend remount <device_path>".to_string())?;
+
+    if let Some(dev) = device_by_path(path)? {
+        if primary_mount(&dev).is_some() {
+            udisksctl("unmount", path)?;
+        }
+    }
+
+    let out = udisksctl("mount", path)?;
+    let mount_path = parse_udisks_path(&out)
+        .or_else(|| {
+            device_by_path(path)
+                .ok()
+                .flatten()
+                .and_then(|d| primary_mount(&d).map(str::to_string))
+        })
+        .unwrap_or_default();
+
+    println!(
+        "{{\"ok\":true,\"mountPath\":\"{}\",\"message\":\"remounted\"}}",
         escape(&mount_path)
     );
     Ok(())
@@ -331,6 +354,13 @@ fn lsblk(device: Option<&str>) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+fn device_by_path(path: &str) -> Result<Option<Device>, String> {
+    Ok(lsblk(None)?
+        .lines()
+        .filter_map(parse_lsblk_line)
+        .find(|d| d.path == path))
+}
+
 fn udisksctl(verb: &str, device: &str) -> Result<String, String> {
     let out = Command::new("udisksctl")
         .args([verb, "-b", device])
@@ -470,6 +500,23 @@ fn is_user_mount(m: &str) -> bool {
     m.starts_with("/run/media/") || m.starts_with("/media/") || m.starts_with("/mnt/")
 }
 
+fn desired_label_mount_path(d: &Device) -> Option<String> {
+    let label = d.label.trim();
+    let mount = primary_mount(d)?;
+    if label.is_empty() || !(mount.starts_with("/run/media/") || mount.starts_with("/media/")) {
+        return None;
+    }
+
+    let mount_path = Path::new(mount);
+    let parent = mount_path.parent()?;
+    let current_name = mount_path.file_name()?.to_str()?;
+    if current_name == label {
+        return None;
+    }
+
+    Some(parent.join(label).to_string_lossy().into_owned())
+}
+
 fn is_system_mount(m: &str) -> bool {
     matches!(m, "/" | "/boot" | "/boot/efi")
         || m.starts_with("/home/")
@@ -548,6 +595,8 @@ fn svg_filter_blur(path: &Path) -> &'static str {
 
 fn device_to_json(d: &Device) -> String {
     let mount = primary_mount(d).unwrap_or("");
+    let desired_mount = desired_label_mount_path(d).unwrap_or_default();
+    let can_remount = !desired_mount.is_empty();
     let id = if !d.uuid.is_empty() {
         format!("uuid:{}", d.uuid)
     } else {
@@ -573,16 +622,18 @@ fn device_to_json(d: &Device) -> String {
     };
     format!(
         "{{\"id\":\"{}\",\"devicePath\":\"{}\",\"title\":\"{}\",\"subtitle\":\"{}\",\
-         \"mountPath\":\"{}\",\"mounted\":{},\"canMount\":{},\"canUnmount\":{},\
+         \"mountPath\":\"{}\",\"desiredMountPath\":\"{}\",\"mounted\":{},\"canMount\":{},\"canUnmount\":{},\"canRemount\":{},\
          \"removable\":{},\"icon\":\"{}\"}}",
         escape(&id),
         escape(&d.path),
         escape(&device_title(d)),
         escape(&subtitle),
         escape(mount),
+        escape(&desired_mount),
         !mount.is_empty(),
         mount.is_empty(),
         !mount.is_empty() && is_user_mount(mount),
+        can_remount,
         d.removable || d.hotplug,
         if d.removable || d.hotplug {
             "drive-removable-media"
