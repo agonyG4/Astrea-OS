@@ -179,6 +179,9 @@ def resolve_category(path_str: str, ext: str, dir_parts: frozenset[str],
 
     return "home_other"
 
+        # Match by special directory name
+        if cat["match_dirs"] and (cat["match_dirs"] & dir_parts):
+            return cat_id
 
 def build_cat_meta(compiled: dict) -> dict[str, tuple[str, str]]:
     meta = {cat_id: (cat["label"], "") for cat_id, cat in compiled.items()}
@@ -186,6 +189,14 @@ def build_cat_meta(compiled: dict) -> dict[str, tuple[str, str]]:
     meta.update(SYS_CAT_META)
     return meta
 
+    return "home_other"
+
+
+def build_cat_meta(compiled: dict) -> dict[str, tuple[str, str]]:
+    meta = {cat_id: (cat["label"], "") for cat_id, cat in compiled.items()}
+    meta["home_other"] = ("Other (Home)", "")
+    meta.update(SYS_CAT_META)
+    return meta
 
 CAT_ALIASES: dict[str, str] = {
     "sys_other": "sys:other",
@@ -320,6 +331,18 @@ def get_conn() -> sqlite3.Connection:
     conn.commit()
     return conn
 
+def flush_dirs(conn: sqlite3.Connection, entries: list[tuple[str, float]]) -> None:
+    if entries:
+        conn.executemany("INSERT OR REPLACE INTO dirs VALUES (?,?)", entries)
+        conn.commit()
+
+
+def prune(conn: sqlite3.Connection, old: set, current: set) -> int:
+    stale = old - current
+    if stale:
+        conn.executemany("DELETE FROM files WHERE path=?", [(p,) for p in stale])
+        conn.commit()
+    return len(stale)
 
 def load_cache(
     conn: sqlite3.Connection,
