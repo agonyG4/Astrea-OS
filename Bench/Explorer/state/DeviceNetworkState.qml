@@ -167,6 +167,20 @@ QtObject {
         deviceOperationProcess.running = true
     }
 
+    function requestRemountDevice(devicePath, mountPath, openAfterMount) {
+        if (!devicePath || deviceOperationProcess.running)
+            return
+        deviceOperationPath = devicePath
+        deviceOperationType = "remount"
+        deviceOperationTargetMountPath = mountPath || ""
+        deviceOperationOpenAfterMount = !!openAfterMount
+        deviceError = ""
+        syncDeviceBusyFlags()
+        deviceOperationProcess.command = [app.backendPath, "remount", devicePath]
+        deviceOperationProcess.running = false
+        deviceOperationProcess.running = true
+    }
+
     function syncDeviceBusyFlags() {
         for (var i = 0; i < deviceModel.count; ++i)
             deviceModel.setProperty(i, "busy", deviceModel.get(i).devicePath === deviceOperationPath && deviceOperationPath !== "")
@@ -242,7 +256,8 @@ QtObject {
                     response = {}
                 }
 
-                if (deviceNet.deviceOperationType.indexOf("mount") === 0 && response.mountPath) {
+                if ((deviceNet.deviceOperationType.indexOf("mount") === 0
+                        || deviceNet.deviceOperationType === "remount") && response.mountPath) {
                     deviceNet.lastUnmountedMountPath = ""
                     if (deviceNet.deviceOperationOpenAfterMount)
                         app.navigateTo(response.mountPath)

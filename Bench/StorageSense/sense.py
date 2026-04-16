@@ -6,11 +6,11 @@ Requires Python 3.10+
 
 import os
 import sys
+import stat as stat_mod
+import time
 import json
-import shutil
 import sqlite3
 import argparse
-import subprocess
 from pathlib import Path
 from collections import defaultdict
 
@@ -18,16 +18,9 @@ from collections import defaultdict
 # PATHS
 # -----------------------------------------
 HOME       = str(Path.home())
+HOME_SEP   = HOME + "/"
 SCRIPT_DIR = Path(__file__).resolve().parent
-
-# Config files (next to sense.py)
 CAT_FILE   = SCRIPT_DIR / "categories.json"
-RULES_FILE = SCRIPT_DIR / "system_rules.json"
-
-# Rust scanner binary (next to sense.py, or on PATH)
-SCANNER_BIN = SCRIPT_DIR / "target" / "release" / "scanner"
-if not SCANNER_BIN.exists():
-    SCANNER_BIN = shutil.which("storagesense-scanner") or "scanner"
 
 CACHE_DIR = Path(HOME) / ".cache" / "storagesense"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -186,12 +179,114 @@ def resolve_category(path_str: str, ext: str, dir_parts: frozenset[str],
 
     return "home_other"
 
+        # Match by special directory name
+        if cat["match_dirs"] and (cat["match_dirs"] & dir_parts):
+            return cat_id
 
 def build_cat_meta(compiled: dict) -> dict[str, tuple[str, str]]:
     meta = {cat_id: (cat["label"], "") for cat_id, cat in compiled.items()}
     meta["home_other"] = ("Other (Home)", "")
     meta.update(SYS_CAT_META)
     return meta
+
+    return "home_other"
+
+
+def build_cat_meta(compiled: dict) -> dict[str, tuple[str, str]]:
+    meta = {cat_id: (cat["label"], "") for cat_id, cat in compiled.items()}
+    meta["home_other"] = ("Other (Home)", "")
+    meta.update(SYS_CAT_META)
+    return meta
+
+CAT_ALIASES: dict[str, str] = {
+    "sys_other": "sys:other",
+    "sys_games": "sys:games",
+    "sys_vms": "sys:vms",
+    "sys_archives": "sys:archives",
+    "sys_fonts": "sys:fonts",
+    "sys_images": "sys:images",
+    "sys_videos": "sys:videos",
+    "sys_audio": "sys:audio",
+    "sys_docs": "sys:docs",
+    "sys_code": "sys:code",
+    "sys_tmp": "sys:tmp",
+    "sys_system": "sys:system",
+    "docs": "documents",
+}
+
+DISPLAY_LABELS: dict[str, str] = {
+    "home_other": "Outros arquivos pessoais",
+    "documents": "Documentos",
+    "images": "Imagens",
+    "videos": "Vídeos",
+    "music": "Músicas",
+    "code": "Código / GitHub",
+    "archives": "Arquivos compactados",
+    "tmp": "Arquivos temporários",
+    "fonts": "Fontes",
+    "config": "Configurações",
+    "app_executables": "Executáveis avulsos",
+    "unified_apps": "Applications",
+    "sys:unified": "System",
+    "sys:temp_files": "Arquivos temporários",
+    "sys:other": "Arquivos de sistema",
+    "sys:system": "Base do sistema",
+    "sys:games": "Jogos fora da pasta pessoal",
+    "sys:archives": "Arquivos compactados do sistema",
+    "sys:fonts": "Fontes do sistema",
+    "sys:code": "Código do sistema",
+    "sys:docs": "Documentos do sistema",
+    "sys:images": "Imagens do sistema",
+    "sys:videos": "Vídeos do sistema",
+    "sys:audio": "Áudio do sistema",
+}
+
+HIDDEN_CATEGORY_IDS: set[str] = {
+    "archives",
+    "sys:archives",
+}
+
+
+def canonical_category_id(cat_id: str) -> str:
+    return CAT_ALIASES.get(cat_id, cat_id)
+
+
+def humanize_category_id(cat_id: str) -> str:
+    if cat_id in DISPLAY_LABELS:
+        return DISPLAY_LABELS[cat_id]
+    raw = cat_id.replace("sys:", "").replace("_", " ").replace("-", " ").strip()
+    if not raw:
+        return "Other"
+    words = raw.split()
+    return " ".join(word.capitalize() for word in words)
+
+
+def display_label(cat_id: str, fallback: str = "") -> str:
+    if cat_id in DISPLAY_LABELS:
+        return DISPLAY_LABELS[cat_id]
+    if fallback:
+        return fallback
+    return humanize_category_id(cat_id)
+
+
+def get_cache_metadata() -> dict[str, object]:
+    if not DB_PATH.exists():
+        return {
+            "cache_exists": False,
+            "cache_path": str(DB_PATH),
+            "cache_updated_at": None,
+            "cache_updated_ago_seconds": None,
+            "cache_size": 0,
+        }
+
+    updated_at = DB_PATH.stat().st_mtime
+    return {
+        "cache_exists": True,
+        "cache_path": str(DB_PATH),
+        "cache_updated_at": updated_at,
+        "cache_updated_ago_seconds": max(0, time.time() - updated_at),
+        "cache_size": DB_PATH.stat().st_size,
+    }
 
 
 # -----------------------------------------
@@ -236,6 +331,18 @@ def get_conn() -> sqlite3.Connection:
     conn.commit()
     return conn
 
+def flush_dirs(conn: sqlite3.Connection, entries: list[tuple[str, float]]) -> None:
+    if entries:
+        conn.executemany("INSERT OR REPLACE INTO dirs VALUES (?,?)", entries)
+        conn.commit()
+
+
+def prune(conn: sqlite3.Connection, old: set, current: set) -> int:
+    stale = old - current
+    if stale:
+        conn.executemany("DELETE FROM files WHERE path=?", [(p,) for p in stale])
+        conn.commit()
+    return len(stale)
 
 def load_cache(
     conn: sqlite3.Connection,
@@ -266,8 +373,11 @@ def load_dir_cache(conn: sqlite3.Connection) -> dict[str, float]:
     return {row[0]: row[1] for row in cur}
 
 
-def sep(char: str = "-") -> None:
-    print(char * W)
+def flush(conn: sqlite3.Connection, entries: list) -> None:
+    if entries:
+        conn.executemany("INSERT OR REPLACE INTO files VALUES (?,?,?,?)", entries)
+        conn.commit()
+
 
 def flush_dirs(conn: sqlite3.Connection, entries: list[tuple[str, float]]) -> None:
     if entries:
@@ -282,9 +392,6 @@ def prune(conn: sqlite3.Connection, old: set, current: set) -> int:
         conn.commit()
     return len(stale)
 
-# ─────────────────────────────────────────────────────────────
-# SCANNER INVOCATION
-# ─────────────────────────────────────────────────────────────
 
 # -----------------------------------------
 # MOUNTINFO -- allowed devices
@@ -418,14 +525,6 @@ def _walk_and_classify(
     conn.close()
     return stats, scanned_paths, scanned, updated, errors, pruned
 
-    cmd = [
-        str(SCANNER_BIN),
-        "--rules", str(RULES_FILE),
-        "--db",    str(DB_PATH),
-        "--home",  HOME,
-    ]
-    if quiet:
-        cmd.append("--quiet")
 
 def scan_all(compiled: dict, quiet: bool) -> tuple[dict[str, int], int, int, int, int, float]:
     if not quiet:
@@ -446,19 +545,6 @@ def scan_all(compiled: dict, quiet: bool) -> tuple[dict[str, int], int, int, int
 # -----------------------------------------
 W = 68
 
-    try:
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=None,   # let stderr (progress) pass through directly
-            check=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print(f"Scanner exited with code {e.returncode}", file=sys.stderr)
-        sys.exit(1)
-    except FileNotFoundError:
-        print(f"Scanner binary not found: {SCANNER_BIN}", file=sys.stderr)
-        sys.exit(1)
 
 def sep(char: str = "-") -> None:
     print(char * W)
@@ -469,21 +555,17 @@ def _print_rows(rows: list[tuple[str, str, int]], total: int) -> None:
         frac = size / total
         print(f"  {label:<26}  {format_size(size):>9}  {frac*100:>4.1f}%  {bar(frac)}")
 
-def print_scan_report(scan: dict, cat_meta: dict) -> None:
-    scanned  = scan["scanned"]
-    updated  = scan["updated"]
-    pruned   = scan["pruned"]
-    errors   = scan["errors"]
-    elapsed  = scan["elapsed_secs"]
-    raw_stats = {s["cat"]: s["size"] for s in scan["stats"]}
 
-    total = sum(raw_stats.values()) or 1
+def print_scan_report(stats: dict, cat_meta: dict,
+                      scanned: int, updated: int, pruned: int,
+                      errors: int, elapsed: float) -> None:
+    total = sum(stats.values()) or 1
     rate  = scanned / elapsed if elapsed > 0 else 0
 
     home_rows: list[tuple[str, str, int]] = []
     sys_rows:  list[tuple[str, str, int]] = []
 
-    for cat_id, size in raw_stats.items():
+    for cat_id, size in stats.items():
         if size == 0:
             continue
         label, emoji = cat_meta.get(cat_id, (cat_id, ""))
@@ -504,16 +586,12 @@ def print_scan_report(scan: dict, cat_meta: dict) -> None:
     sep()
     print("  ~ HOME")
     sep()
-    for label, _, size in home_rows:
-        frac = size / total
-        print(f"  {label:<26}  {format_size(size):>9}  {frac*100:>4.1f}%  {bar(frac)}")
+    _print_rows(home_rows, total)
 
     sep()
     print("  / SYSTEM")
     sep()
-    for label, _, size in sys_rows:
-        frac = size / total
-        print(f"  {label:<26}  {format_size(size):>9}  {frac*100:>4.1f}%  {bar(frac)}")
+    _print_rows(sys_rows, total)
 
     sep()
     print(f"  {'TOTAL':<26}  {format_size(total):>9}")
@@ -529,7 +607,7 @@ def print_cache_info(cat_meta: dict) -> None:
         print("No cache found. Run `storagesense scan`.")
         return
 
-    conn    = open_db()
+    conn    = get_conn()
     n_files = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
     vol     = conn.execute("SELECT SUM(size) FROM files").fetchone()[0] or 0
     db_size = DB_PATH.stat().st_size
@@ -583,17 +661,28 @@ def print_list(compiled: dict) -> None:
 # JSON OUTPUT
 # -----------------------------------------
 def print_json(compiled: dict, cat_meta: dict) -> None:
+    cache_meta = get_cache_metadata()
     if not DB_PATH.exists():
-        print(json.dumps({"error": "No cache found", "total": 0, "data": []}))
+        print(json.dumps({
+            "error": "No cache found",
+            "disk_total": 0,
+            "disk_used": 0,
+            "scanned_total": 0,
+            "categorized_total": 0,
+            "uncategorized_delta": 0,
+            "data": [],
+            **cache_meta,
+        }))
         return
 
-    du         = shutil.disk_usage("/")
+    import shutil
+    du = shutil.disk_usage("/")
     disk_total = du.total
     disk_used  = du.used
 
-    conn           = open_db()
-    total_scanned  = conn.execute("SELECT SUM(size) FROM files").fetchone()[0] or 0
-    rows           = conn.execute(
+    conn = get_conn()
+    total_scanned = conn.execute("SELECT SUM(size) FROM files").fetchone()[0] or 0
+    rows = conn.execute(
         "SELECT cat, COUNT(*), SUM(size) FROM files GROUP BY cat ORDER BY SUM(size) DESC"
     ).fetchall()
     conn.close()
@@ -615,28 +704,56 @@ def print_json(compiled: dict, cat_meta: dict) -> None:
         return "#636366"
 
     data_map = {}
-    APP_IDS = {"sys:apps", "flatpak", "spotify", "apps"}
+    APP_IDS = {"sys:apps", "flatpak", "spotify", "apps", "app_executables"}
+    TEMP_IDS = {"tmp", "cache", "sys:tmp"}
     SYS_IDS = {
-        "sys:system", "sys:other", "sys:tmp", "sys:games", "sys:vms",
+        "sys:system", "sys:other", "sys:games", "sys:vms",
         "sys:archives", "sys:fonts", "sys:images", "sys:videos",
-        "sys:audio", "sys:docs", "sys:code", "config", "cache",
+        "sys:audio", "sys:docs", "sys:code", "config", "fonts",
     }
 
     for cat_id, count, sz in rows:
         if not sz:
             continue
-        label, _emoji = cat_meta.get(cat_id, (cat_id or "Other", ""))
+        canonical_id = canonical_category_id(cat_id)
+        source_label, _emoji = cat_meta.get(
+            canonical_id,
+            cat_meta.get(cat_id, (humanize_category_id(canonical_id or "Other"), "")),
+        )
+        label = display_label(canonical_id, source_label)
 
-        target_id    = cat_id
+        target_id    = canonical_id
         target_label = label
-        is_system    = cat_id.startswith("sys:")
+        is_system    = canonical_id.startswith("sys:")
 
-        if cat_id in APP_IDS or "application" in label.lower() or "apps" in label.lower():
+        label_lower = label.lower()
+
+        if canonical_id in HIDDEN_CATEGORY_IDS:
+            if canonical_id.startswith("sys:"):
+                target_id = "sys:unified"
+                target_label = "System"
+                is_system = True
+            else:
+                target_id = "home_other"
+                target_label = display_label("home_other")
+                is_system = False
+
+        elif canonical_id in APP_IDS or "application" in label_lower or "apps" in label_lower:
             target_id    = "unified_apps"
             target_label = "Applications"
             is_system    = False
 
-        elif is_system or cat_id in SYS_IDS or "system" in label.lower() or "cache" in label.lower():
+        elif canonical_id in TEMP_IDS or "temp" in label_lower or "cache" in label_lower:
+            target_id    = "sys:temp_files"
+            target_label = "Arquivos temporários"
+            is_system    = True
+
+        elif (
+            is_system
+            or canonical_id in SYS_IDS
+            or "system" in label_lower
+            or "font" in label_lower
+        ):
             target_id    = "sys:unified"
             target_label = "System"
             is_system    = True
@@ -649,16 +766,29 @@ def print_json(compiled: dict, cat_meta: dict) -> None:
                 "count":     0,
                 "color":     get_color(target_id, target_label),
                 "is_system": is_system,
+                "breakdown": [],
             }
 
         data_map[target_id]["size"]  += sz
         data_map[target_id]["count"] += count
+        data_map[target_id]["breakdown"].append({
+            "id": canonical_id,
+            "label": label,
+            "size": sz,
+            "count": count,
+        })
 
     categorized_total = sum(d["size"] for d in data_map.values())
-    system_delta = disk_used - categorized_total
+    system_delta = max(0, disk_used - categorized_total)
     if system_delta > 1024 * 1024:
         if "sys:unified" in data_map:
             data_map["sys:unified"]["size"] += system_delta
+            data_map["sys:unified"]["breakdown"].append({
+                "id": "disk_gap",
+                "label": "Espaço usado fora do índice",
+                "size": system_delta,
+                "count": 0,
+            })
         else:
             data_map["sys:unified"] = {
                 "id":        "sys:unified",
@@ -667,14 +797,41 @@ def print_json(compiled: dict, cat_meta: dict) -> None:
                 "count":     0,
                 "color":     get_color("sys:unified", "System"),
                 "is_system": True,
+                "breakdown": [{
+                    "id": "disk_gap",
+                    "label": "Espaço usado fora do índice",
+                    "size": system_delta,
+                    "count": 0,
+                }],
             }
+
+    for item in data_map.values():
+        item["breakdown"].sort(key=lambda x: x["size"], reverse=True)
+        item["breakdown"] = [
+            entry for entry in item["breakdown"]
+            if entry["id"] not in HIDDEN_CATEGORY_IDS
+        ]
+        item["breakdown"] = item["breakdown"][:6]
+        if item["id"] == "sys:unified":
+            item["details_summary"] = "Bibliotecas, arquivos base do sistema, fontes, configs e conteúdo fora da pasta pessoal."
+        elif item["id"] == "sys:temp_files":
+            item["details_summary"] = "Caches, diretórios temporários e logs que podem crescer com o uso."
+        elif item["id"] == "home_other":
+            item["details_summary"] = "Arquivos pessoais que não entraram nas categorias principais."
+        elif item["id"] == "unified_apps":
+            item["details_summary"] = "Apps instalados no home, Flatpaks e executáveis."
+        else:
+            item["details_summary"] = ""
 
     final_data = sorted(data_map.values(), key=lambda x: x["size"], reverse=True)
     print(json.dumps({
         "disk_total":    disk_total,
         "disk_used":     disk_used,
         "scanned_total": total_scanned,
+        "categorized_total": categorized_total,
+        "uncategorized_delta": system_delta,
         "data":          final_data,
+        **cache_meta,
     }, ensure_ascii=False))
 
 
@@ -692,8 +849,6 @@ examples:
   storagesense scan --quiet
   storagesense list
   storagesense info
-  storagesense get downloads --limit 20
-  storagesense json
   storagesense clear-cache
         """,
     )
@@ -715,25 +870,20 @@ def main() -> None:
         parser.print_help()
         sys.exit(0)
 
-    cat_meta = build_cat_meta()
+    categories = load_categories()
+    compiled   = compile_categories(categories)
+    cat_meta   = build_cat_meta(compiled)
 
     match args.command:
         case "scan":
-            scan = run_scanner(args.quiet)
-            print_scan_report(scan, cat_meta)
-
+            stats, scanned, updated, pruned, errors, elapsed = scan_all(compiled, args.quiet)
+            print_scan_report(stats, cat_meta, scanned, updated, pruned, errors, elapsed)
         case "list":
-            print_list(cat_meta)
-
+            print_list(compiled)
         case "info":
             print_cache_info(cat_meta)
-
         case "json":
-            print_json_output(cat_meta)
-
-        case "get":
-            cmd_get(args.category, cat_meta, args.limit)
-
+            print_json(compiled, cat_meta)
         case "clear-cache":
             if DB_PATH.exists():
                 DB_PATH.unlink()
