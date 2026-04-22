@@ -13,10 +13,24 @@ static int conv_func(int num_msg, const struct pam_message **msg,
 }
 
 int main(int argc, char *argv[]) {
-  if (argc < 3)
+  if (argc < 2)
     return 1;
   char *user = argv[1];
-  char *pass = argv[2];
+  char passbuf[512] = {0};
+  char *pass = NULL;
+
+  if (argc >= 3) {
+    pass = argv[2];
+  } else {
+    if (fgets(passbuf, sizeof(passbuf), stdin) == NULL)
+      return 1;
+    passbuf[strcspn(passbuf, "\r\n")] = '\0';
+    pass = passbuf;
+  }
+
+  if (pass[0] == '\0')
+    return 1;
+
   struct pam_conv conv = {conv_func, pass};
   pam_handle_t *pamh = NULL;
   int ret;
@@ -31,5 +45,6 @@ int main(int argc, char *argv[]) {
   fprintf(stderr, "pam_authenticate: %s\n", pam_strerror(pamh, ret));
 
   pam_end(pamh, ret);
+  memset(passbuf, 0, sizeof(passbuf));
   return ret == PAM_SUCCESS ? 0 : 1;
 }

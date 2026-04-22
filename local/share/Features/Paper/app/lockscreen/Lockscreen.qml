@@ -16,7 +16,9 @@ ShellRoot {
 
     Process {
         id: authProcess
-        command: [homeDir + "/.local/share/Astrea/System/auth/auth_helper", root.currentUser, passwordField.text]
+        command: [homeDir + "/.local/share/Astrea/System/auth/auth_helper", root.currentUser]
+        stdinEnabled: true
+        onStarted: write(passwordField.text + "\n")
         running: false
         onExited: function(code) {
             running = false
