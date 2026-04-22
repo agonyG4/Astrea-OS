@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Effects
+import Quickshell
 import ".." as Components
 
 Item {
@@ -97,13 +98,19 @@ Item {
 
                 // ── Themed icon resolution with fallback ───────────────────
                 // Build themed path when iconKey is set and a theme is active.
+                readonly property string iconBasePath: "file://" + (Quickshell.env("HOME") || "") + "/.local/share/Astrea/Assets/icons/settings/"
                 readonly property string themedPath: {
                     if (root.iconKey !== "" && Components.Theme.iconTheme !== "")
-                        return "file:///home/agony/.local/share/Astrea/Assets/icons/settings/icon/"
-                               + Components.Theme.iconTheme + "/" + root.iconKey + ".svg"
+                        return iconBasePath + "icon/" + Components.Theme.iconTheme + "/" + root.iconKey + ".svg"
                     return ""
                 }
-                readonly property string fallbackSource: root.iconSource !== "" ? root.iconSource : ""
+                readonly property string fallbackSource: {
+                    if (root.iconSource !== "")
+                        return root.iconSource
+                    if (root.iconKey !== "")
+                        return iconBasePath + root.iconKey + ".svg"
+                    return ""
+                }
                 readonly property string resolvedSource: {
                     if (themedPath !== "" && !themedFailed)
                         return themedPath

@@ -79,15 +79,15 @@ ApplicationWindow {
     ListModel {
         id: navModel
         ListElement { label: "System";          sym: "\uf303"; iconSource: "";                                                                          iconKey: "" }           // nf-linux-archlinux
-        ListElement { label: "Software Update"; sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/software-center.svg"; iconKey: "software-center" }
-        ListElement { label: "Display";         sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/display.svg";     iconKey: "display" }
-        ListElement { label: "Apps";            sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/apps.svg";        iconKey: "apps" }
-        ListElement { label: "Performance";     sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/performance.svg"; iconKey: "performance" }
-        ListElement { label: "Internet";        sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/network.svg";     iconKey: "network" }
-        ListElement { label: "Bluetooth";       sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/bluetooth.svg";   iconKey: "bluetooth" }
-        ListElement { label: "Personalization"; sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/theme.svg";       iconKey: "theme" }
-        ListElement { label: "Paper";           sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/wallpaper.svg";   iconKey: "wallpaper" }
-        ListElement { label: "Audio";           sym: "";       iconSource: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/audio.svg";       iconKey: "audio" }
+        ListElement { label: "Software Update"; sym: "";       iconSource: ""; iconKey: "software-center" }
+        ListElement { label: "Display";         sym: "";       iconSource: ""; iconKey: "display" }
+        ListElement { label: "Apps";            sym: "";       iconSource: ""; iconKey: "apps" }
+        ListElement { label: "Performance";     sym: "";       iconSource: ""; iconKey: "performance" }
+        ListElement { label: "Internet";        sym: "";       iconSource: ""; iconKey: "network" }
+        ListElement { label: "Bluetooth";       sym: "";       iconSource: ""; iconKey: "bluetooth" }
+        ListElement { label: "Personalization"; sym: "";       iconSource: ""; iconKey: "theme" }
+        ListElement { label: "Paper";           sym: "";       iconSource: ""; iconKey: "wallpaper" }
+        ListElement { label: "Audio";           sym: "";       iconSource: ""; iconKey: "audio" }
         ListElement { label: "Island";          sym: "\uf0c2"; iconSource: "";                                                                          iconKey: "" }           // nf-fa-cloud
         ListElement { label: "Storage";         sym: "\uf1c0"; iconSource: "";                                                                          iconKey: "" }           // nf-fa-database
     }

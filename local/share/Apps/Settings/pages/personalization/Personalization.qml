@@ -14,6 +14,7 @@ Item {
     property color cardBg: Theme.cardBg
     property color cardBorder: Theme.cardBorder
     property color popupBg: Theme.popupBg
+    readonly property string iconAssetBase: "file://" + (Quickshell.env("HOME") || "") + "/.local/share/Astrea/Assets/icons/settings/"
 
     // ── State ─────────────────────────────────────────────────────────────
     readonly property var themeOptions: ["Dark", "Light"]
@@ -268,10 +269,10 @@ Item {
                             spacing: 6
                             Repeater {
                                 model: [
-                                    "file:///home/agony/.local/share/Astrea/Assets/icons/settings/display.svg",
-                                    "file:///home/agony/.local/share/Astrea/Assets/icons/settings/network.svg",
-                                    "file:///home/agony/.local/share/Astrea/Assets/icons/settings/bluetooth.svg",
-                                    "file:///home/agony/.local/share/Astrea/Assets/icons/settings/audio.svg"
+                                    root.iconAssetBase + "display.svg",
+                                    root.iconAssetBase + "network.svg",
+                                    root.iconAssetBase + "bluetooth.svg",
+                                    root.iconAssetBase + "audio.svg"
                                 ]
                                 delegate: Image {
                                     required property string modelData
@@ -352,10 +353,10 @@ Item {
                             spacing: 6
                             Repeater {
                                 model: [
-                                    { key: "display",   src: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/icon/dark/display.svg"   },
-                                    { key: "network",   src: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/icon/dark/network.svg"   },
-                                    { key: "bluetooth", src: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/icon/dark/bluetooth.svg" },
-                                    { key: "audio",     src: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/icon/dark/audio.svg"     }
+                                    { key: "display",   src: root.iconAssetBase + "icon/dark/display.svg"   },
+                                    { key: "network",   src: root.iconAssetBase + "icon/dark/network.svg"   },
+                                    { key: "bluetooth", src: root.iconAssetBase + "icon/dark/bluetooth.svg" },
+                                    { key: "audio",     src: root.iconAssetBase + "icon/dark/audio.svg"     }
                                 ]
                                 delegate: Image {
                                     required property var modelData
