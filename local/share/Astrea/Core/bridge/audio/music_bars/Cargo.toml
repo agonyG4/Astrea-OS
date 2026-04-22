@@ -1,0 +1,21 @@
+[package]
+name = "music-bars"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["ipc-socket", "ipc-stdout"]
+ipc-socket = []
+ipc-stdout = []
+
+[dependencies]
+libpulse-binding        = "2"
+libpulse-simple-binding = "2"
+rustfft                 = "6.2"
+serde                   = { version = "1", features = ["derive"] }
+serde_json              = "1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

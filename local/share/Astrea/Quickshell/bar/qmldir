@@ -1,0 +1,5 @@
+singleton Theme Theme.qml
+singleton BarState BarState.qml
+Bar 1.0 Bar.qml
+BarLeftPanel 1.0 BarLeftPanel.qml
+BarRightPanel 1.0 BarRightPanel.qml

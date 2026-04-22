@@ -1,0 +1,3 @@
+module Astrea.Weather
+
+WeatherApp 1.0 WeatherApp.qml
