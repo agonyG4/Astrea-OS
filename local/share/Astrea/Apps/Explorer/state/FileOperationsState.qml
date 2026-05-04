@@ -18,6 +18,18 @@ QtObject {
     property bool pendingPostPasteThumbnailWarm: false
     property bool pendingPasteClearsClipboard: false
     property var pendingRestoreTargets: []
+    property bool archiveExtractionRunning: false
+    property real archiveExtractionProgress: 0
+    property int archiveExtractionPercent: 0
+    property string archiveExtractionFileName: ""
+    property string archiveExtractionStatus: ""
+    property string archiveExtractionError: ""
+    property string archiveExtractionOutputBuffer: ""
+    property string archiveExtractionDestination: ""
+    property int archiveExtractionDoneCount: 0
+    property int archiveExtractionTotalCount: 0
+    property bool appImageInstallRunning: false
+    property string appImageInstallError: ""
 
     function isCutPending(name) {
         if (!name || clipboardMode !== "cut") return false
@@ -94,6 +106,109 @@ QtObject {
     function basename(path) {
         var parts = String(path || "").split("/")
         return parts.length > 0 ? parts[parts.length - 1] : ""
+    }
+
+    function startArchiveExtraction(archivePath, folderName) {
+        if (!archivePath)
+            return
+
+        archiveExtractionRunning = true
+        archiveExtractionProgress = 0
+        archiveExtractionPercent = 0
+        archiveExtractionFileName = basename(archivePath)
+        archiveExtractionStatus = "Preparando extracao..."
+        archiveExtractionError = ""
+        archiveExtractionOutputBuffer = ""
+        archiveExtractionDestination = ""
+        archiveExtractionDoneCount = 0
+        archiveExtractionTotalCount = 0
+
+        archiveExtractProcess.command = [
+            "bash", "-lc",
+            "archive=\"$1\"; base=\"$2\"; parent=$(dirname -- \"$archive\"); archive_name=$(basename -- \"$archive\"); " +
+            "dest=\"$parent/$base\"; n=2; while [ -e \"$dest\" ]; do dest=\"$parent/$base $n\"; n=$((n+1)); done; " +
+            "mkdir -p -- \"$dest\" || exit 1; " +
+            "lower=$(printf '%s' \"$archive\" | tr '[:upper:]' '[:lower:]'); " +
+            "count_entries() { " +
+            "  if [[ \"$lower\" =~ \\.zip$ ]] && command -v unzip >/dev/null 2>&1; then unzip -Z1 \"$archive\" 2>/dev/null | wc -l; " +
+            "  elif [[ \"$lower\" =~ \\.rar$ ]] && command -v unrar >/dev/null 2>&1; then unrar lb \"$archive\" 2>/dev/null | wc -l; " +
+            "  elif [[ \"$lower\" =~ \\.(7z|rar)$ ]] && command -v 7z >/dev/null 2>&1; then 7z l -ba \"$archive\" 2>/dev/null | awk 'NF { c++ } END { print c + 0 }'; " +
+            "  elif command -v bsdtar >/dev/null 2>&1; then bsdtar -tf \"$archive\" 2>/dev/null | wc -l; " +
+            "  else printf '0\\n'; fi; " +
+            "}; " +
+            "extract_archive() { " +
+            "  if [[ \"$lower\" =~ \\.zip$ ]]; then " +
+            "    if command -v unzip >/dev/null 2>&1; then unzip -o \"$archive\" -d \"$dest\"; else bsdtar -xf \"$archive\" -C \"$dest\"; fi; " +
+            "  elif [[ \"$lower\" =~ \\.7z$ ]]; then " +
+            "    7z x -y -o\"$dest\" \"$archive\"; " +
+            "  elif [[ \"$lower\" =~ \\.rar$ ]]; then " +
+            "    if command -v unrar >/dev/null 2>&1; then unrar x -o+ \"$archive\" \"$dest/\"; else 7z x -y -o\"$dest\" \"$archive\"; fi; " +
+            "  else " +
+            "    bsdtar -xf \"$archive\" -C \"$dest\"; " +
+            "  fi; " +
+            "}; " +
+            "total=$(count_entries | tail -n1 | tr -dc '0-9'); total=${total:-0}; " +
+            "printf 'START|%s|%s|%s\\n' \"$archive_name\" \"$dest\" \"$total\"; " +
+            "log=$(mktemp); extract_archive >\"$log\" 2>&1 & pid=$!; " +
+            "while kill -0 \"$pid\" 2>/dev/null; do " +
+            "  done_count=$(find \"$dest\" -mindepth 1 2>/dev/null | wc -l | tr -dc '0-9'); done_count=${done_count:-0}; " +
+            "  if [ \"$total\" -gt 0 ]; then pct=$((done_count * 100 / total)); [ \"$pct\" -gt 99 ] && pct=99; else pct=0; fi; " +
+            "  printf 'PROGRESS|%s|%s|%s\\n' \"$done_count\" \"$total\" \"$pct\"; sleep 0.2; " +
+            "done; " +
+            "wait \"$pid\"; code=$?; rm -f -- \"$log\"; " +
+            "done_count=$(find \"$dest\" -mindepth 1 2>/dev/null | wc -l | tr -dc '0-9'); done_count=${done_count:-0}; " +
+            "if [ \"$code\" -eq 0 ]; then printf 'DONE|%s|%s|%s|100\\n' \"$dest\" \"$done_count\" \"$total\"; else printf 'ERROR|%s|%s\\n' \"$dest\" \"$code\"; fi; exit \"$code\"",
+            "_", archivePath, folderName || basename(archivePath)
+        ]
+        archiveExtractProcess.running = false
+        archiveExtractProcess.running = true
+    }
+
+    function handleArchiveExtractionLine(rawLine) {
+        var line = String(rawLine || "").trim()
+        if (line === "")
+            return
+        var parts = line.split("|")
+        if (parts[0] === "START") {
+            archiveExtractionFileName = parts[1] || archiveExtractionFileName
+            archiveExtractionDestination = parts[2] || archiveExtractionDestination
+            archiveExtractionTotalCount = Number(parts[3] || 0)
+            archiveExtractionDoneCount = 0
+            archiveExtractionStatus = "Extraindo..."
+            archiveExtractionPercent = 0
+            archiveExtractionProgress = 0
+        } else if (parts[0] === "PROGRESS") {
+            var percent = Number(parts[3] || 0)
+            if (!isFinite(percent))
+                percent = 0
+            archiveExtractionDoneCount = Number(parts[1] || 0)
+            archiveExtractionTotalCount = Number(parts[2] || archiveExtractionTotalCount)
+            archiveExtractionPercent = Math.max(0, Math.min(99, Math.round(percent)))
+            archiveExtractionProgress = archiveExtractionPercent / 100
+            archiveExtractionStatus = archiveExtractionPercent > 0
+                ? ("Extraindo... " + archiveExtractionPercent + "%")
+                : "Extraindo..."
+        } else if (parts[0] === "DONE") {
+            archiveExtractionDestination = parts[1] || archiveExtractionDestination
+            archiveExtractionDoneCount = Number(parts[2] || archiveExtractionDoneCount)
+            archiveExtractionTotalCount = Number(parts[3] || archiveExtractionTotalCount)
+            archiveExtractionPercent = 100
+            archiveExtractionProgress = 1
+            archiveExtractionStatus = "Extracao concluida"
+            archiveExtractionError = ""
+        } else if (parts[0] === "ERROR") {
+            archiveExtractionDestination = parts[1] || archiveExtractionDestination
+            archiveExtractionError = "Falha ao extrair"
+            archiveExtractionStatus = archiveExtractionError
+        }
+    }
+
+    function handleArchiveExtractionOutput(data) {
+        archiveExtractionOutputBuffer += data
+        var lines = archiveExtractionOutputBuffer.split("\n")
+        archiveExtractionOutputBuffer = lines.pop()
+        for (var i = 0; i < lines.length; i++)
+            handleArchiveExtractionLine(lines[i])
     }
 
     function dropFiles(urls, destinationPath, mode) {
@@ -216,18 +331,38 @@ QtObject {
             "}; " +
             "copy_item() { cp -aT --reflink=auto -- \"$1\" \"$2\"; }; " +
             "move_item() { mv -T -- \"$1\" \"$2\"; }; " +
+            "same_item() { [ \"$(realpath -m -- \"$1\" 2>/dev/null || printf '%s' \"$1\")\" = \"$(realpath -m -- \"$2\" 2>/dev/null || printf '%s' \"$2\")\" ]; }; " +
+            "publish_item() { " +
+            "  src=\"$1\"; target=\"$2\"; " +
+            "  if [ \"$mode\" != \"copy\" ]; then move_item \"$src\" \"$target\"; return $?; fi; " +
+            "  dir=$(dirname -- \"$target\"); name=$(basename -- \"$target\"); tmp=\"$dir/.$name.bench-paste.$$\"; n=2; " +
+            "  while [ -e \"$tmp\" ]; do tmp=\"$dir/.$name.bench-paste.$$.$n\"; n=$((n + 1)); done; " +
+            "  if ! copy_item \"$src\" \"$tmp\"; then code=$?; rm -rf -- \"$tmp\"; return \"$code\"; fi; " +
+            "  if move_item \"$tmp\" \"$target\"; then return 0; fi; " +
+            "  code=$?; rm -rf -- \"$tmp\"; return \"$code\"; " +
+            "}; " +
             "replace_item() { " +
             "  src=\"$1\"; target=\"$2\"; dir=$(dirname -- \"$target\"); name=$(basename -- \"$target\"); " +
-            "  tmp=\"$dir/.$name.bench-paste.$$\"; n=2; " +
+            "  same_item \"$src\" \"$target\" && return 0; " +
+            "  tmp=\"$dir/.$name.bench-paste.$$\"; backup=\"$dir/.$name.bench-replace.$$\"; n=2; " +
             "  while [ -e \"$tmp\" ]; do tmp=\"$dir/.$name.bench-paste.$$.$n\"; n=$((n + 1)); done; " +
+            "  n=2; while [ -e \"$backup\" ]; do backup=\"$dir/.$name.bench-replace.$$.$n\"; n=$((n + 1)); done; " +
             "  if [ \"$mode\" = \"copy\" ]; then copy_item \"$src\" \"$tmp\"; else move_item \"$src\" \"$tmp\"; fi; " +
-            "  rm -rf -- \"$target\"; " +
-            "  move_item \"$tmp\" \"$target\"; " +
+            "  had_backup=0; " +
+            "  if [ -e \"$target\" ]; then move_item \"$target\" \"$backup\"; had_backup=1; fi; " +
+            "  if move_item \"$tmp\" \"$target\"; then " +
+            "    [ \"$had_backup\" -eq 0 ] || rm -rf -- \"$backup\"; " +
+            "    return 0; " +
+            "  fi; " +
+            "  code=$?; " +
+            "  if [ \"$had_backup\" -eq 1 ] && [ ! -e \"$target\" ] && [ -e \"$backup\" ]; then move_item \"$backup\" \"$target\" || true; fi; " +
+            "  if [ \"$mode\" != \"copy\" ] && [ ! -e \"$src\" ] && [ -e \"$tmp\" ]; then move_item \"$tmp\" \"$src\" || true; fi; " +
+            "  return \"$code\"; " +
             "}; " +
             "for f in \"$@\"; do " +
             "[ -e \"$f\" ] || continue; " +
             "name=$(basename -- \"$f\"); target=\"$dest/$name\"; " +
-            "if [ \"$f\" = \"$target\" ]; then continue; fi; " +
+            "same_item \"$f\" \"$target\" && continue; " +
             "src_abs=$(realpath -m -- \"$f\" 2>/dev/null || printf '%s' \"$f\"); " +
             "dest_abs=$(realpath -m -- \"$dest\" 2>/dev/null || printf '%s' \"$dest\"); " +
             "if [ -d \"$f\" ]; then case \"$dest_abs/\" in \"$src_abs/\"*) continue ;; esac; fi; " +
@@ -239,7 +374,7 @@ QtObject {
             "    keep-both) target=$(unique_target \"$dest\" \"$name\") ;; " +
             "  esac; " +
             "fi; " +
-            "if [ \"$mode\" = \"copy\" ]; then copy_item \"$f\" \"$target\"; else move_item \"$f\" \"$target\"; fi; " +
+            "publish_item \"$f\" \"$target\"; " +
             "done",
             "_", mode, policy, destinationPath, pendingPasteRename
         ].concat(files)
@@ -351,6 +486,16 @@ QtObject {
         app.clearSelection()
     }
 
+    function installAppImage(path) {
+        if (!path || appImageInstallRunning)
+            return
+        appImageInstallError = ""
+        appImageInstallRunning = true
+        appImageInstallProcess.command = [app.backendPath, "install-appimage", path]
+        appImageInstallProcess.running = false
+        appImageInstallProcess.running = true
+    }
+
     property Process pasteProcess: Process {
         command: []
         running: false
@@ -361,6 +506,51 @@ QtObject {
             ops.pendingPostPasteThumbnailWarm = true
             app.refreshCurrentFolder()
             postPasteThumbnailWarmTimer.restart()
+        }
+    }
+
+    property Process archiveExtractProcess: Process {
+        command: []
+        running: false
+        stdout: SplitParser {
+            onRead: data => ops.handleArchiveExtractionOutput(data)
+        }
+        onExited: function(exitCode) {
+            if (ops.archiveExtractionOutputBuffer !== "") {
+                ops.handleArchiveExtractionLine(ops.archiveExtractionOutputBuffer)
+                ops.archiveExtractionOutputBuffer = ""
+            }
+            if (exitCode === 0) {
+                ops.archiveExtractionPercent = 100
+                ops.archiveExtractionProgress = 1
+                ops.archiveExtractionStatus = "Extracao concluida"
+                ops.archiveExtractionError = ""
+                if (ops.archiveExtractionDestination !== "")
+                    app.navigateTo(ops.archiveExtractionDestination)
+                else
+                    app.refreshCurrentFolder()
+            } else {
+                ops.archiveExtractionError = "Falha ao extrair"
+                ops.archiveExtractionStatus = ops.archiveExtractionError
+                app.refreshCurrentFolder()
+            }
+            archiveExtractionHideTimer.restart()
+        }
+    }
+
+    property Timer archiveExtractionHideTimer: Timer {
+        interval: 1800
+        repeat: false
+        onTriggered: {
+            ops.archiveExtractionRunning = false
+            ops.archiveExtractionProgress = 0
+            ops.archiveExtractionPercent = 0
+            ops.archiveExtractionFileName = ""
+            ops.archiveExtractionStatus = ""
+            ops.archiveExtractionError = ""
+            ops.archiveExtractionDestination = ""
+            ops.archiveExtractionDoneCount = 0
+            ops.archiveExtractionTotalCount = 0
         }
     }
 
@@ -462,6 +652,19 @@ QtObject {
     property Process systemClipboardWrite: Process {
         command: []
         running: false
+    }
+
+    property Process appImageInstallProcess: Process {
+        command: []
+        running: false
+        stderr: StdioCollector {
+            id: appImageInstallStderr
+        }
+        onExited: function(exitCode) {
+            ops.appImageInstallRunning = false
+            ops.appImageInstallError = exitCode === 0 ? "" : appImageInstallStderr.text.trim()
+            app.refreshCurrentFolder()
+        }
     }
 
     property Process deleteProcess: Process {

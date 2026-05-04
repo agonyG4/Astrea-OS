@@ -24,6 +24,7 @@ Item {
     property string loopMode: "none"
 
     property bool _playerMonitorStarting: false
+    property bool _playerAvailabilityResetting: false
 
     function setDominantColor(path) {
         dominantColor.imagePath = path
@@ -91,6 +92,13 @@ Item {
         musicBarsProcess.running = false
     }
 
+    function hideInactiveVisual() {
+        shouldDisplayMusic = false
+        isPlaying = false
+        musicBars = [0, 0, 0, 0, 0, 0]
+        musicBarsProcess.running = false
+    }
+
     function scheduleInactiveReset() {
         inactiveTimer.restart()
     }
@@ -98,6 +106,17 @@ Item {
     function handlePlayerUnavailable() {
         inactiveTimer.stop()
         clearState()
+    }
+
+    function resetUnavailablePlayer() {
+        if (_playerAvailabilityResetting)
+            return
+
+        _playerAvailabilityResetting = true
+        playerMonitor.running = false
+        root.handlePlayerUnavailable()
+        retryTimer.restart()
+        Qt.callLater(() => { root._playerAvailabilityResetting = false })
     }
 
     function ensureMonitoring() {
@@ -118,7 +137,7 @@ Item {
     Process {
         id: dominantColor
         property string imagePath: ""
-        command: [Qt.resolvedUrl("scripts/get-dominant-color.sh").toString().replace("file://", ""), imagePath]
+        command: [Qt.resolvedUrl("scripts/get-dominant-color.py").toString().replace("file://", ""), imagePath]
         running: false
         stdout: SplitParser {
             onRead: data => {
@@ -202,7 +221,7 @@ Item {
                     root.ensureMusicBars()
                 } else {
                     root.ensureMusicBars()
-                    inactiveTimer.stop()
+                    root.scheduleInactiveReset()
                 }
 
                 if (artUrl === root.artUrlCache)
@@ -236,9 +255,24 @@ Item {
         onRunningChanged: {
             if (running) {
                 root._playerMonitorStarting = false
-            } else if (!root._playerMonitorStarting) {
+            } else if (!root._playerMonitorStarting && !root._playerAvailabilityResetting) {
                 root.handlePlayerUnavailable()
                 retryTimer.restart()
+            }
+        }
+    }
+
+    Process {
+        id: playerAvailabilityCheck
+        command: ["bash", "-c", "playerctl --player=spotify status >/dev/null 2>&1 && echo available || echo unavailable"]
+        running: false
+        stdout: SplitParser {
+            onRead: data => {
+                var state = data.trim()
+                if (state === "unavailable")
+                    root.resetUnavailablePlayer()
+                else if (state === "available")
+                    root.ensureMonitoring()
             }
         }
     }
@@ -288,10 +322,21 @@ Item {
     }
 
     Timer {
+        id: playerAvailabilityTimer
+        interval: 1500
+        repeat: true
+        running: true
+        onTriggered: {
+            if (!playerAvailabilityCheck.running)
+                playerAvailabilityCheck.running = true
+        }
+    }
+
+    Timer {
         id: inactiveTimer
         interval: 5000
         repeat: false
-        onTriggered: root.clearState()
+        onTriggered: root.hideInactiveVisual()
     }
 
     Component.onCompleted: ensureMonitoring()

@@ -14,8 +14,6 @@ SystemComponents.TopbarPopup {
     signal volumeChangeHandled(int v)
 
     popupWidth: 300
-    backgroundColor: Theme.background
-    borderColor: Theme.border
 
     function volIcon(v, m) {
         if (m || v === 0) return "󰝟"
@@ -76,30 +74,13 @@ SystemComponents.TopbarPopup {
         onRunningChanged: { if (!running) root.refresh() }
     }
 
-    Item {
-        width: parent.width
-        height: 24
-
-        Text {
-            anchors.left:           parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            text:  root.deviceName
-            color: Theme.textActive
-            opacity: 0.85
-            font {
-                family:        Theme.fontFamily
-                pixelSize:     Theme.fontSizeBody
-                weight:        Font.DemiBold
-                letterSpacing: 0.3
-            }
-            elide: Text.ElideRight
-            width: parent.width - mutePill.width - 8
-        }
-
+    SystemComponents.PopupHeader {
+        title: root.deviceName
+        trailingWidth: 28
+        trailingHeight: 28
         Rectangle {
             id: mutePill
-            anchors.right:          parent.right
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.centerIn: parent
             width: 28; height: 28; radius: 14
 
             color: root.masterMuted

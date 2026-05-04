@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
 import Quickshell
-import "file:/home/agony/.local/share/Astrea/Core/components"
+import "../../AstreaComponents"
 
 Item {
     id: root

@@ -9,6 +9,10 @@ Row {
     spacing: 8
     height:  36
 
+    TrayContextMenu {
+        id: contextMenu
+    }
+
     Repeater {
         model: SystemTray.items
         delegate: Rectangle {
@@ -49,10 +53,8 @@ Row {
                     } else if (mouse.button === Qt.MiddleButton) {
                         modelData.secondaryActivate()
                     } else {
-                        const win = trayItem.QsWindow.window
-                        if (!win) { console.log("Tray Error: QsWindow.window não encontrado"); return }
-                        const pt = mapToGlobal(mouse.x, mouse.y)
-                        modelData.display(win, pt.x, pt.y)
+                        const point = trayItem.mapToItem(null, trayItem.width / 2, trayItem.height / 2)
+                        contextMenu.openFor(modelData, point.x)
                     }
                 }
             }

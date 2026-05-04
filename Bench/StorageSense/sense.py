@@ -14,6 +14,9 @@ import argparse
 from pathlib import Path
 from collections import defaultdict
 
+from home_index import DEFAULT_DB_PATH as HOME_INDEX_DB_PATH
+from home_index import build_index, index_info, search_index
+
 # -----------------------------------------
 # PATHS
 # -----------------------------------------
@@ -179,9 +182,6 @@ def resolve_category(path_str: str, ext: str, dir_parts: frozenset[str],
 
     return "home_other"
 
-        # Match by special directory name
-        if cat["match_dirs"] and (cat["match_dirs"] & dir_parts):
-            return cat_id
 
 def build_cat_meta(compiled: dict) -> dict[str, tuple[str, str]]:
     meta = {cat_id: (cat["label"], "") for cat_id, cat in compiled.items()}
@@ -189,14 +189,6 @@ def build_cat_meta(compiled: dict) -> dict[str, tuple[str, str]]:
     meta.update(SYS_CAT_META)
     return meta
 
-    return "home_other"
-
-
-def build_cat_meta(compiled: dict) -> dict[str, tuple[str, str]]:
-    meta = {cat_id: (cat["label"], "") for cat_id, cat in compiled.items()}
-    meta["home_other"] = ("Other (Home)", "")
-    meta.update(SYS_CAT_META)
-    return meta
 
 CAT_ALIASES: dict[str, str] = {
     "sys_other": "sys:other",
@@ -331,18 +323,6 @@ def get_conn() -> sqlite3.Connection:
     conn.commit()
     return conn
 
-def flush_dirs(conn: sqlite3.Connection, entries: list[tuple[str, float]]) -> None:
-    if entries:
-        conn.executemany("INSERT OR REPLACE INTO dirs VALUES (?,?)", entries)
-        conn.commit()
-
-
-def prune(conn: sqlite3.Connection, old: set, current: set) -> int:
-    stale = old - current
-    if stale:
-        conn.executemany("DELETE FROM files WHERE path=?", [(p,) for p in stale])
-        conn.commit()
-    return len(stale)
 
 def load_cache(
     conn: sqlite3.Connection,
@@ -847,6 +827,9 @@ def build_parser() -> argparse.ArgumentParser:
 examples:
   storagesense scan
   storagesense scan --quiet
+  storagesense index-home
+  storagesense search-home invoice pdf
+  storagesense index-info
   storagesense list
   storagesense info
   storagesense clear-cache
@@ -855,6 +838,23 @@ examples:
     sub = p.add_subparsers(dest="command", metavar="<command>")
     scan_p = sub.add_parser("scan", help="Scan the disk and display a report")
     scan_p.add_argument("--quiet", "-q", action="store_true", help="No progress output")
+
+    index_p = sub.add_parser("index-home", help="Index /home into a searchable SQLite database")
+    index_p.add_argument("--root", default=HOME, help=f"Directory to index (default: {HOME})")
+    index_p.add_argument("--db", default=str(HOME_INDEX_DB_PATH), help="SQLite index path")
+    index_p.add_argument("--skip-hidden", action="store_true", help="Skip dotfiles and dot directories")
+    index_p.add_argument("--cross-filesystems", action="store_true", help="Do not stop at filesystem boundaries")
+    index_p.add_argument("--quiet", "-q", action="store_true", help="No progress output")
+
+    search_p = sub.add_parser("search-home", help="Search the home index by name or path")
+    search_p.add_argument("query", nargs="+", help="Search terms")
+    search_p.add_argument("--db", default=str(HOME_INDEX_DB_PATH), help="SQLite index path")
+    search_p.add_argument("--limit", type=int, default=30, help="Maximum results")
+    search_p.add_argument("--json", action="store_true", help="Output JSON")
+
+    info_p = sub.add_parser("index-info", help="Show home index database info")
+    info_p.add_argument("--db", default=str(HOME_INDEX_DB_PATH), help="SQLite index path")
+
     sub.add_parser("list",        help="List categories from the JSON file")
     sub.add_parser("info",        help="Show cache info")
     sub.add_parser("json",        help="Output results as JSON for integration")
@@ -878,6 +878,68 @@ def main() -> None:
         case "scan":
             stats, scanned, updated, pruned, errors, elapsed = scan_all(compiled, args.quiet)
             print_scan_report(stats, cat_meta, scanned, updated, pruned, errors, elapsed)
+        case "index-home":
+            stats = build_index(
+                args.root,
+                args.db,
+                skip_hidden=args.skip_hidden,
+                one_filesystem=not args.cross_filesystems,
+                quiet=args.quiet,
+            )
+            print()
+            print("=" * W)
+            print("  HOME INDEX")
+            sep()
+            print(f"  Root:      {stats.root}")
+            print(f"  Database:  {stats.db_path}")
+            print(f"  Entries:   {stats.scanned:,}")
+            print(f"  Files:     {stats.files:,}")
+            print(f"  Dirs:      {stats.dirs:,}")
+            print(f"  Symlinks:  {stats.symlinks:,}")
+            print(f"  Other:     {stats.other:,}")
+            print(f"  Pruned:    {stats.pruned:,}")
+            print(f"  Errors:    {stats.errors:,}")
+            print(f"  Time:      {stats.elapsed_secs:.1f}s")
+            print("=" * W)
+            print()
+        case "search-home":
+            query = " ".join(args.query)
+            results = search_index(query, args.db, limit=args.limit)
+            if args.json:
+                print(json.dumps(results, ensure_ascii=False))
+                return
+            if not results:
+                print("No results. Run `storagesense index-home` or try a broader query.")
+                return
+            for row in results:
+                size = format_size(row["size"]) if row["kind"] == "file" else "-"
+                print(f"{row['kind']:<7} {size:>10}  {row['path']}")
+        case "index-info":
+            info_data = index_info(args.db)
+            if not info_data["exists"]:
+                print(f"No home index found at {info_data['db_path']}.")
+                print("Run `storagesense index-home` first.")
+                return
+            print()
+            print("=" * W)
+            print(f"  HOME INDEX INFO  --  {info_data['db_path']}")
+            sep()
+            print(f"  Database:  {format_size(info_data['size'])}")
+            print(f"  Entries:   {info_data['entries']:,}")
+            print(f"  Files:     {info_data['files']:,}")
+            print(f"  Dirs:      {info_data['dirs']:,}")
+            print(f"  Symlinks:  {info_data['symlinks']:,}")
+            print(f"  Other:     {info_data['other']:,}")
+            last_run = info_data["last_run"]
+            if last_run:
+                print(f"  Root:      {last_run['root']}")
+                if last_run["finished_at"]:
+                    ago = max(0, time.time() - last_run["finished_at"])
+                    print(f"  Updated:   {ago:.0f}s ago")
+                print(f"  Pruned:    {last_run['pruned']:,}")
+                print(f"  Errors:    {last_run['errors']:,}")
+            print("=" * W)
+            print()
         case "list":
             print_list(compiled)
         case "info":

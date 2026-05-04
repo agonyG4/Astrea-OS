@@ -2,3 +2,4 @@ module Astrea.Files
 
 FileContextMenu 1.0 ui/FileContextMenu.qml
 SidebarFrame    1.0 ui/SidebarFrame.qml
+OperationProgressCard 1.0 ui/OperationProgressCard.qml

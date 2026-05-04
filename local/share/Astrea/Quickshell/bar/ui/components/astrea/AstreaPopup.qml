@@ -10,8 +10,6 @@ SystemComponents.TopbarPopup {
     popupWidth: 200
     cardPadding: 12
     contentSpacing: 4
-    backgroundColor: Theme.background
-    borderColor: Theme.border
 
     MenuItem {
         icon: "󰍉"; text: "Search"
@@ -54,7 +52,7 @@ SystemComponents.TopbarPopup {
 
     // ─── Processos ────────────────────────────────────────────────
     Process { id: shellLauncher;  command: ["rofi", "-show", "drun"] }
-    Process { id: shellAbout;    command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/Apps/about.qml"] }
+    Process { id: shellAbout;    command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/Apps/About/main.qml"] }
     Process { id: shellSettings; command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/Apps/Settings/main.qml"] }
     Process { id: shellForceQuit; command: ["bash", "-c", "hyprctl kill"] }
     Process { id: shellLock; command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/Features/Paper/lockscreen/lockscreen.qml"] }

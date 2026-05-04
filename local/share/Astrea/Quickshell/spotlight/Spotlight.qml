@@ -83,9 +83,10 @@ ShellRoot {
                         spacing: 12
 
                         Text {
-                            text: "🔍"
-                            font.pixelSize: 18
-                            opacity: 0.6
+                            text: "⌕"
+                            font.family: spotlight.fontFamily
+                            font.pixelSize: 24
+                            color: "#99FFFFFF"
                             Layout.leftMargin: 8
                             Layout.alignment: Qt.AlignVCenter
                         }
@@ -109,7 +110,7 @@ ShellRoot {
 
                             verticalAlignment: TextInput.AlignVCenter
 
-                            onTextChanged: spotlight.updateResults(text)
+                            onTextChanged: spotlight.scheduleResults(text)
 
                             Keys.onEscapePressed: spotlight.close()
                             Keys.onReturnPressed: if (resultList.count > 0) spotlight.launch(resultList.currentIndex)
@@ -118,6 +119,44 @@ ShellRoot {
 
                             Component.onCompleted: forceActiveFocus()
                             onVisibleChanged: if (visible) { forceActiveFocus(); text = "" }
+                        }
+
+                        RowLayout {
+                            Layout.maximumWidth: 68
+                            Layout.alignment: Qt.AlignVCenter
+                            spacing: 1
+                            visible: spotlight.weatherEnabled
+
+                            Image {
+                                Layout.preferredWidth: 20
+                                Layout.preferredHeight: 20
+                                Layout.alignment: Qt.AlignVCenter
+                                source: spotlight.weatherIconSource
+                                visible: spotlight.weatherReady
+                                fillMode: Image.PreserveAspectFit
+                                smooth: false
+                                mipmap: true
+                                opacity: 0.78
+                            }
+
+                            Text {
+                                text: "○"
+                                visible: !spotlight.weatherReady
+                                font.pixelSize: 18
+                                color: searchInput.placeholderTextColor
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            Text {
+                                Layout.maximumWidth: 46
+                                text: spotlight.weatherReady ? spotlight.weatherTemp + "°" : "--°"
+                                font.family: spotlight.fontFamily
+                                font.pixelSize: 18
+                                font.weight: Font.Medium
+                                color: searchInput.placeholderTextColor
+                                elide: Text.ElideRight
+                                verticalAlignment: Text.AlignVCenter
+                            }
                         }
                     }
 
@@ -195,12 +234,33 @@ ShellRoot {
         readonly property string fontFamily: "SF Pro Display"
         property bool hadFocusGrab: false
         property bool quitAfterUsageSave: false
+        property bool usageSavePending: false
         property var results: []
         property var usageCounts: ({})
         readonly property string usageFilePath: Quickshell.env("HOME") + "/.local/state/Astrea/spotlight-usage.json"
+        readonly property string configFilePath: Quickshell.env("HOME") + "/.config/AstreaOS/spotlight.json"
+        readonly property string weatherScript: Quickshell.env("HOME") + "/.local/share/Astrea/Core/bridge/apps/weather.py"
         property string usageLoadBuffer: ""
+        property string configLoadBuffer: ""
+        property string weatherBuffer: ""
+        property bool weatherEnabled: true
+        property bool weatherReady: false
+        property bool weatherLoading: false
+        property string weatherCity: ""
+        property string weatherCondition: ""
+        property int weatherTemp: 0
+        property string weatherStatusText: "Atualizando"
+        readonly property string weatherIconSource: weatherReady ? weatherAssetForCondition(weatherCondition) : ""
+        property string pendingQuery: ""
 
-        function toggle() { if (open) close(); else open = true }
+        function toggle() {
+            if (open) {
+                close()
+            } else {
+                open = true
+                if (weatherEnabled && !weatherLoading && !weatherReady) refreshWeather()
+            }
+        }
 
         function close() {
             open = false
@@ -226,8 +286,64 @@ ShellRoot {
             persistUsage()
         }
 
+        function scheduleResults(query) {
+            pendingQuery = query
+            resultDebounce.restart()
+        }
+
+        function ensureConfig() {
+            configLoadBuffer = ""
+            configLoadProc.running = false
+            configLoadProc.running = true
+        }
+
+        function applyConfig(config) {
+            weatherEnabled = config.weather === undefined || config.weather === null ? true : !!config.weather
+            if (weatherEnabled) refreshWeather()
+        }
+
+        function refreshWeather() {
+            if (!weatherEnabled || weatherLoading) return
+            weatherLoading = true
+            weatherStatusText = weatherReady ? "Atualizando" : "Carregando"
+            weatherBuffer = ""
+            weatherProc.running = false
+            weatherProc.running = true
+        }
+
+        function applyWeather(payload) {
+            if (!payload || payload.error) {
+                weatherStatusText = payload && payload.error ? payload.error : "Indisponível"
+                weatherReady = false
+                return
+            }
+
+            weatherCity = payload.city || ""
+            weatherCondition = payload.condition || ""
+            weatherTemp = Number(payload.temp || 0)
+            weatherStatusText = ""
+            weatherReady = true
+        }
+
+        function weatherAssetForCondition(condition) {
+            const text = (condition || "").toLowerCase()
+            const assetRoot = "file://" + Quickshell.env("HOME") + "/.local/share/Astrea/Apps/Weather/assets/weather/"
+
+            if (text.indexOf("trovoada") >= 0) return assetRoot + "thunderstorm.png"
+            if (text.indexOf("chuva gelada") >= 0 || text.indexOf("garoa gelada") >= 0) return assetRoot + "freezing_rain.png"
+            if (text.indexOf("chuva forte") >= 0 || text.indexOf("garoa forte") >= 0 || text.indexOf("pancadas fortes") >= 0) return assetRoot + "heavy_rain.png"
+            if (text.indexOf("garoa") >= 0 || text.indexOf("chuva leve") >= 0 || text.indexOf("pancadas") >= 0) return assetRoot + "light_rain.png"
+            if (text.indexOf("chuva") >= 0) return assetRoot + "rain.png"
+            if (text.indexOf("névoa") >= 0 || text.indexOf("nevoa") >= 0) return assetRoot + "mist.png"
+            if (text.indexOf("nublado") >= 0) return assetRoot + "cloudy.png"
+            if (text.indexOf("parcialmente") >= 0 || text.indexOf("principalmente") >= 0) return assetRoot + "partially_cloudy.png"
+            if (text.indexOf("limpo") >= 0 || text.indexOf("céu") >= 0 || text.indexOf("ceu") >= 0 || text.indexOf("ensolarado") >= 0) return assetRoot + "clear.png"
+            return assetRoot + "clear.png"
+        }
+
         function matchTier(searchableName, searchableExec, query, searchTerms) {
             if (searchableName.startsWith(query)) return 0
+            if (searchTerms.every(term => searchableName.split(/[\s-]+/).some(part => part.startsWith(term)))) return 1
             if (searchTerms.every(term => searchableName.includes(term))) return 1
             if (searchableExec.startsWith(query)) return 2
             return 3
@@ -241,6 +357,10 @@ ShellRoot {
                 usageFilePath,
                 JSON.stringify(usageCounts)
             ]
+            if (usageSaveProc.running) {
+                usageSavePending = true
+                return
+            }
             usageSaveProc.running = false
             usageSaveProc.running = true
         }
@@ -259,13 +379,14 @@ ShellRoot {
             if (typeof DesktopEntries !== "undefined") {
                 let apps = DesktopEntries.applications.values
                 let searchTerms = q.split(/[\s-]+/).filter(term => term.length > 0)
-                let seenNames = new Set()
+                let seenKeys = new Set()
 
                 for (let entry of apps) {
                     if (!entry || entry.noDisplay) continue
 
-                    let searchableName = (entry.name || "").toLowerCase()
-                    if (seenNames.has(searchableName)) continue
+                    let searchableName = (entry.name || "").trim().toLowerCase()
+                    let key = entryKey(entry)
+                    if (!searchableName || seenKeys.has(key)) continue
 
                     let searchableExec = (entry.exec || entry.execString || "").toLowerCase()
                     let matches = searchTerms.every(term =>
@@ -281,7 +402,7 @@ ShellRoot {
                         tier: matchTier(searchableName, searchableExec, q, searchTerms),
                         usage: usageCountFor(entry)
                     })
-                    seenNames.add(searchableName)
+                    seenKeys.add(key)
                 }
 
                 items.sort((a, b) => {
@@ -315,6 +436,21 @@ ShellRoot {
 
         Component.onCompleted: {
             loadUsage()
+            ensureConfig()
+        }
+
+        property var resultDebounce: Timer {
+            id: resultDebounce
+            interval: 35
+            repeat: false
+            onTriggered: spotlight.updateResults(spotlight.pendingQuery)
+        }
+
+        property var weatherRefreshTimer: Timer {
+            interval: 1800000
+            repeat: true
+            running: spotlight.weatherEnabled
+            onTriggered: spotlight.refreshWeather()
         }
 
         property var usageLoadProc: Process {
@@ -344,10 +480,62 @@ ShellRoot {
             command: []
             running: false
             onExited: {
+                if (spotlight.usageSavePending) {
+                    spotlight.usageSavePending = false
+                    spotlight.persistUsage()
+                    return
+                }
                 if (!spotlight.quitAfterUsageSave) return
                 spotlight.quitAfterUsageSave = false
                 Qt.quit()
             }
         }
+
+        property var configLoadProc: Process {
+            id: configLoadProc
+            command: [
+                "python3",
+                "-c",
+                "import json, os, sys; path=sys.argv[1]; default={'weather': True}; os.makedirs(os.path.dirname(path), exist_ok=True); open(path, 'w', encoding='utf-8').write(json.dumps(default, indent=2)) if not os.path.exists(path) else None; print(open(path, encoding='utf-8').read())",
+                spotlight.configFilePath
+            ]
+            running: false
+            stdout: SplitParser {
+                onRead: data => spotlight.configLoadBuffer += data
+            }
+            onExited: (code, _) => {
+                if (code !== 0) {
+                    spotlight.applyConfig({})
+                    return
+                }
+                try {
+                    spotlight.applyConfig(JSON.parse(spotlight.configLoadBuffer || "{}"))
+                } catch (e) {
+                    spotlight.applyConfig({})
+                }
+            }
+        }
+
+        property var weatherProc: Process {
+            id: weatherProc
+            command: ["/usr/bin/env", "python3", spotlight.weatherScript, "get", "--summary-json"]
+            running: false
+            stdout: SplitParser {
+                onRead: data => spotlight.weatherBuffer += data
+            }
+            onExited: (code, _) => {
+                spotlight.weatherLoading = false
+                if (code !== 0) {
+                    spotlight.applyWeather({ "error": "Sem dados" })
+                    return
+                }
+                try {
+                    spotlight.applyWeather(JSON.parse(spotlight.weatherBuffer || "{}"))
+                } catch (e) {
+                    spotlight.applyWeather({ "error": "JSON inválido" })
+                }
+            }
+        }
+
     }
 }

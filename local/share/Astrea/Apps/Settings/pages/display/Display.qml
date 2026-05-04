@@ -3,7 +3,7 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
-import "file:/home/agony/.local/share/Astrea/Core/components"
+import "../../AstreaComponents"
 
 Item {
     id: root
@@ -21,6 +21,7 @@ Item {
     readonly property string scriptPath:  home + "/.local/share/Astrea/Core/bridge/system/display.py"
     readonly property string confPath:    home + "/.local/share/Astrea/System/config/display/monitor-settings.conf"
     readonly property string applyScript: home + "/.local/share/Astrea/System/services/display_apply.sh"
+    readonly property string nightShiftScript: home + "/.local/share/Astrea/System/services/display_night_shift_color.sh"
     readonly property string displayIconPath: home + "/.local/share/Astrea/Assets/icons/display/"
 
     // ── Monitor state ─────────────────────────────────────────────────────
@@ -36,10 +37,13 @@ Item {
     property int  selectedHz:         0
     property int  selectedBitdepth:   1
     property int  selectedScale:      2
-    property bool vrrEnabled:         false
+    property int  selectedVrrMode:    0
     property int  selectedSaturation: 950
     property bool nightShiftEnabled:  false
     property int  nightShiftStrength: 35
+    property bool nightShiftScheduleEnabled: false
+    property string nightShiftStart: "20:00"
+    property string nightShiftEnd: "07:00"
     property bool showAllResolutions: false
     property bool savedVisible:       false
     property bool suppressLiveColorApply: true
@@ -48,10 +52,21 @@ Item {
     onSelectedResolutionChanged: selectedHz = 0
     onSelectedSaturationChanged: queueLiveColorApply("saturation-only")
     onNightShiftEnabledChanged: queueLiveColorApply("night-shift-only")
+    onNightShiftScheduleEnabledChanged: if (!suppressLiveColorApply) persistSettingsOnly(false)
+    onNightShiftStartChanged: if (!suppressLiveColorApply) persistSettingsOnly(false)
+    onNightShiftEndChanged: if (!suppressLiveColorApply) persistSettingsOnly(false)
 
     // ── Computed ──────────────────────────────────────────────────────────
     readonly property var currentHzList:
         (mon?.refreshRates[mon.resolutions[selectedResolution]]) ?? []
+
+    readonly property var vrrModeOptions: [
+        { label: "Off", value: 0 },
+        { label: "On", value: 1 },
+        { label: "Fullscreen only", value: 2 }
+    ]
+    readonly property var hourOptions: Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"))
+    readonly property var minuteOptions: ["00", "15", "30", "45"]
 
     readonly property var defaultResolutionIndices: {
         if (!mon || mon.resolutions.length === 0) return []
@@ -88,10 +103,13 @@ Item {
         selectedHz         = Math.max(0, hzList.indexOf(cur.refreshRate))
         selectedBitdepth   = _idx(mon.bitdepths, cur.bitdepth)
         selectedScale      = _idx(mon.scales, cur.scale)
-        vrrEnabled         = cur.vrr ?? false
+        selectedVrrMode    = _idx(vrrModeOptions.map(option => option.value), cur.vrrMode ?? 0)
         selectedSaturation = cur.saturation ?? 950
         nightShiftEnabled  = cur.nightShift ?? false
         nightShiftStrength = cur.nightShiftStrength ?? 35
+        nightShiftScheduleEnabled = cur.nightShiftSchedule ?? false
+        nightShiftStart = cur.nightShiftStart ?? "20:00"
+        nightShiftEnd = cur.nightShiftEnd ?? "07:00"
         showAllResolutions = false
         suppressLiveColorApply = false
     }
@@ -150,6 +168,29 @@ Item {
         return hz ? hz + " Hz" : "—"
     }
 
+    function _currentVrrLabel() {
+        const option = vrrModeOptions[selectedVrrMode]
+        return option ? option.label : "Off"
+    }
+
+    function _timeHour(value) {
+        const parts = String(value || "00:00").split(":")
+        return parts.length > 0 ? parts[0].padStart(2, "0") : "00"
+    }
+
+    function _timeMinute(value) {
+        const parts = String(value || "00:00").split(":")
+        return parts.length > 1 ? parts[1].padStart(2, "0") : "00"
+    }
+
+    function _setTimeHour(propName, hour) {
+        root[propName] = String(hour).padStart(2, "0") + ":" + _timeMinute(root[propName])
+    }
+
+    function _setTimeMinute(propName, minute) {
+        root[propName] = _timeHour(root[propName]) + ":" + String(minute).padStart(2, "0")
+    }
+
     function queueLiveColorApply(mode) {
         if (suppressLiveColorApply || !mon || loading || errorMessage !== "")
             return
@@ -172,10 +213,13 @@ Item {
             "refreshrate=" + (currentHzList[selectedHz] ?? mon.current.refreshRate),
             "bitdepth="    + mon.bitdepths[selectedBitdepth],
             "scale="       + mon.scales[selectedScale],
-            "vrr="         + (vrrEnabled ? 1 : 0),
+            "vrr="         + (vrrModeOptions[selectedVrrMode]?.value ?? 0),
             "saturation="  + selectedSaturation,
             "night_shift=" + (nightShiftEnabled ? 1 : 0),
-            "night_shift_strength=" + nightShiftStrength
+            "night_shift_strength=" + nightShiftStrength,
+            "night_shift_schedule=" + (nightShiftScheduleEnabled ? 1 : 0),
+            "night_shift_start=" + nightShiftStart,
+            "night_shift_end=" + nightShiftEnd
         ].join("\n")
         saveProc.command = [
             "bash", "-c",
@@ -284,21 +328,10 @@ Item {
                 saturationProc.running = true
                 root.persistSettingsOnly(false)
             } else if (mode === "night-shift-only") {
-                const temp = Math.max(3600, 6000 - Math.round(root.nightShiftStrength * 24))
-                const ipcCmd = root.nightShiftEnabled && root.nightShiftStrength > 0
-                    ? "systemctl --user start hyprsunset.service >/dev/null 2>&1 || true; " +
-                      "sleep 0.15; " +
-                      "hyprctl hyprsunset temperature " + String(temp)
-                    : "if systemctl --user --quiet is-active hyprsunset.service; then " +
-                      "hyprctl hyprsunset identity >/dev/null 2>&1 || true; " +
-                      "(sleep 5; " +
-                      "if [ -f '" + root.confPath + "' ] && grep -q '^night_shift=0$' '" + root.confPath + "'; then " +
-                      "systemctl --user stop hyprsunset.service >/dev/null 2>&1 || true; " +
-                      "fi) >/dev/null 2>&1 & " +
-                      "fi"
                 nightShiftProc.command = [
-                    "bash", "-lc",
-                    ipcCmd
+                    root.nightShiftScript,
+                    root.nightShiftEnabled && root.nightShiftStrength > 0 ? "on" : "off",
+                    String(root.nightShiftStrength)
                 ]
                 nightShiftProc.running = false
                 nightShiftProc.running = true
@@ -661,33 +694,16 @@ Item {
 
                     SettingRow {
                         label: "Variable Refresh Rate"
-                        sublabel: "VRR / FreeSync / G-Sync"
+                        sublabel: "VRR / FreeSync / G-Sync mode when supported by the display"
                         isLast: false
                         visible: root.mon?.vrrSupported ?? false
 
-                        Rectangle {
-                            implicitWidth: 56; implicitHeight: 30
-                            radius: 15
-                            color: root.vrrEnabled ? root.accent : Qt.rgba(1, 1, 1, 0.15)
-                            Behavior on color { ColorAnimation { duration: 220 } }
-
-                            Rectangle {
-                                width: 24; height: 24; radius: 12
-                                color: "#ffffff"
-                                anchors.verticalCenter: parent.verticalCenter
-                                x: root.vrrEnabled ? parent.width - 27 : 3
-                                Behavior on x { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                                Rectangle {
-                                    anchors.fill: parent; radius: parent.radius
-                                    color: "transparent"
-                                    border { width: 1; color: Qt.rgba(0, 0, 0, 0.18) }
-                                }
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: root.vrrEnabled = !root.vrrEnabled
-                            }
+                        SelectButton {
+                            implicitWidth: 160
+                            label: root._currentVrrLabel()
+                            options: root.vrrModeOptions.map(option => option.label)
+                            selectedIndex: root.selectedVrrMode
+                            onSelected: (i) => root.selectedVrrMode = i
                         }
                     }
 
@@ -761,6 +777,85 @@ Item {
                                 color: root.textSecondary
                                 font.pixelSize: 11
                                 horizontalAlignment: Text.AlignRight
+                            }
+                        }
+                    }
+
+                    SettingRow {
+                        label: "Schedule"
+                        sublabel: "Turn Night Shift on and off automatically"
+                        isLast: false
+
+                        ToggleSwitch {
+                            checked: root.nightShiftScheduleEnabled
+                            onToggled: root.nightShiftScheduleEnabled = !root.nightShiftScheduleEnabled
+                        }
+                    }
+
+                    SettingRow {
+                        label: "Start"
+                        sublabel: "When Night Shift should turn on"
+                        isLast: false
+                        visible: root.nightShiftScheduleEnabled
+
+                        Row {
+                            spacing: 8
+
+                            SelectButton {
+                                implicitWidth: 72
+                                label: root._timeHour(root.nightShiftStart)
+                                options: root.hourOptions
+                                selectedIndex: root.hourOptions.indexOf(root._timeHour(root.nightShiftStart))
+                                onSelected: (i) => root._setTimeHour("nightShiftStart", root.hourOptions[i])
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: ":"
+                                color: root.textSecondary
+                                font.pixelSize: 14
+                            }
+
+                            SelectButton {
+                                implicitWidth: 72
+                                label: root._timeMinute(root.nightShiftStart)
+                                options: root.minuteOptions
+                                selectedIndex: Math.max(0, root.minuteOptions.indexOf(root._timeMinute(root.nightShiftStart)))
+                                onSelected: (i) => root._setTimeMinute("nightShiftStart", root.minuteOptions[i])
+                            }
+                        }
+                    }
+
+                    SettingRow {
+                        label: "End"
+                        sublabel: "When Night Shift should turn off"
+                        isLast: false
+                        visible: root.nightShiftScheduleEnabled
+
+                        Row {
+                            spacing: 8
+
+                            SelectButton {
+                                implicitWidth: 72
+                                label: root._timeHour(root.nightShiftEnd)
+                                options: root.hourOptions
+                                selectedIndex: root.hourOptions.indexOf(root._timeHour(root.nightShiftEnd))
+                                onSelected: (i) => root._setTimeHour("nightShiftEnd", root.hourOptions[i])
+                            }
+
+                            Text {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: ":"
+                                color: root.textSecondary
+                                font.pixelSize: 14
+                            }
+
+                            SelectButton {
+                                implicitWidth: 72
+                                label: root._timeMinute(root.nightShiftEnd)
+                                options: root.minuteOptions
+                                selectedIndex: Math.max(0, root.minuteOptions.indexOf(root._timeMinute(root.nightShiftEnd)))
+                                onSelected: (i) => root._setTimeMinute("nightShiftEnd", root.minuteOptions[i])
                             }
                         }
                     }

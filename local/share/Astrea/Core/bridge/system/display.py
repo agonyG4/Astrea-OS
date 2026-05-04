@@ -9,6 +9,8 @@ AVAILABLE_BITDEPTHS = [6, 8, 10]
 DEFAULT_SATURATION = 950
 MAX_SATURATION = 1023
 DEFAULT_NIGHT_SHIFT_STRENGTH = 35
+DEFAULT_NIGHT_SHIFT_START = "20:00"
+DEFAULT_NIGHT_SHIFT_END = "07:00"
 
 CONF_PATH = os.path.expanduser(
     "~/.local/share/Astrea/System/config/display/monitor-settings.conf"
@@ -46,10 +48,42 @@ def read_conf() -> dict:
     return saved
 
 
+def valid_time(value: str, fallback: str) -> str:
+    try:
+        hour_s, minute_s = str(value).split(":", 1)
+        hour = max(0, min(23, int(hour_s)))
+        minute = max(0, min(59, int(minute_s)))
+        return f"{hour:02d}:{minute:02d}"
+    except (ValueError, TypeError):
+        return fallback
+
+
 def parse_mode(mode: str) -> tuple[str, float]:
     res, rest = mode.split("@")
     hz = float(rest.replace("Hz", ""))
     return res, hz
+
+
+def detect_vrr_support(raw: dict, refresh_map: dict[str, list[int]]) -> bool:
+    explicit_state = raw.get("vrr")
+    if isinstance(explicit_state, bool) and explicit_state:
+        return True
+
+    if raw.get("disabled", False):
+        return False
+
+    connector = str(raw.get("name", "")).upper()
+    active = str(raw.get("dpmsStatus", True)).lower() not in ("false", "0")
+    multi_rate = any(len(rates) > 1 for rates in refresh_map.values())
+    max_rate = max((max(rates) for rates in refresh_map.values() if rates), default=0)
+
+    connector_likely_vrr = (
+        connector.startswith("DP-")
+        or connector.startswith("EDP-")
+        or connector.startswith("HDMI-A-")
+    )
+
+    return active and connector_likely_vrr and multi_rate and max_rate > 60
 
 
 def build_monitor_info(raw: dict, saved: dict) -> dict:
@@ -95,15 +129,18 @@ def build_monitor_info(raw: dict, saved: dict) -> dict:
 
     current_hz = round(raw.get("refreshRate", 60))
 
+    current_vrr_state = bool(raw.get("vrr", False))
+
     if saved.get("monitor") == mon_name:
         try:
             current_bpc = int(saved["bitdepth"])
         except (KeyError, ValueError):
             current_bpc = raw.get("bitDepth", 8)
         try:
-            current_vrr = int(saved.get("vrr", 0)) == 1
+            current_vrr_mode = int(saved.get("vrr", 0))
         except (ValueError, TypeError):
-            current_vrr = False
+            current_vrr_mode = 1 if current_vrr_state else 0
+        current_vrr_mode = max(0, min(2, current_vrr_mode))
         try:
             current_saturation = int(saved.get("saturation", DEFAULT_SATURATION))
             current_saturation = max(0, min(MAX_SATURATION, current_saturation))
@@ -119,12 +156,27 @@ def build_monitor_info(raw: dict, saved: dict) -> dict:
             )
         except (ValueError, TypeError):
             current_night_shift_strength = DEFAULT_NIGHT_SHIFT_STRENGTH
+        try:
+            current_night_shift_schedule = int(saved.get("night_shift_schedule", 0)) == 1
+        except (ValueError, TypeError):
+            current_night_shift_schedule = False
+        current_night_shift_start = valid_time(
+            saved.get("night_shift_start", DEFAULT_NIGHT_SHIFT_START),
+            DEFAULT_NIGHT_SHIFT_START
+        )
+        current_night_shift_end = valid_time(
+            saved.get("night_shift_end", DEFAULT_NIGHT_SHIFT_END),
+            DEFAULT_NIGHT_SHIFT_END
+        )
     else:
         current_bpc = raw.get("bitDepth", 8)
-        current_vrr = False
+        current_vrr_mode = 1 if current_vrr_state else 0
         current_saturation = DEFAULT_SATURATION
         current_night_shift = False
         current_night_shift_strength = DEFAULT_NIGHT_SHIFT_STRENGTH
+        current_night_shift_schedule = False
+        current_night_shift_start = DEFAULT_NIGHT_SHIFT_START
+        current_night_shift_end = DEFAULT_NIGHT_SHIFT_END
 
     return {
         "id":          mon_id,
@@ -132,16 +184,20 @@ def build_monitor_info(raw: dict, saved: dict) -> dict:
         "description": raw.get("description", ""),
         "make":        raw.get("make", ""),
         "model":       raw.get("model", ""),
-        "vrrSupported": raw.get("vrr", False),
+        "vrrSupported": detect_vrr_support(raw, res_hz_map),
         "current": {
             "resolution":  current_res,
             "refreshRate": current_hz,
             "bitdepth":    current_bpc,
             "scale":       current_scale,
-            "vrr":         current_vrr,
+            "vrr":         current_vrr_mode > 0,
+            "vrrMode":     current_vrr_mode,
             "saturation":  current_saturation,
             "nightShift":  current_night_shift,
             "nightShiftStrength": current_night_shift_strength,
+            "nightShiftSchedule": current_night_shift_schedule,
+            "nightShiftStart": current_night_shift_start,
+            "nightShiftEnd": current_night_shift_end,
         },
         "resolutions":  sorted_resolutions,
         "refreshRates": res_hz_map,

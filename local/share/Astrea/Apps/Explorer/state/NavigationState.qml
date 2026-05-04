@@ -1,4 +1,5 @@
 import QtQuick 2.15
+import Quickshell
 import Quickshell.Io
 
 QtObject {
@@ -25,6 +26,7 @@ QtObject {
     property string activeRequestMode: "list"
     property ListModel fileModel: ListModel {}
     property int fileModelRevision: 0
+    property bool fileModelFilling: false
     property string _pendingParseMode: ""
     property WorkerScript jsonWorker: WorkerScript {
         id: jsonWorker
@@ -47,7 +49,8 @@ QtObject {
     }
 
     function initialize() {
-        var homePath = "/home/agony"
+        var requestedPath = Quickshell.env("ASTREA_EXPLORER_START_PATH") || ""
+        var homePath = requestedPath || "/home/agony"
         tabs = [{ id: 0, path: homePath, history: [homePath], historyIdx: 0 }]
         activeTabIndex = 0
         nextTabId = 1
@@ -293,22 +296,32 @@ QtObject {
         fileModel.clear()
         _allItems = filtered
         _fillOffset = 0
+        fileModelFilling = filtered.length > 0
         fileModelRevision++
         fillTimer.restart()
     }
 
-            function _fillChunk() {
-        var chunk = _allItems.slice(_fillOffset, _fillOffset + 50)
-        if (chunk.length === 0) { _allItems = []; return }
+    function _fillChunk() {
+        var chunkSize = fileModel.count === 0 ? 160 : 240
+        var chunk = _allItems.slice(_fillOffset, _fillOffset + chunkSize)
+        if (chunk.length === 0) {
+            _allItems = []
+            fileModelFilling = false
+            fileModelRevision++
+            return
+        }
         fileModel.append(chunk)
-        _fillOffset += 50
+        _fillOffset += chunkSize
         if (_fillOffset < _allItems.length)
             fillTimer.restart()
-        else
+        else {
             _allItems = []
+            fileModelFilling = false
+            fileModelRevision++
+        }
     }
     property Timer fillTimer: Timer {
-        interval: 8
+        interval: 4
         repeat: false
         onTriggered: navigation._fillChunk()
     }

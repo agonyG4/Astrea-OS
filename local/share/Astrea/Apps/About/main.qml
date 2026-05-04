@@ -29,37 +29,52 @@ ApplicationWindow {
     property string sysOs:      "AstreaOS"
     property string sysName:    "..."
     property string sysVersion: "..."
+    property string _infoBuf:   ""
+    readonly property string infoScript: Quickshell.env("HOME") + "/.local/share/Astrea/Core/bridge/system/info.py"
 
-    Process { command: ["bash","-c","source /etc/os-release && echo $PRETTY_NAME"]; running: true
-        stdout: SplitParser { onRead: (l) => window.sysOs = l.trim() } }
-    Process { command: ["bash","-c","source /etc/os-release && echo $V_NAME"]; running: true
-        stdout: SplitParser { onRead: (l) => window.sysName = l.trim() } }
-    Process { command: ["bash","-c","source /etc/os-release && echo ${VERSION:-$VERSION_ID}"]; running: true
-        stdout: SplitParser { onRead: (l) => window.sysVersion = l.trim() } }
-    Process { command: ["uname","-r"]; running: true
-        stdout: SplitParser { onRead: (l) => window.sysKernel = l.trim() } }
-    Process { command: ["bash","-c","hyprctl version 2>/dev/null | grep -oP 'v[\\d.]+' | head -1"]; running: true
-        stdout: SplitParser { onRead: (l) => { var v=l.trim(); window.sysDesktop = v!==""?"Hyprland "+v:"Hyprland" } } }
-    Process { command: ["bash","-c","grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | sed 's/^ //;s/(R)//g;s/(TM)//g;s/ CPU//g;s/  */ /g'"]; running: true
-        stdout: SplitParser { onRead: (l) => window.sysCpu = l.trim() } }
-    Process { command: ["bash","-c","lspci | grep -i 'vga\\|3d\\|display' | grep -iv 'intel' | grep -oP '(?<=\\[).*(?=\\])' | sed 's/ L[Hh][Rr]//gi;s/ (LHR)//gi' | head -1"]; running: true
-        stdout: SplitParser { onRead: (l) => window.sysGpu = l.trim() } }
-    Process { command: ["bash","-c","awk '/MemTotal/{gb=($2/1024/1024); printf \"%.0f GB\", (gb>15&&gb<16)?16:gb}' /proc/meminfo"]; running: true
-        stdout: SplitParser { onRead: (l) => window.sysMemory = l.trim() } }
-    Process { command: ["bash","-c","df -h / | awk 'NR==2{print $3\" used of \"$2}'"]; running: true
-        stdout: SplitParser { onRead: (l) => window.sysStorage = l.trim() } }
+    Process {
+        id: infoProc
+        command: ["python3", window.infoScript]
+        running: true
+        stdout: SplitParser {
+            onRead: data => window._infoBuf += data
+        }
+        onExited: code => {
+            if (code !== 0) {
+                window._infoBuf = ""
+                return
+            }
+            try {
+                var payload = JSON.parse(window._infoBuf || "{}")
+                var system = payload.system || {}
+                var hardware = payload.hardware || {}
+                window.sysOs = system.distro || "AstreaOS"
+                window.sysName = system.distro_codename || ""
+                window.sysVersion = system.distro_version || ""
+                window.sysKernel = system.kernel || "Unknown"
+                window.sysDesktop = system.desktop_label || system.desktop || "Unknown"
+                window.sysCpu = hardware.cpu || "Unknown"
+                window.sysGpu = hardware.gpu || "Unknown"
+                window.sysMemory = hardware.memory_total || "Unknown"
+                window.sysStorage = system.storage_root || "Unknown"
+            } catch (e) {
+                console.log("About system info parse failed:", e)
+            }
+            window._infoBuf = ""
+        }
+    }
 
     // ── Root card ────────────────────────────────────────────────
     Rectangle {
         anchors.fill: parent
-        radius: 14
+        radius: 0
         color: "#1c1c1e"
 
         // Subtle inner top highlight
         Rectangle {
             anchors { top: parent.top; left: parent.left; right: parent.right }
             height: parent.height * 0.45
-            radius: parent.radius
+            radius: 0
             gradient: Gradient {
                 GradientStop { position: 0.0; color: Qt.rgba(1,1,1,0.04) }
                 GradientStop { position: 1.0; color: "transparent" }

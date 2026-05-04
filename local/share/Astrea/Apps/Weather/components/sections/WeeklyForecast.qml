@@ -1,63 +1,137 @@
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import "../common" as Common
-import "../utils/WeatherFormat.js" as WeatherFormat
+import "../.."
 
 ColumnLayout {
     property var weatherData
     property var colors
+    signal daySelected(var day)
 
     Layout.fillWidth: true
     spacing: 0
 
-    Repeater {
-        model: weatherData ? weatherData.weekly.slice(0, 8) : []
+    Rectangle {
+        Layout.fillWidth: true
+        implicitHeight: weeklyColumn.implicitHeight + 20
+        radius: Theme.cardRadius
+        color: Theme.cardBg
+        opacity: 0.92
 
-        delegate: ColumnLayout {
-            Layout.fillWidth: true
+        ColumnLayout {
+            id: weeklyColumn
+            anchors.fill: parent
+            anchors.margins: 12
             spacing: 0
 
             RowLayout {
                 Layout.fillWidth: true
-                Layout.topMargin: 12
-                Layout.bottomMargin: 12
+                Layout.bottomMargin: 8
 
                 Common.TextLabel {
-                    text: index === 0 ? "Hoje" : modelData.day
-                    font.pixelSize: 15
-                    textColor: colors.primary
+                    text: "10 dias de previsão"
+                    font.pixelSize: Theme.fontSmall
+                    font.weight: 500
+                    textColor: Theme.textTertiary
                     Layout.fillWidth: true
-                }
-
-                Common.DisplayLabel {
-                    text: WeatherFormat.icon(modelData.cond)
-                    font.pixelSize: 18
-                    textColor: colors.primary
-                }
-
-                Item { implicitWidth: 12 }
-
-                Common.TextLabel {
-                    text: modelData.hi
-                    font.pixelSize: 15
-                    font.weight: Font.Medium
-                    textColor: colors.primary
-                    Layout.preferredWidth: 40
-                    horizontalAlignment: Text.AlignRight
-                }
-
-                Common.TextLabel {
-                    text: modelData.lo
-                    font.pixelSize: 15
-                    textColor: colors.secondary
-                    Layout.preferredWidth: 40
-                    horizontalAlignment: Text.AlignRight
                 }
             }
 
             Common.Divider {
-                lineColor: colors.subtleBorder
-                visible: index < (weatherData ? weatherData.weekly.length - 1 : 0)
+                lineColor: "#4A4A50"
+            }
+
+            Repeater {
+                model: weatherData ? weatherData.weekly.slice(0, 10) : []
+
+                delegate: ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 0
+
+                    Item {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: 46
+
+                        RowLayout {
+                            anchors.fill: parent
+                            spacing: 0
+
+                            Common.TextLabel {
+                                text: index === 0 ? "Hoje" : modelData.day
+                                font.pixelSize: Theme.fontMedium
+                                font.weight: 400
+                                textColor: Theme.textPrimary
+                                Layout.preferredWidth: 76
+                            }
+
+                            ColumnLayout {
+                                Layout.preferredWidth: 34
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 0
+
+                                Common.WeatherIcon {
+                                    condition: modelData.cond
+                                    iconSize: 22
+                                    Layout.alignment: Qt.AlignHCenter
+                                }
+
+                                Common.TextLabel {
+                                    visible: (modelData.rain || 0) > 0
+                                    text: modelData.rain + "%"
+                                    font.pixelSize: Theme.fontTiny
+                                    font.weight: 500
+                                    textColor: Theme.rain
+                                    Layout.alignment: Qt.AlignHCenter
+                                }
+                            }
+
+                            Common.TextLabel {
+                                text: modelData.lo + "°"
+                                font.pixelSize: 14
+                                font.weight: 400
+                                textColor: Theme.textTertiary
+                                horizontalAlignment: Text.AlignRight
+                                Layout.preferredWidth: 38
+                            }
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 3
+                                radius: 2
+                                color: "#7E7E88"
+
+                                Rectangle {
+                                    width: parent.width * 0.42
+                                    height: parent.height
+                                    anchors.right: parent.right
+                                    radius: 2
+                                    color: Theme.sun
+                                }
+                            }
+
+                            Common.TextLabel {
+                                text: modelData.hi + "°"
+                                font.pixelSize: 14
+                                font.weight: 400
+                                textColor: Theme.textPrimary
+                                horizontalAlignment: Text.AlignRight
+                                Layout.preferredWidth: 38
+                            }
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: daySelected(modelData)
+                        }
+                    }
+
+                    Common.Divider {
+                        lineColor: "#424248"
+                        visible: index < Math.min(10, weatherData ? weatherData.weekly.length : 0) - 1
+                    }
+                }
             }
         }
     }

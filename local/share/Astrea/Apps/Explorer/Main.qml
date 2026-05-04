@@ -4,6 +4,7 @@ import QtQuick.Layouts 1.15
 import "components/layout" as LayoutComponents
 import "components/views" as ViewComponents
 import "components/common" as CommonComponents
+import "AstreaFiles" as AstreaFiles
 
 ApplicationWindow {
     id: window
@@ -223,6 +224,36 @@ ApplicationWindow {
                         anchors.centerIn: parent
                         text: AppState.loadError; color: "#ff8b8b"; font.pixelSize: 15
                         visible: AppState.loadError !== ""
+                    }
+
+                    AstreaFiles.OperationProgressCard {
+                        id: extractionProgressCard
+                        anchors {
+                            left: parent.left; leftMargin: 14
+                            bottom: parent.bottom; bottomMargin: 14
+                        }
+                        width: Math.min(320, parent.width - 28)
+                        visible: AppState.archiveExtractionRunning
+                        opacity: visible ? 1 : 0
+                        z: 20
+                        title: AppState.archiveExtractionStatus || "Extraindo..."
+                        detail: AppState.archiveExtractionFileName
+                        destination: AppState.archiveExtractionDestination !== ""
+                            ? AppState.archiveExtractionDestination.split("/").filter(Boolean).pop()
+                            : ""
+                        progress: AppState.archiveExtractionProgress
+                        percent: AppState.archiveExtractionPercent
+                        completedItems: AppState.archiveExtractionDoneCount
+                        totalItems: AppState.archiveExtractionTotalCount
+                        failed: AppState.archiveExtractionError !== ""
+                        panelColor: Theme.panel
+                        borderColor: Theme.border
+                        primaryTextColor: Theme.text
+                        secondaryTextColor: Theme.textTer
+                        trackColor: Theme.hover
+                        fillColor: Theme.text
+                        errorColor: "#ff8b8b"
+                        Behavior on opacity { NumberAnimation { duration: 120 } }
                     }
                 }
 

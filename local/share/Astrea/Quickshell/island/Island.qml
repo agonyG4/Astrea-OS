@@ -7,15 +7,19 @@ import "."
 PanelWindow {
     id: island
     property QtObject sharedMusicState: null
+    property bool canRemapLayer: false
+    property bool remapVisible: true
     
     anchors.top: true
     implicitWidth:  screen.width
     implicitHeight: islandConfig.enabled ? islandContent.height + 100 : 0
     color: "transparent"
-    visible: islandConfig.enabled
+    visible: islandConfig.enabled && remapVisible
 
     WlrLayershell.namespace:      "dynamic-island"
-    WlrLayershell.layer:          islandConfig.always_on_top ? WlrLayer.Overlay : WlrLayer.Top
+    // Keep the island on an interactive layer in both modes.
+    // `Bottom` breaks hover/mouse because other top layers eat the input first.
+    WlrLayershell.layer:          island.islandConfig.always_on_top ? WlrLayer.Overlay : WlrLayer.Top
     WlrLayershell.exclusiveZone:  -1
     WlrLayershell.keyboardFocus:  WlrLayershell.None
 
@@ -102,6 +106,16 @@ property QtObject islandConfig: QtObject {
             gamemodeNotifyTimer.restart()
         }
     }
+    Connections {
+        target: islandConfig
+        function onAlways_on_topChanged() {
+            if (!island.canRemapLayer)
+                return
+
+            island.remapVisible = false
+            layerRemapTimer.restart()
+        }
+    }
 
     // ── Helpers ───────────────────────────────────────────────────
     function formatTime(us) {
@@ -135,6 +149,12 @@ property QtObject islandConfig: QtObject {
         onTriggered: island.showGamemodeNotify = false
     }
 
+    Timer {
+        id: layerRemapTimer
+        interval: 1
+        onTriggered: island.remapVisible = true
+    }
+
     NumberAnimation {
         id: smoothPositionAnim
         target: island; property: "smoothPosition"
@@ -146,4 +166,6 @@ property QtObject islandConfig: QtObject {
     IslandProcesses  { id: procs }
     IslandAnimations { id: flipAnim }
     IslandContent    { id: islandContent }
+
+    Component.onCompleted: canRemapLayer = true
 }

@@ -1,7 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.impl 2.15
-import "/home/agony/.local/share/Astrea/Features/Files/DragDropSupport.js" as DragDropSupport
+import "../../AstreaFiles/DragDropSupport.js" as DragDropSupport
 import "../.."
 import "../common" as CommonComponents
 import "ViewShared.js" as ViewShared
@@ -83,6 +83,8 @@ Item {
     }
 
     function refreshAfterModelChange() {
+        if (AppState.fileModelFilling)
+            return
         ViewShared.refreshAfterModelChange(
             root,
             AppState,
@@ -251,6 +253,10 @@ Item {
         function onSortFieldChanged() { root.rebuildSectionModel() }
         function onSortAscChanged() { root.rebuildSectionModel() }
         function onGroupingEnabledChanged() { root.rebuildSectionModel() }
+        function onFileModelFillingChanged() {
+            if (!AppState.fileModelFilling)
+                root.refreshAfterModelChange()
+        }
         function onLoadingDirChanged() {
             if (AppState.loadingDir)
                 root.prepareScrollRestore(AppState.currentPath)
@@ -348,7 +354,36 @@ Item {
         function warmVisible() {
             if (AppState.fileModel.count <= 0)
                 return
-            AppState.scheduleVisibleThumbnailWarm(0, AppState.fileModel.count - 1)
+            var firstSection = indexAt(8, contentY + 1)
+            var lastSection = indexAt(8, contentY + height - 2)
+            if (firstSection < 0)
+                firstSection = 0
+            if (lastSection < 0)
+                lastSection = Math.min(count - 1, firstSection + 2)
+            firstSection = Math.max(0, Math.min(firstSection, root.sectionModel.count - 1))
+            lastSection = Math.max(firstSection, Math.min(lastSection + 1, root.sectionModel.count - 1))
+
+            var firstSource = -1
+            var lastSource = -1
+            for (var i = firstSection; i <= lastSection; i++) {
+                var section = root.sectionModel.get(i)
+                var items = section && section.items ? section.items : []
+                if (items.length === 0)
+                    continue
+                var firstItem = items[0]
+                var lastItem = items[items.length - 1]
+                if (!firstItem || !lastItem || firstItem.sourceIndex === undefined || lastItem.sourceIndex === undefined)
+                    continue
+                if (firstSource < 0)
+                    firstSource = firstItem.sourceIndex
+                lastSource = lastItem.sourceIndex
+            }
+            if (firstSource < 0 || lastSource < firstSource)
+                return
+            var pad = grid.columns * 2
+            AppState.scheduleVisibleThumbnailWarm(
+                Math.max(0, firstSource - pad),
+                Math.min(AppState.fileModel.count - 1, lastSource + pad))
         }
 
         onContentYChanged: {

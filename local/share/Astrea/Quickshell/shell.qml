@@ -3,6 +3,7 @@
 import Quickshell
 import "./bar"
 import "./island"
+import "./notifications"
 import "./spotlight"
 
 ShellRoot {
@@ -18,6 +19,7 @@ ShellRoot {
         delegate: Bar {
             required property var modelData
             screen: modelData
+            sharedMusicState: musicMonitor
         }
     }
 
@@ -31,4 +33,6 @@ ShellRoot {
     }
 
     Spotlight {}
+
+    Notifications {}
 }

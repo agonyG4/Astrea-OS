@@ -3,7 +3,7 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
-import "file:/home/agony/.local/share/Astrea/Core/components"
+import "../../AstreaComponents"
 import QtQuick.Effects
 
 Item {
@@ -427,7 +427,7 @@ Item {
                 Image {
                     anchors.fill: parent; source: tile.imgPath
                     fillMode: Image.PreserveAspectCrop
-                    asynchronous: true; smooth: true; mipmap: true; cache: false
+                    asynchronous: true; smooth: false; mipmap: true; cache: false
                 }
 
                 Rectangle {
@@ -498,10 +498,10 @@ Item {
                             anchors.fill: parent
                             source: root.wpThumb
                             fillMode: Image.PreserveAspectCrop
-                            asynchronous: true; smooth: true; mipmap: true; cache: false
+                            asynchronous: true; smooth: false; mipmap: true; cache: false
 
                             layer.enabled: true
-                            layer.smooth: true
+                            layer.smooth: false
                             layer.mipmap: true
                             layer.effect: MultiEffect {
                                 maskEnabled: true

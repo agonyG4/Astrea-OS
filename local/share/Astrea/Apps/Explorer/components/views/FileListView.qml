@@ -1,7 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.impl 2.15
-import "/home/agony/.local/share/Astrea/Features/Files/DragDropSupport.js" as DragDropSupport
+import "../../AstreaFiles/DragDropSupport.js" as DragDropSupport
 import "../.."
 import "../common" as CommonComponents
 import "ViewShared.js" as ViewShared
@@ -86,6 +86,8 @@ Item {
     }
 
     function refreshAfterModelChange() {
+        if (AppState.fileModelFilling)
+            return
         ViewShared.refreshAfterModelChange(
             root,
             AppState,
@@ -186,6 +188,10 @@ Item {
         function onSortFieldChanged() { root.rebuildDisplayModel() }
         function onSortAscChanged() { root.rebuildDisplayModel() }
         function onGroupingEnabledChanged() { root.rebuildDisplayModel() }
+        function onFileModelFillingChanged() {
+            if (!AppState.fileModelFilling)
+                root.refreshAfterModelChange()
+        }
         function onLoadingDirChanged() {
             if (AppState.loadingDir)
                 root.prepareScrollRestore(AppState.currentPath)
@@ -293,7 +299,7 @@ Item {
         // Reuse delegates — safe because all bindings are model-role driven.
         // This is the single biggest CPU win for large directories.
         reuseItems: true
-        cacheBuffer: 999999
+        cacheBuffer: Math.max(height * 2, root.rowHeight * 18)
 
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
         readonly property int firstVisibleIndex: {

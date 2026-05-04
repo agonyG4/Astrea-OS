@@ -9,6 +9,10 @@ Item {
     property bool loading: true
     property string errorMsg: ""
     property string weatherScript: "/home/agony/.local/share/Astrea/Core/bridge/apps/weather.py"
+    property bool alertNotificationsEnabled: true
+    property bool settingsLoaded: false
+
+    Component.onCompleted: settingsLoadProc.running = true
 
     function refresh() {
         loading = true
@@ -16,15 +20,45 @@ Item {
         weatherProc.running = true
     }
 
+    function setAlertNotificationsEnabled(enabled) {
+        alertNotificationsEnabled = enabled
+        settingsSaveProc.command = [
+            "/usr/bin/env",
+            "python3",
+            root.weatherScript,
+            "notifications-setting",
+            enabled ? "true" : "false"
+        ]
+        settingsSaveProc.running = true
+    }
+
+    function notifyAlerts(data) {
+        if (!settingsLoaded || !alertNotificationsEnabled || !data || !data.alerts || data.alerts.length === 0)
+            return
+        if (alertNotifyProc.running)
+            return
+
+        alertNotifyProc.command = [
+            "/usr/bin/env",
+            "python3",
+            root.weatherScript,
+            "notify-alerts",
+            "--city",
+            data.city || "",
+            JSON.stringify(data.alerts)
+        ]
+        alertNotifyProc.running = true
+    }
+
     Process {
         id: weatherProc
         command: ["/usr/bin/env", "python3", root.weatherScript, "get", "--json"]
-        running: true
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
                     root.weatherData = JSON.parse(this.text)
                     root.errorMsg = ""
+                    root.notifyAlerts(root.weatherData)
                 } catch(e) {
                     root.weatherData = null
                     root.errorMsg = "Erro ao parsear JSON"
@@ -45,8 +79,44 @@ Item {
         }
     }
 
+    Process {
+        id: alertNotifyProc
+        stdout: StdioCollector {}
+        stderr: StdioCollector {}
+    }
+
+    Process {
+        id: settingsLoadProc
+        command: ["/usr/bin/env", "python3", root.weatherScript, "notifications-setting"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    var data = JSON.parse(this.text)
+                    root.alertNotificationsEnabled = data.notifications_enabled !== false
+                } catch(e) {
+                    root.alertNotificationsEnabled = true
+                }
+                root.settingsLoaded = true
+                root.refresh()
+            }
+        }
+        stderr: StdioCollector {}
+        onExited: exitCode => {
+            if (!root.settingsLoaded) {
+                root.settingsLoaded = true
+                root.refresh()
+            }
+        }
+    }
+
+    Process {
+        id: settingsSaveProc
+        stdout: StdioCollector {}
+        stderr: StdioCollector {}
+    }
+
     Timer {
-        interval: 600000
+        interval: 1800000
         running: true
         repeat: true
         onTriggered: root.refresh()

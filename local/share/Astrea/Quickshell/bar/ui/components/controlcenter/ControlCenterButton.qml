@@ -1,62 +1,35 @@
 import QtQuick
 import Qt5Compat.GraphicalEffects
+import "../system" as SystemComponents
 import "../../.."
 
-Item {
+SystemComponents.IndicatorButton {
     id: root
-    width: 36
-    height: 36
+
     readonly property string quickshellAssetRoot: "file:///home/agony/.local/share/Astrea/Assets/ui/quickshell/bar/"
-
-    function updatePopupAnchor() {
-        if (!root.ccPopupRef) return
-        const point = root.mapToItem(null, root.width / 2, root.height / 2)
-        root.ccPopupRef.anchorX = point.x
-    }
-
-    onXChanged: updatePopupAnchor()
-    onWidthChanged: updatePopupAnchor()
-    onCcPopupRefChanged: updatePopupAnchor()
-    Component.onCompleted: updatePopupAnchor()
-
-    Rectangle {
-        id: bg
-        anchors.centerIn: parent
-        width: 28
-        height: 28
-        radius: Theme.radiusMedium
-        color: tapHandler.pressed ? Qt.rgba(1, 1, 1, 0.1) : (hoverHandler.hovered ? Qt.rgba(1, 1, 1, 0.05) : "transparent")
-        Behavior on color { ColorAnimation { duration: 150 } }
-
-        // Icon (macOS Control Center style)
-        Image {
-            id: icon
-            anchors.centerIn: parent
-            width: 16; height: 16
-            source: root.quickshellAssetRoot + "topbar/control-center.png"
-            fillMode: Image.PreserveAspectFit
-            smooth: true
-            mipmap: true
-            opacity: tapHandler.pressed ? 0.7 : 1.0
-
-            layer.enabled: true
-            layer.smooth: true
-            layer.effect: ColorOverlay {
-                color: Theme.iconActive
-            }
-        }
-    }
-
     property var ccPopupRef: null
 
-    HoverHandler { id: hoverHandler }
-    TapHandler {
-        id: tapHandler
-        onTapped: {
-            if (root.ccPopupRef) {
-                const point = root.mapToItem(null, root.width / 2, root.height / 2)
-                root.ccPopupRef.toggleAt(point.x)
-            }
+    popupRef: root.ccPopupRef
+    fixedWidth: 36
+    height: 36
+    backgroundMargin: 4
+    backgroundRadius: Theme.radiusMedium
+    hoverColor: Qt.rgba(1, 1, 1, 0.05)
+    pressedColor: Qt.rgba(1, 1, 1, 0.10)
+
+    Image {
+        id: icon
+        width: 16; height: 16
+        source: root.quickshellAssetRoot + "topbar/control-center.png"
+        fillMode: Image.PreserveAspectFit
+        smooth: true
+        mipmap: true
+        opacity: root.pressed ? 0.7 : 1.0
+
+        layer.enabled: true
+        layer.smooth: true
+        layer.effect: ColorOverlay {
+            color: Theme.iconActive
         }
     }
 }

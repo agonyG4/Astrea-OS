@@ -13,7 +13,9 @@ QtObject {
     property string scannedJson: "[]"
     property bool scanning: false
     property var _scannedList: []
+    property var _scanOwners: ({})
     property string _statusBuf: ""
+    property bool _started: false
 
     function refresh() {
         if (statusProc.running)
@@ -32,6 +34,8 @@ QtObject {
     function startScan() {
         if (!root.powered)
             return
+        if (root.scanning)
+            return
         root.scanning = true
         root._scannedList = []
         root.scannedJson = "[]"
@@ -44,6 +48,25 @@ QtObject {
         scanStopProc.running = false
         scanStopProc.running = true
         root.scanning = false
+    }
+
+    function requestScan(owner) {
+        if (!owner)
+            owner = "default"
+        var owners = Object.assign({}, root._scanOwners)
+        owners[owner] = true
+        root._scanOwners = owners
+        root.startScan()
+    }
+
+    function releaseScan(owner) {
+        if (!owner)
+            owner = "default"
+        var owners = Object.assign({}, root._scanOwners)
+        delete owners[owner]
+        root._scanOwners = owners
+        if (Object.keys(owners).length === 0 && root.scanning)
+            root.stopScan()
     }
 
     function _addScanned(mac, name) {
@@ -93,7 +116,10 @@ QtObject {
         id: autoConnectProc
         command: ["python3", root.scriptPath, "autoconnect"]
         running: false
-        onExited: () => refresh()
+        onExited: () => {
+            if (root._started)
+                refresh()
+        }
     }
 
     property var scanProc: Process {
@@ -125,6 +151,7 @@ QtObject {
                 if (line === "scan_done") {
                     root.scanning = false
                     root.refresh()
+                    root._scanOwners = ({})
                 } else if (line.indexOf("found|") === 0) {
                     var p = line.split("|")
                     if (p.length >= 3)
@@ -133,8 +160,10 @@ QtObject {
             }
         }
         onRunningChanged: {
-            if (!running)
+            if (!running) {
                 root.scanning = false
+                root._scanOwners = ({})
+            }
         }
     }
 
@@ -154,21 +183,26 @@ QtObject {
             root._scannedList = []
             root.scannedJson = "[]"
             root.autoConnect(true)
+            root.requestScan("pair-refresh")
         }
     }
 
     property var refreshTimer: Timer {
-        interval: 5000
+        interval: 15000
         running: true
         repeat: true
         triggeredOnStart: true
-        onTriggered: root.refresh()
+        onTriggered: {
+            root._started = true
+            root.refresh()
+        }
     }
 
     property var autoConnectTimer: Timer {
-        interval: 4000
+        interval: 30000
         running: true
         repeat: true
+        triggeredOnStart: true
         onTriggered: root.autoConnect(false)
     }
 }

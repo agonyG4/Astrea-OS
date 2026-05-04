@@ -6,7 +6,7 @@ import QtQuick.Window 2.15
 import Quickshell.Io
 import "../.."
 import "../common" as CommonComponents
-import "file:/home/agony/.local/share/Astrea/Features/Files" as AstreaFiles
+import "../../AstreaFiles" as AstreaFiles
 
 Rectangle {
     id: toolbar

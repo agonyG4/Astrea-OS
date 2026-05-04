@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import "file:/home/agony/.local/share/Astrea/Core/components"
+import "../../AstreaComponents"
 
 ScrollPage {
     id: root

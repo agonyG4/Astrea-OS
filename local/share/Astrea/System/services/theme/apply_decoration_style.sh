@@ -3,6 +3,7 @@ set -euo pipefail
 
 style="${1:-}"
 conf="${HOME}/.config/hypr/ui/decoration.conf"
+rules_conf="${HOME}/.config/hypr/system/rules/windowrules.conf"
 
 if [[ ! -f "${conf}" ]]; then
     exit 0
@@ -25,6 +26,7 @@ case "${style}" in
         blur_vibrancy="1"
         blur_vibrancy_darkness="0"
         blur_popups_ignorealpha="0.05"
+        quickshell_layer_xray="off"
         ;;
     1)
         blur_enabled="false"
@@ -42,15 +44,16 @@ case "${style}" in
         blur_vibrancy="0"
         blur_vibrancy_darkness="0"
         blur_popups_ignorealpha="0"
+        quickshell_layer_xray="off"
         ;;
     2)
         blur_enabled="true"
-        active_opacity="0.92"
-        inactive_opacity="0.84"
-        dim_strength="0.04"
-        dim_note="  # frosted glass keeps inactive windows readable"
+        active_opacity="1.0"
+        inactive_opacity="1.0"
+        dim_strength="0"
+        dim_note="  # Frosted keeps app windows opaque; shell layers use xray blur"
         blur_size="8"
-        blur_size_note="    # stronger radius for the Frosted shell style"
+        blur_size_note="    # strong Frosted radius; Quickshell layers use xray"
         blur_passes="4"
         blur_passes_note="   # extra passes keep the glass smooth"
         blur_noise="0.018"
@@ -59,6 +62,7 @@ case "${style}" in
         blur_vibrancy="0.35"
         blur_vibrancy_darkness="0.18"
         blur_popups_ignorealpha="0.02"
+        quickshell_layer_xray="on"
         ;;
     *)
         exit 0
@@ -118,5 +122,33 @@ function set_value(line, key, value, note) {
 
 install -m 0644 "${tmp}" "${conf}"
 rm -f "${tmp}"
+
+if [[ -f "${rules_conf}" ]]; then
+    tmp="$(mktemp)"
+    awk -v layer_xray="${quickshell_layer_xray}" '
+    function topbar_blur_rule(namespace, spacing) {
+        if (layer_xray == "on") {
+            return "layerrule = blur on, xray on," spacing "match:namespace " namespace
+        }
+        return "layerrule = blur on," spacing "match:namespace " namespace
+    }
+
+    $0 ~ /^[[:space:]]*layerrule[[:space:]]*=[[:space:]]*blur[[:space:]]+on,.*match:namespace[[:space:]]+bar[[:space:]]*$/ {
+        print topbar_blur_rule("bar", "  ")
+        next
+    }
+    $0 ~ /^[[:space:]]*layerrule[[:space:]]*=[[:space:]]*blur[[:space:]]+on,.*match:namespace[[:space:]]+topbar-popup[[:space:]]*$/ {
+        print topbar_blur_rule("topbar-popup", " ")
+        next
+    }
+    $0 ~ /^[[:space:]]*layerrule[[:space:]]*=[[:space:]]*blur[[:space:]]+on,.*match:namespace[[:space:]]+astrea-notifications[[:space:]]*$/ {
+        print topbar_blur_rule("astrea-notifications", " ")
+        next
+    }
+    { print }
+    ' "${rules_conf}" > "${tmp}"
+    install -m 0644 "${tmp}" "${rules_conf}"
+    rm -f "${tmp}"
+fi
 
 hyprctl reload >/dev/null 2>&1 || true

@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import "../common" as Common
 import "../utils/WeatherFormat.js" as WeatherFormat
+import "../.."
 
 ColumnLayout {
     property var weatherData
@@ -10,123 +11,100 @@ ColumnLayout {
     Layout.fillWidth: true
     spacing: 0
 
-    RowLayout {
+    Rectangle {
         Layout.fillWidth: true
-        Layout.bottomMargin: 10
+        implicitHeight: hourlyContent.implicitHeight + 24
+        radius: Theme.cardRadius
+        color: Theme.cardBg
+        opacity: 0.92
 
-        Common.TextLabel {
-            text: "Próximas horas"
-            font.pixelSize: 13
-            font.weight: Font.Medium
-            textColor: colors.secondary
-            Layout.fillWidth: true
-        }
+        ColumnLayout {
+            id: hourlyContent
+            anchors.fill: parent
+            anchors.margins: 12
+            spacing: 10
 
-        Common.TextLabel {
-            text: weatherData ? weatherData.hourly.length + "h" : ""
-            font.pixelSize: 12
-            textColor: colors.tertiary
-        }
-    }
-
-    ListView {
-        id: hourlyList
-        Layout.fillWidth: true
-        Layout.preferredHeight: 142
-        orientation: ListView.Horizontal
-        spacing: 10
-        clip: true
-        boundsBehavior: Flickable.StopAtBounds
-        model: weatherData ? weatherData.hourly.slice(0, 24) : []
-
-        delegate: Rectangle {
-            width: 76
-            height: 138
-            radius: 14
-            color: index === 0 ? colors.selected : colors.elevatedSurface
-            border.color: index === 0 ? colors.accent : colors.subtleBorder
-            border.width: 1
-
-            Behavior on color {
-                ColorAnimation { duration: 180; easing.type: Easing.OutCubic }
+            Common.TextLabel {
+                Layout.fillWidth: true
+                text: weatherData ? weatherData.condition + ". Sensação térmica de " + WeatherFormat.temp(weatherData.feels_like) + ". Vento de " + WeatherFormat.wind(weatherData.wind) + "." : ""
+                wrapMode: Text.WordWrap
+                font.pixelSize: 12
+                font.weight: 400
+                lineHeight: 1.12
+                textColor: "#F2F2F7"
             }
 
-            Behavior on border.color {
-                ColorAnimation { duration: 180; easing.type: Easing.OutCubic }
+            Common.Divider {
+                lineColor: "#4A4A50"
             }
 
-            ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: 10
-                spacing: 4
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 0
 
                 Common.TextLabel {
-                    text: index === 0 ? "Agora" : modelData.time
-                    font.pixelSize: 12
-                    textColor: colors.secondary
-                    Layout.alignment: Qt.AlignHCenter
-                }
-
-                Common.DisplayLabel {
-                    text: WeatherFormat.icon(modelData.cond)
-                    font.pixelSize: 24
-                    textColor: colors.primary
-                    Layout.alignment: Qt.AlignHCenter
-                }
-
-                Common.TextLabel {
-                    text: WeatherFormat.temp(modelData.temp)
-                    font.pixelSize: 18
-                    font.weight: Font.Medium
-                    textColor: colors.primary
-                    Layout.alignment: Qt.AlignHCenter
-                }
-
-                Common.TextLabel {
-                    text: "Sens. " + WeatherFormat.temp(modelData.feels_like)
-                    font.pixelSize: 10
-                    textColor: colors.tertiary
-                    Layout.alignment: Qt.AlignHCenter
-                }
-
-                Common.Divider {
-                    lineColor: colors.subtleBorder
-                }
-
-                RowLayout {
+                    text: "Próximas horas"
+                    font.pixelSize: Theme.fontSmall
+                    font.weight: 600
+                    textColor: Theme.textTertiary
                     Layout.fillWidth: true
-                    spacing: 4
-
-                    Common.TextLabel {
-                        text: "☔"
-                        font.pixelSize: 10
-                        textColor: colors.accent
-                    }
-
-                    Common.TextLabel {
-                        text: WeatherFormat.percent(modelData.rain)
-                        font.pixelSize: 10
-                        textColor: colors.secondary
-                        Layout.fillWidth: true
-                    }
                 }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
+                Common.TextLabel {
+                    text: weatherData ? weatherData.hourly.length + "h" : ""
+                    font.pixelSize: Theme.fontSmall
+                    textColor: Theme.textTertiary
+                }
+            }
 
-                    Common.TextLabel {
-                        text: "↗"
-                        font.pixelSize: 10
-                        textColor: colors.secondary
-                    }
+            ListView {
+                id: hourlyList
+                Layout.fillWidth: true
+                Layout.preferredHeight: 100
+                orientation: ListView.Horizontal
+                spacing: 18
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                model: weatherData ? weatherData.hourly.slice(0, 24) : []
 
-                    Common.TextLabel {
-                        text: WeatherFormat.wind(modelData.wind)
-                        font.pixelSize: 10
-                        textColor: colors.secondary
-                        Layout.fillWidth: true
-                        elide: Text.ElideRight
+                delegate: Item {
+                    width: 48
+                    height: 96
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 5
+
+                        Common.TextLabel {
+                            text: index === 0 ? "Agora" : modelData.time
+                            font.pixelSize: Theme.fontSmall
+                            font.weight: 500
+                            textColor: "#BFC0C8"
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        Common.WeatherIcon {
+                            condition: modelData.cond
+                            isoTime: modelData.iso_time || ""
+                            iconSize: 24
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        Common.TextLabel {
+                            text: WeatherFormat.percent(modelData.rain)
+                            visible: modelData.rain > 0
+                            font.pixelSize: Theme.fontTiny
+                            font.weight: 600
+                            textColor: Theme.rain
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        Common.TextLabel {
+                            text: WeatherFormat.temp(modelData.temp)
+                            font.pixelSize: 16
+                            font.weight: 600
+                            textColor: Theme.textPrimary
+                            Layout.alignment: Qt.AlignHCenter
+                        }
                     }
                 }
             }

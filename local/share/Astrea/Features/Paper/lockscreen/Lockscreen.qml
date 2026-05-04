@@ -14,21 +14,6 @@ ShellRoot {
     readonly property string avatarPath: "file:///var/lib/AccountsService/icons/" + currentUser
     readonly property string wallpaperDir: "file://" + homeDir + "/.config/AstreaOS/user/paper/lockscreen/"
 
-    Process {
-        id: authProcess
-        command: [homeDir + "/.local/share/Astrea/System/auth/auth_helper", root.currentUser, passwordField.text]
-        running: false
-        onExited: function(code) {
-            running = false
-            if (code === 0) {
-                unlockAnimation.start()
-            } else {
-                passwordBox.shake()
-                passwordField.text = ""
-            }
-        }
-    }
-
     PanelWindow {
         anchors { top: true; bottom: true; left: true; right: true }
         exclusionMode: ExclusionMode.Ignore
@@ -41,6 +26,49 @@ ShellRoot {
             anchors.fill: parent
             focus: true
             opacity: 0
+
+            function showPasswordPrompt() {
+                passwordSection.visible = true
+                passwordField.forceActiveFocus()
+            }
+
+            Component.onCompleted: forceActiveFocus()
+
+            Process {
+                id: authProcess
+                command: [root.homeDir + "/.local/share/Astrea/System/auth/auth_helper", root.currentUser, passwordField.text]
+                running: false
+                onExited: function(code) {
+                    running = false
+                    if (code === 0) {
+                        unlockAnimation.start()
+                    } else {
+                        passwordBox.shake()
+                        passwordField.text = ""
+                    }
+                }
+            }
+
+            Timer {
+                interval: 250
+                running: true
+                repeat: true
+                onTriggered: {
+                    if (passwordSection.visible)
+                        passwordField.forceActiveFocus()
+                    else
+                        mainRect.forceActiveFocus()
+                }
+            }
+
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.AllButtons
+                hoverEnabled: true
+                preventStealing: true
+                onClicked: mainRect.showPasswordPrompt()
+                onWheel: wheel => wheel.accepted = true
+            }
 
             ParallelAnimation {
                 id: showAnimation
@@ -83,9 +111,8 @@ ShellRoot {
                 asynchronous: true
                 transformOrigin: Item.Center
                 onStatusChanged: {
-                    if (status === Image.Ready) {
+                    if (status === Image.Ready)
                         showAnimation.start()
-                    }
                 }
             }
 
@@ -101,14 +128,12 @@ ShellRoot {
             }
 
             Keys.onPressed: function(event) {
-                if (event.key === Qt.Key_Space && !passwordSection.visible) {
-                    passwordSection.visible = true
-                    passwordField.forceActiveFocus()
+                if (!passwordSection.visible) {
+                    mainRect.showPasswordPrompt()
                     event.accepted = true
                 }
             }
 
-            // relógio
             ColumnLayout {
                 anchors {
                     top: parent.top
@@ -140,7 +165,7 @@ ShellRoot {
                     Layout.alignment: Qt.AlignHCenter
                     color: "white"
                     font.pixelSize: 100
-                    font.weight: Font.Regular
+                    font.weight: 400
                     font.family: "Inter"
                     Component.onCompleted: text = Qt.formatTime(new Date(), "hh:mm")
                     layer.enabled: true
@@ -161,7 +186,6 @@ ShellRoot {
                 }
             }
 
-            // hint
             Text {
                 anchors {
                     bottom: parent.bottom
@@ -189,7 +213,6 @@ ShellRoot {
                 }
             }
 
-            // dialog de senha
             ColumnLayout {
                 id: passwordSection
                 visible: false
@@ -199,7 +222,6 @@ ShellRoot {
                 opacity: visible ? 1 : 0
                 Behavior on opacity { NumberAnimation { duration: 200 } }
 
-                // avatar (115x115)
                 Item {
                     Layout.alignment: Qt.AlignHCenter
                     Layout.bottomMargin: 12
@@ -233,7 +255,6 @@ ShellRoot {
                     }
                 }
 
-                // nome do usuário
                 Text {
                     Layout.alignment: Qt.AlignHCenter
                     renderType: Text.NativeRendering
@@ -241,7 +262,7 @@ ShellRoot {
                     color: "white"
                     font.pixelSize: 24
                     font.family: "Inter"
-                    font.weight: Font.Regular
+                    font.weight: 400
                     text: root.currentUser
                     layer.enabled: true
                     layer.effect: MultiEffect {
@@ -253,7 +274,6 @@ ShellRoot {
                     }
                 }
 
-                // campo de senha
                 Rectangle {
                     id: passwordBox
                     Layout.alignment: Qt.AlignHCenter
@@ -273,7 +293,7 @@ ShellRoot {
                         NumberAnimation { target: passwordBox; property: "x"; to: passwordBox.x + 20; duration: 50 }
                         NumberAnimation { target: passwordBox; property: "x"; to: passwordBox.x - 20; duration: 50 }
                         NumberAnimation { target: passwordBox; property: "x"; to: passwordBox.x + 10; duration: 50 }
-                        NumberAnimation { target: passwordBox; property: "x"; to: passwordBox.x;      duration: 50 }
+                        NumberAnimation { target: passwordBox; property: "x"; to: passwordBox.x; duration: 50 }
                     }
 
                     TextInput {
@@ -296,12 +316,14 @@ ShellRoot {
                         }
 
                         Keys.onPressed: function(event) {
-                            if (event.key === Qt.Key_K && (event.modifiers & Qt.MetaModifier))
+                            if (event.key === Qt.Key_K && (event.modifiers & Qt.MetaModifier)) {
                                 unlockAnimation.start()
-                            if (event.key === Qt.Key_Escape) {
+                                event.accepted = true
+                            } else if (event.key === Qt.Key_Escape) {
                                 text = ""
                                 passwordSection.visible = false
                                 mainRect.forceActiveFocus()
+                                event.accepted = true
                             }
                         }
 

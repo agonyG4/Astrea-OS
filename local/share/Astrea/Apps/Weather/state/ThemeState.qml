@@ -1,5 +1,6 @@
 import Quickshell.Io
 import QtQuick 2.15
+import ".."
 
 Item {
     id: root
@@ -10,17 +11,17 @@ Item {
     property bool isDark: false
     property string lastPayload: ""
 
-    property color bgColor: isDark ? "#1A1A1A" : "#F5F5F7"
+    property color bgColor: isDark ? "#1A1A1A" : Theme.textPrimary
     property color surfaceColor: isDark ? "#232323" : "#FFFFFF"
     property color elevatedSurfaceColor: isDark ? "#2A2A2A" : "#F2F2F7"
-    property color primaryColor: isDark ? "#F5F5F7" : "#1C1C1E"
+    property color primaryColor: isDark ? Theme.textPrimary : Theme.bg
     property color midColor: isDark ? "#D1D1D6" : "#2C2C2E"
     property color secondaryColor: isDark ? "#A1A1A6" : "#6E6E73"
     property color tertiaryColor: isDark ? "#7C7C80" : "#8E8E93"
     property color borderColor: isDark ? "#343434" : "#D9D9DE"
     property color subtleBorderColor: isDark ? "#2A2A2A" : "#E5E5EA"
     property color selectedColor: isDark ? "#2F3E55" : "#DCEBFF"
-    property color accentColor: isDark ? "#4D8DFF" : "#007AFF"
+    property color accentColor: isDark ? "#4D8DFF" : Theme.accent
     property color errorColor: isDark ? "#FF453A" : "#FF3B30"
 
     property var colors: ({})

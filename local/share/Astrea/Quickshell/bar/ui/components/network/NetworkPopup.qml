@@ -12,30 +12,10 @@ SystemComponents.TopbarPopup {
     property string uploadText:   "0 B/s"
 
     popupWidth: 280
-    backgroundColor: Theme.background
-    borderColor: Theme.border
 
-    Item {
-        width: parent.width
-        height: 24
-
-        Text {
-            anchors { left: parent.left; verticalCenter: parent.verticalCenter }
-            text:  root.ssid !== "" ? root.ssid : (root.netType === "wifi" ? "Wi-Fi" : "Ethernet")
-            color: Theme.textActive
-            opacity: 0.85
-            width: parent.width - headerIcon.width - 8
-            elide: Text.ElideRight
-            font { pixelSize: Theme.fontSizeBody; weight: Font.DemiBold; letterSpacing: 0.3; family: Theme.fontFamily }
-        }
-
-        Text {
-            id: headerIcon
-            anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-            text:  root.netType === "wifi" ? "󰖩" : "󰈀"
-            color: Theme.textDim
-            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
-        }
+    SystemComponents.PopupHeader {
+        title: root.ssid !== "" ? root.ssid : (root.netType === "wifi" ? "Wi-Fi" : "Ethernet")
+        icon: root.netType === "wifi" ? "󰖩" : "󰈀"
     }
 
     Row {

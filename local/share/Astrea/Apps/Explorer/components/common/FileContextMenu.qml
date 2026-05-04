@@ -3,7 +3,7 @@ import QtQuick.Controls 2.15
 import Quickshell.Io
 import "../.."
 import "." as Common
-import "file:/home/agony/.local/share/Astrea/Features/Files" as AstreaFiles
+import "../../AstreaFiles" as AstreaFiles
 
 Item {
     id: menuRoot
@@ -21,6 +21,7 @@ Item {
     property string pendingRenameName: ""
     readonly property bool isBackgroundTarget: itemPath === AppState.currentPath && itemIsDir
     readonly property bool isArchiveTarget: !itemIsDir && /\.(zip|tar|tgz|tar\.gz|tar\.bz2|tbz2|tar\.xz|txz|7z|rar)$/i.test(itemPath)
+    readonly property bool isAppImageTarget: !itemIsDir && AppState.isAppImageFileName(itemPath)
 
     function dismissTransientUi() {
         menuFrame.closeMenu()
@@ -85,25 +86,14 @@ Item {
         if (!isArchiveTarget)
             return
         closeMenu()
-        extractProcess.command = [
-            "bash", "-lc",
-            "archive=\"$1\"; parent=$(dirname -- \"$archive\"); base=\"$2\"; " +
-            "dest=\"$parent/$base\"; n=2; while [ -e \"$dest\" ]; do dest=\"$parent/$base $n\"; n=$((n+1)); done; " +
-            "mkdir -p -- \"$dest\" || exit 1; " +
-            "lower=$(printf '%s' \"$archive\" | tr '[:upper:]' '[:lower:]'); " +
-            "if [[ \"$lower\" =~ \\.zip$ ]]; then " +
-            "  if command -v unzip >/dev/null 2>&1; then unzip -o \"$archive\" -d \"$dest\"; else bsdtar -xf \"$archive\" -C \"$dest\"; fi; " +
-            "elif [[ \"$lower\" =~ \\.7z$ ]]; then " +
-            "  7z x -y -o\"$dest\" \"$archive\"; " +
-            "elif [[ \"$lower\" =~ \\.rar$ ]]; then " +
-            "  if command -v unrar >/dev/null 2>&1; then unrar x -o+ \"$archive\" \"$dest/\"; else 7z x -y -o\"$dest\" \"$archive\"; fi; " +
-            "else " +
-            "  bsdtar -xf \"$archive\" -C \"$dest\"; " +
-            "fi",
-            "_", itemPath, extractionFolderName()
-        ]
-        extractProcess.running = false
-        extractProcess.running = true
+        AppState.startArchiveExtraction(itemPath, extractionFolderName())
+    }
+
+    function runInstallAppImage() {
+        if (!isAppImageTarget || AppState.appImageInstallRunning)
+            return
+        closeMenu()
+        AppState.installAppImage(itemPath)
     }
 
     function runShowProperties() {
@@ -194,6 +184,12 @@ Item {
             actionEnabled: true
             visible: menuRoot.isArchiveTarget
             onTriggered: menuRoot.runExtract()
+        }
+        Common.ContextMenuAction {
+            label: "Install"
+            actionEnabled: !AppState.appImageInstallRunning
+            visible: menuRoot.isAppImageTarget
+            onTriggered: menuRoot.runInstallAppImage()
         }
         Common.ContextMenuAction {
             label: "Restaurar"
@@ -658,11 +654,4 @@ Item {
         }
     }
 
-    property Process extractProcess: Process {
-        command: []
-        running: false
-        onExited: function() {
-            AppState.refreshCurrentFolder()
-        }
-    }
 }

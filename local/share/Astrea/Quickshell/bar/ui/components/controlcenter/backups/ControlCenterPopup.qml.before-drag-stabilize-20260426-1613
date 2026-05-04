@@ -1,0 +1,1063 @@
+import Quickshell
+import Quickshell.Io
+import QtQuick
+import Qt5Compat.GraphicalEffects
+import "../system" as SystemComponents
+import "../../.."
+
+SystemComponents.TopbarPopup {
+    id: control
+
+    property bool netConnected: false
+    property string netType: "none"
+    property string ssid: ""
+    property bool btOn: false
+    property string btDevicesJson: "[]"
+    property var btProcess: null
+    property var netProcess: null
+    property int masterVol: 50
+    property bool masterMuted: false
+    property var musicState: null
+    property int brightness: 100
+    property int ddcBus: 3
+    property int brightnessStep: 5
+    property bool sliderAnimationsEnabled: false
+    property bool airdropOn: false
+    property bool customizeMode: false
+    readonly property string layoutStateDir: Quickshell.env("HOME") + "/.local/state/Astrea"
+
+    readonly property var parsedBtDevices: {
+        try { return JSON.parse(btDevicesJson) } catch(e) { return [] }
+    }
+    readonly property int connectedBtCount: parsedBtDevices.filter(d => d.connected === true).length
+    readonly property string wifiTitle: netType === "wifi" && ssid !== "" ? ssid : "Wi-Fi"
+    readonly property string wifiSubtitle: !netConnected ? "Desconectado" : (netType === "wifi" ? "Conectado" : "Ethernet ativo")
+    readonly property string bluetoothSubtitle: !btOn ? "Desligado" : (connectedBtCount > 0 ? connectedBtCount + " conectado" : "Ligado")
+    readonly property bool hasMusic: musicState && musicState.musicTitleText !== ""
+    readonly property string musicTitle: hasMusic ? musicState.musicTitleText : "Nada tocando"
+    readonly property string musicArtist: hasMusic ? musicState.musicArtistText : "Spotify"
+    readonly property string musicArt: hasMusic ? musicState.artSource : ""
+    readonly property bool musicPlaying: musicState ? musicState.isPlaying : false
+
+    readonly property color popupGlass: Theme.background
+    readonly property color popupWash: "transparent"
+    readonly property color popupBorder: Theme.border
+
+    signal volumeChangeHandled(int v)
+    signal muteChangeHandled(bool muted)
+
+    popupWidth: 340
+    backgroundColor: control.popupGlass
+    washColor: control.popupWash
+    borderColor: control.popupBorder
+
+    function volumePercentFromX(x, width) {
+        return Math.round(Math.max(0, Math.min(width, x)) / width * 100)
+    }
+
+    function volumeIcon() {
+        if (masterMuted || masterVol === 0)
+            return "󰝟"
+        if (masterVol < 34)
+            return "󰕿"
+        if (masterVol < 67)
+            return "󰖀"
+        return "󰕾"
+    }
+
+    function applyVolume(value) {
+        const nextValue = Math.round(Math.max(0, Math.min(100, value)))
+        if (nextValue === control.masterVol)
+            return
+
+        control.masterVol = nextValue
+        volSetProc.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", nextValue + "%"]
+        volSetProc.running = false
+        volSetProc.running = true
+        control.volumeChangeHandled(nextValue)
+    }
+
+    function toggleMute() {
+        control.masterMuted = !control.masterMuted
+        volMuteProc.running = false
+        volMuteProc.running = true
+        control.muteChangeHandled(control.masterMuted)
+    }
+
+    function playPause() {
+        if (control.musicState)
+            control.musicState.playPause()
+    }
+
+    function nextTrack() {
+        if (control.musicState)
+            control.musicState.next()
+    }
+
+    function previousTrack() {
+        if (control.musicState)
+            control.musicState.prev()
+    }
+
+    function queueBrightnessRead() {
+        brightReadProc.running = false
+        brightReadProc.running = true
+    }
+
+    function scheduleBrightnessUpdate(value) {
+        if (!brightSetProc.running) {
+            brightSetProc.command = control.brightnessCommand(value)
+            brightSetProc.running = true
+        } else {
+            brightSetProc.pendingVal = value
+            brightSetProc.updatePending = true
+        }
+    }
+
+    function brightnessCommand(value) {
+        return [
+            "ddcutil", "--bus", control.ddcBus.toString(), "setvcp", "10",
+            value.toString(),
+            "--noverify", "--sleep-multiplier=0.05"
+        ]
+    }
+
+    function applyBrightness(value) {
+        const nextValue = Math.round(Math.max(0, Math.min(100, value)))
+        if (nextValue === control.brightness)
+            return
+
+        control.brightness = nextValue
+        control.scheduleBrightnessUpdate(nextValue)
+    }
+
+    function toggleWifi() {
+        wifiPowerProc.turnOn = !(control.netConnected && control.netType === "wifi")
+        wifiPowerProc.running = false
+        wifiPowerProc.running = true
+    }
+
+    function toggleBluetooth() {
+        btPowerProc.turnOn = !control.btOn
+        btPowerProc.running = false
+        btPowerProc.running = true
+    }
+
+    function blockHeight(kind) {
+        return kind === "main" ? 160 : 72
+    }
+
+    function blockLabel(kind) {
+        if (kind === "main")
+            return "Conectividade e mídia"
+        if (kind === "volume")
+            return "Volume"
+        return "Brilho"
+    }
+
+    function applyLayoutOrder(order) {
+        const allowed = ["main", "volume", "brightness"]
+        const seen = {}
+        layoutModel.clear()
+
+        for (let i = 0; i < order.length; i++) {
+            const kind = order[i]
+            if (allowed.indexOf(kind) !== -1 && !seen[kind]) {
+                layoutModel.append({ "kind": kind })
+                seen[kind] = true
+            }
+        }
+
+        for (let j = 0; j < allowed.length; j++) {
+            const fallbackKind = allowed[j]
+            if (!seen[fallbackKind])
+                layoutModel.append({ "kind": fallbackKind })
+        }
+    }
+
+    function currentLayoutOrder() {
+        const order = []
+        for (let i = 0; i < layoutModel.count; i++)
+            order.push(layoutModel.get(i).kind)
+        return order
+    }
+
+    function moveBlock(from, delta) {
+        const to = from + delta
+        if (to < 0 || to >= layoutModel.count)
+            return
+        layoutModel.move(from, to, 1)
+        saveLayout()
+    }
+
+    function saveLayout() {
+        layoutSaveProc.payload = JSON.stringify({ order: currentLayoutOrder() })
+        layoutSaveProc.running = false
+        layoutSaveProc.running = true
+    }
+
+    Timer {
+        id: openDelay
+        interval: 150
+        onTriggered: control.queueBrightnessRead()
+    }
+
+    Timer {
+        id: sliderAnimationDelay
+        interval: 260
+        onTriggered: control.sliderAnimationsEnabled = true
+    }
+
+    onShownChanged: {
+        if (shown) {
+            control.sliderAnimationsEnabled = false
+            volReadProc.running = false
+            volReadProc.running = true
+            openDelay.start()
+            sliderAnimationDelay.restart()
+        } else {
+            sliderAnimationDelay.stop()
+            control.sliderAnimationsEnabled = false
+        }
+    }
+
+    Process {
+        id: brightSetProc
+        command: []
+        running: false
+        property bool updatePending: false
+        property int pendingVal: 50
+
+        onRunningChanged: {
+            if (!running && updatePending) {
+                updatePending = false
+                command = control.brightnessCommand(pendingVal)
+                running = true
+            }
+        }
+    }
+
+    Process {
+        id: brightReadProc
+        command: ["ddcutil", "--bus", control.ddcBus.toString(), "getvcp", "10", "--terse"]
+        running: false
+
+        stdout: SplitParser {
+            onRead: data => {
+                const parts = data.trim().split(" ")
+                if (parts.length >= 4)
+                    control.brightness = parseInt(parts[3])
+            }
+        }
+    }
+
+    Process {
+        id: volSetProc
+        command: []
+        running: false
+    }
+
+    Process {
+        id: volReadProc
+        command: ["bash", "-c", "wpctl get-volume @DEFAULT_AUDIO_SINK@"]
+        running: false
+        stdout: SplitParser {
+            onRead: data => {
+                control.masterMuted = data.includes("[MUTED]")
+                const m = data.match(/[\d.]+/)
+                if (m) {
+                    control.masterVol = Math.round(parseFloat(m[0]) * 100)
+                    control.volumeChangeHandled(control.masterVol)
+                }
+                control.muteChangeHandled(control.masterMuted)
+            }
+        }
+    }
+
+    Process {
+        id: volMuteProc
+        command: ["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"]
+        running: false
+    }
+
+    Process {
+        id: wifiPowerProc
+        property bool turnOn: true
+        command: ["nmcli", "radio", "wifi", turnOn ? "on" : "off"]
+        running: false
+        onExited: if (control.netProcess) control.netProcess.refresh()
+    }
+
+    Process {
+        id: btPowerProc
+        property bool turnOn: true
+        command: ["bluetoothctl", "power", turnOn ? "on" : "off"]
+        running: false
+        onExited: if (control.btProcess) control.btProcess.refresh()
+    }
+
+    Process {
+        id: layoutLoadProc
+        command: ["bash", "-c", "cat \"$1/control-center-layout.json\" 2>/dev/null || true", "--", control.layoutStateDir]
+        running: false
+        stdout: SplitParser {
+            onRead: data => {
+                const trimmed = data.trim()
+                if (trimmed === "")
+                    return
+
+                try {
+                    const parsed = JSON.parse(trimmed)
+                    if (parsed && parsed.order)
+                        control.applyLayoutOrder(parsed.order)
+                } catch(e) {}
+            }
+        }
+    }
+
+    Process {
+        id: layoutSaveProc
+        property string payload: ""
+        command: ["bash", "-c", "mkdir -p \"$1\" && printf '%s' \"$2\" > \"$1/control-center-layout.json\"", "--", control.layoutStateDir, payload]
+        running: false
+    }
+
+    Component.onCompleted: layoutLoadProc.running = true
+
+    ListModel {
+        id: layoutModel
+        ListElement { kind: "main" }
+        ListElement { kind: "volume" }
+        ListElement { kind: "brightness" }
+    }
+
+    Item {
+        width: parent.width
+        height: 24
+
+        Text {
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Central de Controle"
+            color: Theme.textActive
+            opacity: 0.85
+            font {
+                family: Theme.fontFamily
+                pixelSize: Theme.fontSizeBody
+                weight: Font.DemiBold
+                letterSpacing: 0.3
+            }
+        }
+
+        Text {
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: "󰃠"
+            color: Theme.textDim
+            font {
+                family: Theme.fontFamily
+                pixelSize: Theme.fontSizeIcon
+            }
+        }
+    }
+
+    Repeater {
+        model: layoutModel
+
+        delegate: Item {
+            id: layoutDelegate
+
+            required property int index
+            required property string kind
+
+            width: parent.width
+            height: control.blockHeight(kind)
+            z: dragArea.dragging ? 20 : (control.customizeMode ? 5 : 0)
+            opacity: dragArea.dragging ? 0.92 : 1
+            transform: Translate {
+                y: control.customizeMode ? dragArea.dragOffset : 0
+                Behavior on y {
+                    enabled: control.customizeMode && !dragArea.dragging
+                    NumberAnimation { duration: 130; easing.type: Easing.OutCubic }
+                }
+            }
+
+            Behavior on opacity { NumberAnimation { duration: 120 } }
+
+            Loader {
+                anchors.fill: parent
+                sourceComponent: {
+                    if (layoutDelegate.kind === "main")
+                        return mainBlockComponent
+                    if (layoutDelegate.kind === "volume")
+                        return volumeBlockComponent
+                    return brightnessBlockComponent
+                }
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                radius: Theme.radiusLarge
+                color: Qt.rgba(0.10, 0.55, 1.0, 0.06)
+                border.width: 1
+                border.color: Qt.rgba(0.35, 0.75, 1.0, 0.24)
+                visible: control.customizeMode
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.leftMargin: 8
+                anchors.topMargin: 8
+                width: 30
+                height: 30
+                radius: 15
+                color: Qt.rgba(0, 0, 0, dragArea.containsMouse || dragArea.dragging ? 0.34 : 0.24)
+                visible: control.customizeMode
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "󰇙"
+                    color: Theme.textActive
+                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+                }
+            }
+
+            Text {
+                anchors.left: parent.left
+                anchors.bottom: parent.bottom
+                anchors.leftMargin: 10
+                anchors.bottomMargin: 8
+                visible: control.customizeMode
+                text: control.blockLabel(layoutDelegate.kind)
+                color: Theme.textSecondary
+                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeMicro; weight: Font.DemiBold }
+            }
+
+            MouseArea {
+                id: dragArea
+
+                property real pressY: 0
+                property real dragOffset: 0
+                property bool dragging: false
+
+                anchors.fill: parent
+                enabled: control.customizeMode
+                hoverEnabled: true
+                cursorShape: dragging ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+                onPressed: mouse => {
+                    pressY = mouse.y
+                    dragOffset = 0
+                    dragging = true
+                }
+
+                onPositionChanged: mouse => {
+                    if (!dragging)
+                        return
+
+                    dragOffset = mouse.y - pressY
+                    const threshold = Math.max(36, layoutDelegate.height * 0.34)
+
+                    if (dragOffset > threshold && layoutDelegate.index < layoutModel.count - 1) {
+                        control.moveBlock(layoutDelegate.index, 1)
+                        pressY = mouse.y
+                        dragOffset = 0
+                    } else if (dragOffset < -threshold && layoutDelegate.index > 0) {
+                        control.moveBlock(layoutDelegate.index, -1)
+                        pressY = mouse.y
+                        dragOffset = 0
+                    }
+                }
+
+                onReleased: {
+                    dragging = false
+                    dragOffset = 0
+                    control.saveLayout()
+                }
+
+                onCanceled: {
+                    dragging = false
+                    dragOffset = 0
+                    control.saveLayout()
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        width: parent.width
+        height: 38
+        radius: Theme.radiusMedium
+        color: customizeArea.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.04)
+        border.width: 1
+        border.color: control.customizeMode ? Qt.rgba(0.35, 0.75, 1.0, 0.34) : Qt.rgba(1, 1, 1, 0.08)
+
+        Behavior on color { ColorAnimation { duration: 140 } }
+        Behavior on border.color { ColorAnimation { duration: 140 } }
+
+        Row {
+            anchors.centerIn: parent
+            spacing: 8
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: control.customizeMode ? "󰅖" : "󰏫"
+                color: control.customizeMode ? Theme.iconActive : Theme.iconMain
+                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+            }
+
+            Text {
+                anchors.verticalCenter: parent.verticalCenter
+                text: control.customizeMode ? "Concluir" : "Customizar"
+                color: Theme.textActive
+                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.DemiBold }
+            }
+        }
+
+        MouseArea {
+            id: customizeArea
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: {
+                control.customizeMode = !control.customizeMode
+                if (!control.customizeMode)
+                    control.saveLayout()
+            }
+        }
+    }
+
+    Component {
+        id: mainBlockComponent
+
+        Item {
+            Row {
+                anchors.fill: parent
+                spacing: 10
+
+                ConnectivityCard {
+                    width: (parent.width - parent.spacing) / 2
+                    height: parent.height
+                }
+
+                MediaCard {
+                    width: (parent.width - parent.spacing) / 2
+                    height: parent.height
+                    title: control.musicTitle
+                    artist: control.musicArtist
+                    artSource: control.musicArt
+                    playing: control.musicPlaying
+                    active: control.hasMusic
+                    onPreviousClicked: control.previousTrack()
+                    onPlayClicked: control.playPause()
+                    onNextClicked: control.nextTrack()
+                }
+            }
+        }
+    }
+
+    Component {
+        id: volumeBlockComponent
+
+        SliderCard {
+            title: "Volume"
+            leftIcon: control.volumeIcon()
+            rightIcon: control.masterMuted ? "󰝟" : "󰕾"
+            value: control.masterVol
+            muted: control.masterMuted
+            animateValue: control.sliderAnimationsEnabled
+            onValueChangedByUser: v => control.applyVolume(v)
+            onWheelChangedByUser: delta => control.applyVolume(control.masterVol + delta * 2)
+            onIconClicked: control.toggleMute()
+        }
+    }
+
+    Component {
+        id: brightnessBlockComponent
+
+        SliderCard {
+            title: "Brilho"
+            leftIcon: "󰃞"
+            rightIcon: "󰃠"
+            value: control.brightness
+            muted: false
+            animateValue: control.sliderAnimationsEnabled
+            onValueChangedByUser: v => control.applyBrightness(v)
+            onWheelChangedByUser: delta => control.applyBrightness(control.brightness + delta * control.brightnessStep)
+        }
+    }
+
+    component MediaCard: Rectangle {
+        id: mediaCard
+
+        property string title: ""
+        property string artist: ""
+        property string artSource: ""
+        property bool playing: false
+        property bool active: false
+        signal previousClicked()
+        signal playClicked()
+        signal nextClicked()
+
+        implicitHeight: 160
+        radius: Theme.radiusLarge
+        color: Qt.rgba(1, 1, 1, 0.05)
+        border.width: 1
+        border.color: active ? Qt.rgba(1, 1, 1, 0.16) : Qt.rgba(1, 1, 1, 0.10)
+
+        Behavior on color { ColorAnimation { duration: 160 } }
+        Behavior on border.color { ColorAnimation { duration: 160 } }
+
+        Rectangle {
+            id: mediaArt
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.leftMargin: 12
+            anchors.topMargin: 12
+            width: 46
+            height: 46
+            radius: 12
+            clip: true
+            color: Qt.rgba(1, 1, 1, 0.10)
+
+            Rectangle {
+                id: mediaArtMask
+                anchors.fill: parent
+                radius: 12
+                visible: false
+            }
+
+            Image {
+                anchors.fill: parent
+                source: mediaCard.artSource
+                fillMode: Image.PreserveAspectCrop
+                smooth: true
+                mipmap: true
+                cache: false
+                asynchronous: true
+                visible: mediaCard.artSource !== ""
+                layer.enabled: true
+                layer.effect: OpacityMask { maskSource: mediaArtMask }
+            }
+
+            Text {
+                anchors.centerIn: parent
+                visible: mediaCard.artSource === ""
+                text: "󰝚"
+                color: Theme.iconMain
+                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIconLarge }
+            }
+        }
+
+        Column {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: mediaArt.bottom
+            anchors.leftMargin: 14
+            anchors.rightMargin: 12
+            anchors.topMargin: 14
+            spacing: 3
+
+            Text {
+                width: parent.width
+                text: mediaCard.title
+                color: Theme.textActive
+                elide: Text.ElideRight
+                maximumLineCount: 1
+                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeTitle; weight: Font.DemiBold }
+            }
+
+            Text {
+                width: parent.width
+                text: mediaCard.artist
+                color: Theme.textSecondary
+                elide: Text.ElideRight
+                opacity: 0.9
+                maximumLineCount: 1
+                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeBody; weight: Font.Medium }
+            }
+        }
+
+        Row {
+            anchors.left: parent.left
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 15
+            anchors.bottomMargin: 14
+            spacing: 14
+
+            MediaButton {
+                icon: "󰒮"
+                enabled: mediaCard.active
+                onClicked: mediaCard.previousClicked()
+            }
+
+            MediaButton {
+                icon: mediaCard.playing ? "󰏤" : "󰐊"
+                enabled: mediaCard.active
+                primary: true
+                onClicked: mediaCard.playClicked()
+            }
+
+            MediaButton {
+                icon: "󰒭"
+                enabled: mediaCard.active
+                onClicked: mediaCard.nextClicked()
+            }
+        }
+    }
+
+    component MediaButton: Rectangle {
+        id: mediaButton
+
+        property string icon: ""
+        property bool primary: false
+        signal clicked()
+
+        width: primary ? 38 : 30
+        height: primary ? 38 : 30
+        radius: width / 2
+        color: !enabled ? Qt.rgba(1, 1, 1, 0.06)
+                        : primary ? Qt.rgba(1, 1, 1, mediaArea.containsMouse ? 0.22 : 0.16)
+                                  : (mediaArea.containsMouse ? Qt.rgba(1, 1, 1, 0.12) : "transparent")
+        opacity: enabled ? 1 : 0.38
+
+        Behavior on color { ColorAnimation { duration: 120 } }
+        Behavior on opacity { NumberAnimation { duration: 120 } }
+
+        Text {
+            anchors.centerIn: parent
+            text: mediaButton.icon
+            color: Theme.iconMain
+            font { family: Theme.fontFamily; pixelSize: mediaButton.primary ? Theme.fontSizeIconLarge : Theme.fontSizeIcon }
+        }
+
+        MouseArea {
+            id: mediaArea
+            anchors.fill: parent
+            enabled: mediaButton.enabled
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: mediaButton.clicked()
+        }
+    }
+
+    component ConnectivityCard: Rectangle {
+        id: connectivityCard
+
+        radius: Theme.radiusLarge
+        color: Qt.rgba(1, 1, 1, 0.05)
+        border.width: 1
+        border.color: Qt.rgba(1, 1, 1, 0.10)
+
+        Column {
+            anchors.fill: parent
+            anchors.margins: 8
+            spacing: 4
+
+            ConnectivityRow {
+                width: parent.width
+                height: (parent.height - parent.spacing * 2) / 3
+                icon: control.netConnected && control.netType !== "none"
+                    ? (control.netType === "wifi" ? "󰖩" : "󰈀")
+                    : "󰖪"
+                title: control.wifiTitle
+                subtitle: control.wifiSubtitle
+                active: control.netConnected && control.netType === "wifi"
+                onClicked: control.toggleWifi()
+            }
+
+            ConnectivityRow {
+                width: parent.width
+                height: (parent.height - parent.spacing * 2) / 3
+                icon: control.btOn ? "󰂯" : "󰂲"
+                title: "Bluetooth"
+                subtitle: control.bluetoothSubtitle
+                active: control.btOn
+                onClicked: control.toggleBluetooth()
+            }
+
+            ConnectivityRow {
+                width: parent.width
+                height: (parent.height - parent.spacing * 2) / 3
+                icon: "󰀝"
+                title: "AirDrop"
+                subtitle: control.airdropOn ? "Ativo" : "Desativado"
+                active: control.airdropOn
+                onClicked: control.airdropOn = !control.airdropOn
+            }
+        }
+    }
+
+    component ConnectivityRow: Rectangle {
+        id: rowRoot
+
+        property string icon: ""
+        property string title: ""
+        property string subtitle: ""
+        property bool active: false
+        signal clicked()
+
+        radius: Theme.radiusMedium
+        color: active ? Qt.rgba(0.10, 0.55, 1.0, 0.20)
+                      : (rowMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.07) : "transparent")
+
+        Behavior on color { ColorAnimation { duration: 130 } }
+
+        Row {
+            anchors.fill: parent
+            anchors.leftMargin: 7
+            anchors.rightMargin: 7
+            spacing: 8
+
+            Rectangle {
+                width: 28
+                height: 28
+                radius: 14
+                anchors.verticalCenter: parent.verticalCenter
+                color: rowRoot.active ? Theme.iconActive : Qt.rgba(1, 1, 1, 0.10)
+
+                Text {
+                    anchors.centerIn: parent
+                    text: rowRoot.icon
+                    color: rowRoot.active ? "#ffffff" : Theme.iconMain
+                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+                }
+            }
+
+            Column {
+                width: parent.width - 36
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 0
+
+                Text {
+                    width: parent.width
+                    text: rowRoot.title
+                    color: Theme.textActive
+                    elide: Text.ElideRight
+                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.DemiBold }
+                }
+
+                Text {
+                    width: parent.width
+                    text: rowRoot.subtitle
+                    color: Theme.textSecondary
+                    opacity: 0.9
+                    elide: Text.ElideRight
+                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeMicro; weight: Font.Medium }
+                }
+            }
+        }
+
+        MouseArea {
+            id: rowMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: rowRoot.clicked()
+        }
+    }
+
+    component ControlTile: Rectangle {
+        id: tile
+
+        property string icon: ""
+        property string title: ""
+        property string subtitle: ""
+        property bool active: false
+        signal clicked()
+
+        radius: Theme.radiusMedium
+        color: active ? Qt.rgba(0.10, 0.55, 1.0, 0.22)
+                      : (tileMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : Qt.rgba(1, 1, 1, 0.05))
+        border.width: 1
+        border.color: active ? Qt.rgba(0.25, 0.70, 1.0, 0.36) : Qt.rgba(1, 1, 1, 0.10)
+
+        Behavior on color { ColorAnimation { duration: 140 } }
+        Behavior on border.color { ColorAnimation { duration: 140 } }
+
+        Row {
+            anchors.fill: parent
+            anchors.margins: 10
+            spacing: 9
+
+            Rectangle {
+                width: 30
+                height: 30
+                radius: 15
+                anchors.verticalCenter: parent.verticalCenter
+                color: tile.active ? Theme.iconActive : Qt.rgba(1, 1, 1, 0.10)
+
+                Text {
+                    anchors.centerIn: parent
+                    text: tile.icon
+                    color: tile.active ? "#ffffff" : Theme.iconMain
+                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+                }
+            }
+
+            Column {
+                width: parent.width - 39
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 1
+
+                Text {
+                    width: parent.width
+                    text: tile.title
+                    color: Theme.textActive
+                    elide: Text.ElideRight
+                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.DemiBold }
+                }
+
+                Text {
+                    width: parent.width
+                    text: tile.subtitle
+                    color: Theme.textSecondary
+                    opacity: 0.9
+                    elide: Text.ElideRight
+                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption }
+                }
+            }
+        }
+
+        MouseArea {
+            id: tileMouse
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onClicked: tile.clicked()
+        }
+    }
+
+    component SliderCard: Rectangle {
+        id: sliderCard
+
+        property string title: ""
+        property string leftIcon: ""
+        property string rightIcon: ""
+        property int value: 0
+        property bool muted: false
+        property bool animateValue: false
+        signal valueChangedByUser(int value)
+        signal wheelChangedByUser(int delta)
+        signal iconClicked()
+
+        height: 72
+        radius: Theme.radiusMedium
+        color: Qt.rgba(1, 1, 1, 0.05)
+        border.width: 1
+        border.color: Qt.rgba(1, 1, 1, 0.10)
+
+        Text {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.leftMargin: 12
+            anchors.topMargin: 9
+            text: sliderCard.title
+            color: Theme.textActive
+            opacity: 0.86
+            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.DemiBold }
+        }
+
+        Text {
+            id: sliderLeftIcon
+            anchors.left: parent.left
+            anchors.bottom: parent.bottom
+            anchors.leftMargin: 12
+            anchors.bottomMargin: 12
+            text: sliderCard.leftIcon
+            color: sliderCard.muted ? Theme.iconMuted : Theme.iconMain
+            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+
+            MouseArea {
+                anchors.fill: parent
+                anchors.margins: -8
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: sliderCard.iconClicked()
+            }
+        }
+
+        Item {
+            id: sliderArea
+            anchors.left: sliderLeftIcon.right
+            anchors.right: sliderRightIcon.left
+            anchors.verticalCenter: sliderLeftIcon.verticalCenter
+            anchors.leftMargin: 12
+            anchors.rightMargin: 12
+            height: 24
+
+            Rectangle {
+                id: sliderTrack
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width
+                height: 6
+                radius: 3
+                color: Qt.rgba(0, 0, 0, 0.38)
+
+                Rectangle {
+                    width: Math.max(radius * 2, sliderTrack.width * (sliderCard.value / 100))
+                    height: parent.height
+                    radius: parent.radius
+                    color: sliderCard.muted ? Qt.rgba(1, 1, 1, 0.24) : Theme.iconActive
+                    Behavior on width {
+                        enabled: sliderCard.animateValue
+                        NumberAnimation { duration: 60; easing.type: Easing.OutCubic }
+                    }
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                }
+            }
+
+            Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                x: Math.max(0, Math.min(sliderTrack.width - width, sliderTrack.width * (sliderCard.value / 100) - width / 2))
+                width: sliderMouse.pressed ? 20 : (sliderMouse.containsMouse ? 18 : 14)
+                height: width
+                radius: width / 2
+                color: "white"
+
+                Behavior on width { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+                Behavior on x {
+                    enabled: !sliderMouse.pressed && sliderCard.animateValue
+                    NumberAnimation { duration: 60; easing.type: Easing.OutCubic }
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    color: "#01000000"
+                    border.width: 1
+                    border.color: Qt.rgba(0, 0, 0, 0.15)
+                }
+            }
+
+            MouseArea {
+                id: sliderMouse
+                anchors.fill: parent
+                anchors.topMargin: -10
+                anchors.bottomMargin: -10
+                hoverEnabled: true
+                preventStealing: true
+                cursorShape: Qt.PointingHandCursor
+
+                onPressed: e => sliderCard.valueChangedByUser(control.volumePercentFromX(e.x, sliderTrack.width))
+                onPositionChanged: e => {
+                    if (pressed)
+                        sliderCard.valueChangedByUser(control.volumePercentFromX(e.x, sliderTrack.width))
+                }
+                onWheel: e => sliderCard.wheelChangedByUser(e.angleDelta.y > 0 ? 1 : -1)
+            }
+        }
+
+        Text {
+            id: sliderRightIcon
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.rightMargin: 12
+            anchors.bottomMargin: 12
+            text: sliderCard.rightIcon
+            color: sliderCard.muted ? Theme.iconMuted : Theme.iconMain
+            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+        }
+    }
+}

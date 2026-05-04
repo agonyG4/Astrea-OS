@@ -1,4 +1,7 @@
 Clock               1.0 Clock.qml
+IndicatorButton     1.0 IndicatorButton.qml
+PopupHeader         1.0 PopupHeader.qml
 TopbarPopup         1.0 TopbarPopup.qml
 Tray                1.0 Tray.qml
+TrayContextMenu     1.0 TrayContextMenu.qml
 Workspaces          1.0 Workspaces.qml

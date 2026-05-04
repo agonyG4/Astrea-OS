@@ -1,0 +1,13 @@
+[Unit]
+Description=Bench ScreenTime focused app tracker
+After=graphical-session.target
+
+[Service]
+Type=simple
+PassEnvironment=HYPRLAND_INSTANCE_SIGNATURE WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE
+ExecStart=%h/GitHub/Bench/ScreenTime/screentime.py monitor
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

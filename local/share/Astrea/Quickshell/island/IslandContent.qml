@@ -75,6 +75,7 @@ Rectangle {
             color:   parent.color
             visible: islandContent.isNotch
         }
+
     }
 
     HoverHandler { id: mouseArea }
@@ -100,7 +101,7 @@ Rectangle {
                         radius: 2
                         anchors.centerIn: parent
                         color:  island.dominantCol
-                        Behavior on height { NumberAnimation { duration: 60;  easing.type: Easing.OutSine } }
+                        Behavior on height { NumberAnimation { duration: 105 + index * 8; easing.type: Easing.OutBack; easing.overshoot: 0.36 } }
                         Behavior on color  { ColorAnimation  { duration: 800 } }
                     }
                 }

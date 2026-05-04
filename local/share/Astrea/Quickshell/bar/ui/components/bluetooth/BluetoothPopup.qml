@@ -22,12 +22,14 @@ SystemComponents.TopbarPopup {
     }
 
     popupWidth: 280
-    backgroundColor: Theme.background
-    borderColor: Theme.border
 
     onShownChanged: {
-        if (!shown && root.scanning && root.btProcess)
-            root.btProcess.stopScan()
+        if (shown && root.btOn && root.btProcess) {
+            root.btProcess.refresh()
+            root.btProcess.requestScan("bluetooth-popup")
+        } else if (!shown && root.btProcess) {
+            root.btProcess.releaseScan("bluetooth-popup")
+        }
     }
 
     // ── Processos ─────────────────────────────────────────────────
@@ -48,12 +50,17 @@ SystemComponents.TopbarPopup {
     }
 
     Process {
-        id: btPowerProc
-        property bool turnOn: true
-        command: ["bluetoothctl", "power", turnOn ? "on" : "off"]
-        running: false
-        onExited: if (root.btProcess) root.btProcess.refresh()
-    }
+            id: btPowerProc
+            property bool turnOn: true
+            command: ["python3", root.scriptPath, "power", turnOn ? "on" : "off"]
+            running: false
+            onExited: {
+                if (!root.btProcess) return
+                root.btProcess.refresh()
+                if (turnOn && root.shown)
+                    root.btProcess.requestScan("bluetooth-popup")
+            }
+        }
 
     Process {
         id: btSettingsProc
@@ -61,20 +68,11 @@ SystemComponents.TopbarPopup {
         running: false
     }
 
-    Item {
-        width: parent.width
-        height: 24
-
-        Text {
-            anchors { left: parent.left; verticalCenter: parent.verticalCenter }
-            text:    "Bluetooth"
-            color:   Theme.textActive
-            opacity: 0.85
-            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeBody; weight: Font.DemiBold; letterSpacing: 0.3 }
-        }
-
+    SystemComponents.PopupHeader {
+        title: "Bluetooth"
+        trailingWidth: 44
         Rectangle {
-            anchors { right: parent.right; verticalCenter: parent.verticalCenter }
+            anchors.centerIn: parent
             width: 44; height: 24; radius: 12
             color: root.btOn
                 ? Qt.rgba(0.20, 0.60, 1.0, 0.30)
@@ -176,7 +174,7 @@ SystemComponents.TopbarPopup {
             anchors.fill: parent
             hoverEnabled: true; cursorShape: Qt.PointingHandCursor
             enabled: !root.scanning
-            onClicked: if (root.btProcess) root.btProcess.startScan()
+            onClicked: if (root.btProcess) root.btProcess.requestScan("bluetooth-popup")
         }
     }
 

@@ -3,7 +3,7 @@ import QtQuick.Layouts
 import QtQuick.Effects
 import QtQuick.Controls
 import Quickshell
-import "file:/home/agony/.local/share/Astrea/Core/components"
+import "AstreaComponents"
 
 ApplicationWindow {
     id: window
@@ -99,7 +99,7 @@ ApplicationWindow {
     Rectangle {
         anchors.fill: parent
         anchors.margins: -1
-        radius: 15
+        radius: 0
         color: "transparent"
         layer.enabled: true
         layer.effect: MultiEffect {
@@ -113,11 +113,11 @@ ApplicationWindow {
     // ── Main container ────────────────────────────────────────────────────
     Rectangle {
         anchors.fill: parent
-        radius: 14
+        radius: 0
         color: Theme.windowBackground
         border.width: 1
         border.color: Theme.windowBorder
-        clip: true
+        clip: false
 
         Rectangle {
             anchors.fill: parent

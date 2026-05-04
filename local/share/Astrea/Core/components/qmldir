@@ -12,3 +12,7 @@ SpeedCard 1.0 SpeedCard.qml
 DnsStatusCard 1.0 DnsStatusCard.qml
 DnsPresetChip 1.0 DnsPresetChip.qml
 StatusDot 1.0 StatusDot.qml
+ToggleSwitch 1.0 ToggleSwitch.qml
+FormCard 1.0 FormCard.qml
+IconListRow 1.0 IconListRow.qml
+ReorderableStack 1.0 ReorderableStack.qml

@@ -86,7 +86,7 @@ Item {
                         height: Math.min(island.musicBarsMaxHeightExpanded, Math.max(island.musicBarsMinHeight, island.musicBars[index] / 100 * 34))
                         anchors.centerIn: parent
                         color: island.dominantCol
-                        Behavior on height { enabled: island.isExpanded; NumberAnimation { duration: 60; easing.type: Easing.OutSine } }
+                        Behavior on height { enabled: island.isExpanded; NumberAnimation { duration: 115 + index * 9; easing.type: Easing.OutBack; easing.overshoot: 0.42 } }
                         Behavior on color  { ColorAnimation { duration: 300 } }
                     }
                 }

@@ -3,6 +3,8 @@
 import json
 import os
 import platform
+import re
+import shutil
 import socket
 import subprocess
 from pathlib import Path
@@ -51,7 +53,7 @@ def human_bytes(size: int) -> str:
     return f"{value:.2f} {unit}"
 
 
-def distro_name() -> str:
+def os_release_fields() -> dict[str, str]:
     fields = {}
     try:
         for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
@@ -60,9 +62,24 @@ def distro_name() -> str:
             key, value = line.split("=", 1)
             fields[key] = value.strip().strip('"')
     except OSError:
-        return platform.system()
+        return {}
+    return fields
+
+
+def distro_name(fields: dict[str, str] | None = None) -> str:
+    fields = fields if fields is not None else os_release_fields()
 
     return fields.get("PRETTY_NAME") or fields.get("NAME") or platform.system()
+
+
+def distro_version(fields: dict[str, str] | None = None) -> str:
+    fields = fields if fields is not None else os_release_fields()
+    return fields.get("VERSION") or fields.get("VERSION_ID") or ""
+
+
+def distro_codename(fields: dict[str, str] | None = None) -> str:
+    fields = fields if fields is not None else os_release_fields()
+    return fields.get("VERSION_CODENAME") or fields.get("VARIANT") or ""
 
 
 def cpu_name() -> str:
@@ -97,6 +114,14 @@ def gpu_name() -> str:
     return "Not detected"
 
 
+def root_storage() -> str:
+    try:
+        usage = shutil.disk_usage("/")
+    except OSError:
+        return "Not detected"
+    return f"{human_bytes(usage.used)} used of {human_bytes(usage.total)}"
+
+
 def total_memory() -> tuple[int, str]:
     meminfo = read_text("/proc/meminfo")
     for line in meminfo.splitlines():
@@ -123,6 +148,20 @@ def desktop_name() -> str:
     )
 
 
+def hyprland_version() -> str:
+    output = run_output(["hyprctl", "version"])
+    match = re.search(r"v[\d.]+", output)
+    return match.group(0) if match else ""
+
+
+def desktop_label() -> str:
+    hypr_version = hyprland_version()
+    if hypr_version:
+        return f"Hyprland {hypr_version}"
+    desktop = desktop_name()
+    return "Hyprland" if desktop.lower() == "hyprland" else desktop
+
+
 def session_type() -> str:
     session = os.environ.get("XDG_SESSION_TYPE", "")
     if not session:
@@ -141,15 +180,20 @@ def machine_name() -> str:
 
 def collect() -> dict:
     memory_bytes, memory_label = total_memory()
+    os_fields = os_release_fields()
     return {
         "system": {
-            "distro": distro_name(),
+            "distro": distro_name(os_fields),
+            "distro_version": distro_version(os_fields),
+            "distro_codename": distro_codename(os_fields),
             "kernel": platform.release(),
             "hostname": socket.gethostname(),
             "architecture": platform.machine() or "Unknown",
             "desktop": desktop_name(),
+            "desktop_label": desktop_label(),
             "session_type": session_type(),
             "machine": machine_name(),
+            "storage_root": root_storage(),
         },
         "hardware": {
             "cpu": cpu_name(),

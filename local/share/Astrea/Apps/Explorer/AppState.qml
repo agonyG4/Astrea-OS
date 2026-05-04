@@ -51,6 +51,7 @@ QtObject {
     property alias searchRootPath: navigationObj.searchRootPath
     property alias fileModel: navigationObj.fileModel
     property alias fileModelRevision: navigationObj.fileModelRevision
+    property alias fileModelFilling: navigationObj.fileModelFilling
 
     property alias selectedFile: selectionObj.selectedFile
     property alias selectedFiles: selectionObj.selectedFiles
@@ -64,6 +65,16 @@ QtObject {
     property alias pendingPasteMode: fileOpsObj.pendingPasteMode
     property alias pendingPasteDestination: fileOpsObj.pendingPasteDestination
     property alias pendingPasteRename: fileOpsObj.pendingPasteRename
+    property alias archiveExtractionRunning: fileOpsObj.archiveExtractionRunning
+    property alias archiveExtractionProgress: fileOpsObj.archiveExtractionProgress
+    property alias archiveExtractionPercent: fileOpsObj.archiveExtractionPercent
+    property alias archiveExtractionFileName: fileOpsObj.archiveExtractionFileName
+    property alias archiveExtractionStatus: fileOpsObj.archiveExtractionStatus
+    property alias archiveExtractionError: fileOpsObj.archiveExtractionError
+    property alias archiveExtractionDestination: fileOpsObj.archiveExtractionDestination
+    property alias archiveExtractionDoneCount: fileOpsObj.archiveExtractionDoneCount
+    property alias archiveExtractionTotalCount: fileOpsObj.archiveExtractionTotalCount
+    property alias appImageInstallRunning: fileOpsObj.appImageInstallRunning
 
     property alias showPreview: previewObj.showPreview
     property alias viewMode: previewObj.viewMode
@@ -177,6 +188,9 @@ QtObject {
     function deleteSelected() { fileOps.deleteSelected() }
     function restoreSelected() { fileOps.restoreSelected() }
     function emptyTrash() { fileOps.emptyTrash() }
+    function startArchiveExtraction(archivePath, folderName) { fileOps.startArchiveExtraction(archivePath, folderName) }
+    function isAppImageFileName(fileName) { return String(fileName || "").toLowerCase().endsWith(".appimage") }
+    function installAppImage(path) { fileOps.installAppImage(path) }
 
     function refreshPreviewMetadata() { preview.refreshPreviewMetadata() }
     function openQuickLook() { preview.openQuickLook() }

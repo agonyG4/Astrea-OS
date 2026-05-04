@@ -3,7 +3,7 @@ import QtQuick.Layouts
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
-import "file:/home/agony/.local/share/Astrea/Core/components"
+import "../../AstreaComponents"
 
 Item {
     id: root
@@ -22,6 +22,7 @@ Item {
     property bool musicEnabled:      true
     property bool gamemodeEnabled:   true
     property bool alwaysOnTop:       true
+    property bool restartShellPending: false
     property var islandConfig:       ({})
 
     readonly property var styleOptions: ["Notch", "Bubble"]
@@ -85,6 +86,40 @@ Item {
             command = ["bash", "-c",
                 "mkdir -p \"$(dirname \"$1\")\"; cat <<'EOF' > \"$1\"\n" + jsonData + "\nEOF\n",
                 "--", root.configPath]
+            running = false
+            running = true
+        }
+
+        onExited: {
+            if (root.restartShellPending) {
+                root.restartShellPending = false
+                restartShellProc.restartShell()
+            }
+        }
+    }
+
+    Process {
+        id: restartShellProc
+        function restartShell() {
+            command = ["bash", "-lc",
+                "MAIN_ENTRY=$(quickshell list --all 2>/dev/null | awk '" +
+                "/^Instance /{pid=\"\"; path=\"\"} " +
+                "/^  Process ID: /{pid=$3} " +
+                "/^  Config path: /{sub(/^  Config path: /, \"\"); path=$0} " +
+                "/^$/{if (path ~ /\\/(\\.config\\/quickshell\\/shell\\.qml|\\.local\\/share\\/Astrea\\/Quickshell(\\/shell\\.qml)?)$/) {print pid \"\\t\" path; exit}} " +
+                "END{if (path ~ /\\/(\\.config\\/quickshell\\/shell\\.qml|\\.local\\/share\\/Astrea\\/Quickshell(\\/shell\\.qml)?)$/) print pid \"\\t\" path}' );" +
+                "MAIN_PID=${MAIN_ENTRY%%$'\\t'*}; " +
+                "MAIN_PATH=${MAIN_ENTRY#*$'\\t'}; " +
+                "if [ -z \"$MAIN_PATH\" ] || [ \"$MAIN_PATH\" = \"$MAIN_ENTRY\" ]; then " +
+                "  if [ -f \"$HOME/.config/quickshell/shell.qml\" ]; then CONFIG_TARGET=\"$HOME/.config/quickshell\"; " +
+                "  else CONFIG_TARGET=\"$HOME/.local/share/Astrea/Quickshell\"; fi; " +
+                "else CONFIG_TARGET=\"$MAIN_PATH\"; fi; " +
+                "if [ -n \"$MAIN_PID\" ] && [ \"$MAIN_PID\" != \"$MAIN_ENTRY\" ]; then " +
+                "  setsid -f bash -lc 'sleep 0.3; exec quickshell -d -p \"$1\" >/tmp/astrea-quickshell-restart.log 2>&1' _ \"$CONFIG_TARGET\"; " +
+                "  kill \"$MAIN_PID\" 2>/dev/null || true; " +
+                "else " +
+                "  setsid -f quickshell -d -p \"$CONFIG_TARGET\" >/tmp/astrea-quickshell-restart.log 2>&1; " +
+                "fi"]
             running = false
             running = true
         }
@@ -170,6 +205,7 @@ Item {
                             checked: root.alwaysOnTop
                             onToggled: { 
                                 root.alwaysOnTop = !root.alwaysOnTop
+                                root.restartShellPending = true
                                 saveConfigProc.save()
                             }
                         }

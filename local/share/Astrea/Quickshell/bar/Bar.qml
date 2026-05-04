@@ -2,8 +2,7 @@ import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
 import QtQuick
-import "ui/left"
-import "ui/right"
+import "ui"
 import "modules/network"
 import "ui/components/astrea"
 import "ui/components/bluetooth"
@@ -15,14 +14,13 @@ PanelWindow {
     id: bar
     anchors { top: true; left: true; right: true }
     implicitWidth:  screen.width
-    implicitHeight: 48
+    implicitHeight: 45
     color:          "transparent"
 
     WlrLayershell.namespace:     "bar"
     WlrLayershell.layer:         WlrLayer.Top
-    WlrLayershell.exclusiveZone: 48
+    WlrLayershell.exclusiveZone: 45
 
-    // ─── Public API ───────────────────────────────────────────────
     property bool   netConnected:  false
     property string netType:       "none"
     property string netSsid:       ""
@@ -34,25 +32,23 @@ PanelWindow {
     property bool   btScanning:    false
     property int    volLevel:      50
     property bool   volMuted:      false
-    property int    _tick:         0
+    property QtObject sharedMusicState: null
 
     function refreshVolume() {
         volumeProc.running = false
         volumeProc.running = true
     }
 
-    BarLeft {
-        anchors.left:           parent.left
-        anchors.leftMargin:     8
-        anchors.verticalCenter: parent.verticalCenter
-        astreaPopupRef:         astreaPopup
-    }
-
-    BarRight {
-        id:                     barRight
-        anchors.right:          parent.right
-        anchors.rightMargin:    6
-        anchors.verticalCenter: parent.verticalCenter
+    BarContent {
+        anchors {
+            left: parent.left
+            right: parent.right
+            leftMargin: 8
+            rightMargin: 6
+            verticalCenter: parent.verticalCenter
+        }
+        height: 36
+        astreaPopupRef: astreaPopup
         netConnected:  bar.netConnected
         netType:       bar.netType
         netPopupRef:   netPopup
@@ -71,7 +67,6 @@ PanelWindow {
         }
     }
 
-    // ─── Processes ────────────────────────────────────────────────
     Process {
         id:      volSetProc
         command: []
@@ -116,22 +111,21 @@ PanelWindow {
     }
 
     Timer {
-        interval:         1000
+        interval:         3000
         running:          true
         repeat:           true
         triggeredOnStart: true
-        onTriggered: {
-            barRight.tick()
-            if (++bar._tick % 3 === 0) {
-                bar.refreshVolume()
-            }
-            if (bar._tick % 5 === 0) {
-                netData.refresh()
-            }
-        }
+        onTriggered: bar.refreshVolume()
     }
 
-    // ─── Popups ───────────────────────────────────────────────────
+    Timer {
+        interval:         5000
+        running:          true
+        repeat:           true
+        triggeredOnStart: true
+        onTriggered: netData.refresh()
+    }
+
     VolumePopup {
         id:          volPopup
         masterVol:   bar.volLevel
@@ -159,6 +153,18 @@ PanelWindow {
     ControlCenterPopup {
         id: ccPopup
         anchorWindow: bar
+        netConnected: bar.netConnected
+        netType: bar.netType
+        ssid: bar.netSsid
+        netProcess: netData
+        btOn: bar.btOn
+        btDevicesJson: bar.btDevicesJson
+        btProcess: btData
+        masterVol: bar.volLevel
+        masterMuted: bar.volMuted
+        musicState: bar.sharedMusicState
+        onVolumeChangeHandled: (v) => bar.volLevel = v
+        onMuteChangeHandled: (muted) => bar.volMuted = muted
     }
 
     AstreaPopup {

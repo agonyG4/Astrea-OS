@@ -100,7 +100,7 @@ Item {
     }
     readonly property color windowBackground: {
         if (shellStyle === 0 || shellStyle === 2)
-            return themeMode === 1 ? Qt.rgba(0.97, 0.97, 0.99, 0.24) : Qt.rgba(0.11, 0.11, 0.12, 0.24)
+            return themeMode === 1 ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.06)
         return themeMode === 1 ? Qt.rgba(0.97, 0.97, 0.99, 1.0) : Qt.rgba(0.11, 0.11, 0.12, 1.0)
     }
     readonly property color windowBorder: {
@@ -110,7 +110,7 @@ Item {
     }
     readonly property color windowWash: {
         if (shellStyle === 0 || shellStyle === 2)
-            return themeMode === 1 ? Qt.rgba(1, 1, 1, 0.10) : Qt.rgba(1, 1, 1, 0.02)
+            return "transparent"
         return themeMode === 1 ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(1, 1, 1, 0.02)
     }
     readonly property color errorColor:    "#ff453a"
