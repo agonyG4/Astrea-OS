@@ -1,0 +1,75 @@
+{
+  "_description": "ScreenTime category rules. First app match wins. Edit aliases/classes to match your window classes.",
+  "categories": {
+    "games": {
+      "label": "Games",
+      "apps": {
+        "steam": ["steam", "steamwebhelper"],
+        "heroic": ["heroic", "heroicgameslauncher"],
+        "lutris": ["lutris"],
+        "prismlauncher": ["prismlauncher", "org.prismlauncher.PrismLauncher"]
+      }
+    },
+    "browser": {
+      "label": "Browser",
+      "apps": {
+        "brave": ["brave", "brave-browser", "Brave-browser"],
+        "zen": ["zen", "zen-browser", "Zen"],
+        "firefox": ["firefox", "Firefox"],
+        "chrome": ["chrome", "google-chrome", "Google-chrome", "chromium", "Chromium"]
+      }
+    },
+    "development": {
+      "label": "Development",
+      "apps": {
+        "code": ["code", "Code", "codium", "VSCodium"],
+        "terminal": ["kitty", "Alacritty", "org.wezfurlong.wezterm", "foot", "ghostty"]
+      }
+    },
+    "communication": {
+      "label": "Communication",
+      "apps": {
+        "discord": ["discord", "Discord"],
+        "telegram": ["org.telegram.desktop", "TelegramDesktop"],
+        "whatsapp": ["whatsapp", "WhatsApp"]
+      }
+    },
+    "media": {
+      "label": "Media",
+      "apps": {
+        "spotify": ["spotify", "Spotify"],
+        "vlc": ["vlc", "Vlc"],
+        "mpv": ["mpv"]
+      }
+    },
+    "system": {
+      "label": "System",
+      "apps": {
+        "settings": {
+          "aliases": ["org.kde.systemsettings", "gnome-control-center"],
+          "title_aliases": ["Astrea Settings"]
+        },
+        "files": {
+          "aliases": ["explorer", "org.gnome.Nautilus", "dolphin", "thunar"],
+          "exact_titles": ["Finder"],
+          "title_aliases": ["Astrea Explorer"]
+        }
+      }
+    },
+    "utilities": {
+      "label": "Utilities",
+      "apps": {
+        "weather": {
+          "title_aliases": ["WeatherApp", "Astrea Weather"]
+        },
+        "screentime": {
+          "title_aliases": ["ScreenTime", "Bench ScreenTime"]
+        }
+      }
+    },
+    "other": {
+      "label": "Other",
+      "apps": {}
+    }
+  }
+}
