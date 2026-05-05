@@ -1,0 +1,15 @@
+NAME="AstreaOS"
+PRETTY_NAME="AstreaOS 2.0 Alpha Midnight"
+VERSION="2.0 Alpha"
+VERSION_ID="2.0"
+VERSION_CODENAME=midnight
+ID=astrea
+ID_LIKE=arch
+BUILD_ID=2.0A-midnight-alpha
+ANSI_COLOR="38;2;23;147;209"
+HOME_URL="https://github.com/agonyG4/AstreaOS"
+DOCUMENTATION_URL="https://wiki.archlinux.org/"
+SUPPORT_URL="https://bbs.archlinux.org/"
+BUG_REPORT_URL="https://github.com/agonyG4/AstreaOS/issues"
+PRIVACY_POLICY_URL="https://astreaos.org/privacy"
+LOGO=astrea
