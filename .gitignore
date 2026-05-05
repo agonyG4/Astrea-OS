@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+target/
+.codex
+.claude
+*.key
+openmeteo_cache.json
+local/share/Astrea/Features/Paper/Library/UserWallpapers/
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.bak
+.sqlite
+.env

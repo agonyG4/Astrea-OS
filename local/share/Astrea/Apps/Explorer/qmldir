@@ -1,0 +1,17 @@
+module Finder
+
+singleton Theme    1.0 Theme.qml
+singleton AppState 1.0 AppState.qml
+FileDialog     1.0 FileDialog.qml
+
+NavButton      1.0 components/common/NavButton.qml
+FileContextMenu 1.0 components/common/FileContextMenu.qml
+ContextMenuPopup 1.0 components/common/ContextMenuPopup.qml
+ContextMenuAction 1.0 components/common/ContextMenuAction.qml
+ContextMenuDivider 1.0 components/common/ContextMenuDivider.qml
+Toolbar        1.0 components/layout/Toolbar.qml
+Sidebar        1.0 components/layout/Sidebar.qml
+PreviewPanel   1.0 components/layout/PreviewPanel.qml
+FileListView   1.0 components/views/FileListView.qml
+FileIconView   1.0 components/views/FileIconView.qml
+StatusBar      1.0 components/layout/StatusBar.qml

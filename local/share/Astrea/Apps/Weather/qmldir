@@ -1,0 +1,4 @@
+module Astrea.Weather
+
+singleton Theme 1.0 Theme.qml
+WeatherApp 1.0 WeatherApp.qml

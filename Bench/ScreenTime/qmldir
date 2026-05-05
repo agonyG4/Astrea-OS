@@ -1,0 +1,4 @@
+module Bench.ScreenTime
+
+singleton Theme 1.0 Theme.qml
+ScreenTimeApp 1.0 ScreenTimeApp.qml

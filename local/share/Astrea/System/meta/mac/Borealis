@@ -1,0 +1,27 @@
+readonly property color bgColor: isDark ? "#1A1A1A" : "#F5F5F7"
+readonly property color surfaceColor: isDark ? "#232323" : "#FFFFFF"
+readonly property color elevatedSurfaceColor: isDark ? "#2A2A2A" : "#F2F2F7"
+
+readonly property color primaryColor: isDark ? "#F5F5F7" : "#1C1C1E"
+readonly property color midColor: isDark ? "#D1D1D6" : "#2C2C2E"
+readonly property color secondaryColor: isDark ? "#A1A1A6" : "#6E6E73"
+readonly property color tertiaryColor: isDark ? "#7C7C80" : "#8E8E93"
+
+readonly property color borderColor: isDark ? "#343434" : "#D9D9DE"
+readonly property color subtleBorderColor: isDark ? "#2A2A2A" : "#E5E5EA"
+
+readonly property color hoverColor: isDark ? "#2E2E2E" : "#E9E9EE"
+readonly property color pressedColor: isDark ? "#383838" : "#DCDCE2"
+readonly property color selectedColor: isDark ? "#2F3E55" : "#DCEBFF"
+
+readonly property color accentColor: isDark ? "#4D8DFF" : "#007AFF"
+readonly property color accentHoverColor: isDark ? "#6AA2FF" : "#248AFF"
+readonly property color accentPressedColor: isDark ? "#3C78E6" : "#0062CC"
+
+readonly property color successColor: isDark ? "#32D74B" : "#28C840"
+readonly property color warningColor: isDark ? "#FF9F0A" : "#FF9500"
+readonly property color errorColor: isDark ? "#FF453A" : "#FF3B30"
+
+shadowColor: Qt.rgba(0, 0, 0, 0.09)
+overlayColor: Qt.rgba(0, 0, 0, 0.2)
+readonly property color disabledColor: isDark ? "#5A5A5F" : "#B8B8BE"
