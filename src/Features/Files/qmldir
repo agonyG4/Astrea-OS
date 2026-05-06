@@ -1,0 +1,7 @@
+module Astrea.Files
+
+FileContextMenu 1.0 ui/FileContextMenu.qml
+ContextMenuAction 1.0 ui/ContextMenuAction.qml
+ContextMenuDivider 1.0 ui/ContextMenuDivider.qml
+SidebarFrame    1.0 ui/SidebarFrame.qml
+OperationProgressCard 1.0 ui/OperationProgressCard.qml

@@ -1,0 +1,22 @@
+module components
+singleton Theme 1.0 theme/Theme.qml
+NavItem 1.0 NavItem.qml
+SectionHeader 1.0 SectionHeader.qml
+SelectButton 1.0 SelectButton.qml
+SettingRow 1.0 SettingRow.qml
+Sidebar 1.0 Sidebar.qml
+SidebarFrame 1.0 SidebarFrame.qml
+ScrollPage 1.0 ScrollPage.qml
+AvatarImage 1.0 AvatarImage.qml
+SpeedCard 1.0 SpeedCard.qml
+DnsStatusCard 1.0 DnsStatusCard.qml
+DnsPresetChip 1.0 DnsPresetChip.qml
+StatusDot 1.0 StatusDot.qml
+ToggleSwitch 1.0 ToggleSwitch.qml
+FormCard 1.0 FormCard.qml
+IconListRow 1.0 IconListRow.qml
+ReorderableStack 1.0 ReorderableStack.qml
+ContextMenu 1.0 ContextMenu.qml
+ContextMenuAction 1.0 ContextMenuAction.qml
+ContextMenuDivider 1.0 ContextMenuDivider.qml
+ProgressCard 1.0 ProgressCard.qml
