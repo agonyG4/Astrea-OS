@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
+import "../bar"
 import "AstreaFiles" as AstreaFiles
 
 Item {
@@ -551,12 +552,12 @@ Item {
 
                             Behavior on x {
                                 enabled: !tile.dragging
-                                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                                NumberAnimation { duration: Theme.animationQuick; easing.type: Easing.OutCubic }
                             }
 
                             Behavior on y {
                                 enabled: !tile.dragging
-                                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                                NumberAnimation { duration: Theme.animationQuick; easing.type: Easing.OutCubic }
                             }
 
                             Connections {
@@ -571,11 +572,11 @@ Item {
                                 height: root.highlightHeight
                                 x: Math.round((parent.width - width) / 2)
                                 y: 3
-                                radius: 8
+                                radius: Theme.cornerRadius
                                 color: tile.selected ? "#3a3a3c" : tile.hovered ? "#2e2e30" : "transparent"
 
                                 Behavior on color {
-                                    ColorAnimation { duration: 90 }
+                                    ColorAnimation { duration: Theme.animationInstant }
                                 }
                             }
 
@@ -595,12 +596,12 @@ Item {
                             Text {
                                 id: appLabel
                                 anchors.top: appIcon.bottom
-                                anchors.topMargin: 6
+                                anchors.topMargin: Theme.spacingSmall
                                 width: root.cellWidth + 20
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 text: tile.appData ? tile.appData.name : ""
                                 color: "#f8f8f8"
-                                font.family: "Inter Variable"
+                                font.family: Theme.fontFamily
                                 font.pixelSize: iconPreset === "large" ? 13 : iconPreset === "small" ? 12 : 12
                                 font.weight: Font.Normal
                                 font.hintingPreference: Font.PreferVerticalHinting

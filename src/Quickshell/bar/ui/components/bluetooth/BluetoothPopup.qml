@@ -62,27 +62,27 @@ SystemComponents.TopbarPopup {
         trailingWidth: 44
         Rectangle {
             anchors.centerIn: parent
-            width: 44; height: 24; radius: 12
+            width: 44; height: 24; radius: height / 2
             color: root.btOn
                 ? Qt.rgba(0.20, 0.60, 1.0, 0.30)
                 : (powerArea.containsMouse && !root.powerPending ? Theme.separator : Qt.rgba(1, 1, 1, 0.07))
             border { width: 1; color: root.btOn ? Qt.rgba(0.20, 0.60, 1.0, 0.50) : Qt.rgba(1, 1, 1, 0.08) }
             opacity: root.powerPending ? 0.55 : 1.0
-            Behavior on color        { ColorAnimation { duration: 150 } }
-            Behavior on border.color { ColorAnimation { duration: 150 } }
-            Behavior on opacity      { NumberAnimation { duration: 120 } }
+            Behavior on color        { ColorAnimation { duration: Theme.animationFast } }
+            Behavior on border.color { ColorAnimation { duration: Theme.animationFast } }
+            Behavior on opacity      { NumberAnimation { duration: Theme.animationQuick } }
 
             Text {
                 anchors.centerIn: parent
                 text:  root.powerPending ? "󰑐" : "󰂯"
                 color: root.btOn ? Theme.iconAccent : Theme.iconMuted
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeBody }
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: Theme.animationFast } }
                 RotationAnimation on rotation {
                     running: root.powerPending
                     from: 0
                     to: 360
-                    duration: 900
+                    duration: Theme.animationPulse
                     loops: Animation.Infinite
                 }
             }
@@ -138,15 +138,15 @@ SystemComponents.TopbarPopup {
 
     Rectangle {
         visible: root.btOn
-        width: parent.width; height: 32; radius: 10
+        width: parent.width; height: 32; radius: Theme.controlRadius
         color: root.scanning
             ? Qt.rgba(0.20, 0.60, 1.0, 0.10)
             : (scanBtnArea.containsMouse ? Theme.separator : "transparent")
         border { width: root.scanning ? 1 : 0; color: Qt.rgba(0.20, 0.60, 1.0, 0.25) }
-        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: Theme.animationFast } }
 
         Row {
-            anchors.centerIn: parent; spacing: 6
+            anchors.centerIn: parent; spacing: Theme.spacingSmall
 
             Text {
                 anchors.verticalCenter: parent.verticalCenter
@@ -156,7 +156,7 @@ SystemComponents.TopbarPopup {
                 RotationAnimation on rotation {
                     running: root.scanning
                     from: 0; to: 360
-                    duration: 1200; loops: Animation.Infinite
+                    duration: Theme.animationSpin; loops: Animation.Infinite
                 }
             }
 
@@ -209,7 +209,7 @@ SystemComponents.TopbarPopup {
                 opacity:     0
 
                 Component.onCompleted: opacity = 1
-                Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                Behavior on opacity { NumberAnimation { duration: Theme.animationNormal; easing.type: Easing.OutCubic } }
 
                 onActivated: {
                     if (!root.btProcess) return
@@ -224,12 +224,12 @@ SystemComponents.TopbarPopup {
     Rectangle { width: parent.width; height: 1; color: Theme.separator }
 
     Rectangle {
-        width: parent.width; height: 32; radius: 10
+        width: parent.width; height: 32; radius: Theme.controlRadius
         color: settingsArea.containsMouse ? Theme.separator : "transparent"
-        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: Theme.animationFast } }
 
         Row {
-            anchors.centerIn: parent; spacing: 6
+            anchors.centerIn: parent; spacing: Theme.spacingSmall
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: "󰒓"; color: Theme.textSecondary; font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
@@ -262,25 +262,25 @@ SystemComponents.TopbarPopup {
         property bool   isPaired:    true
         signal activated()
 
-        height: 38; radius: 10
+        height: 38; radius: Theme.controlRadius
 
         color: isConnected
             ? Qt.rgba(0.20, 0.60, 1.0, 0.12)
             : (rowHover.containsMouse ? Theme.separator : "transparent")
         border { width: 1; color: isConnected ? Qt.rgba(0.20, 0.60, 1.0, 0.25) : "transparent" }
-        Behavior on color        { ColorAnimation { duration: 150 } }
-        Behavior on border.color { ColorAnimation { duration: 150 } }
+        Behavior on color        { ColorAnimation { duration: Theme.animationFast } }
+        Behavior on border.color { ColorAnimation { duration: Theme.animationFast } }
 
         Row {
-            anchors { fill: parent; leftMargin: 10; rightMargin: 10 }
-            spacing: 10
+            anchors { fill: parent; leftMargin: Theme.spacingMedium; rightMargin: Theme.spacingMedium }
+            spacing: Theme.spacingMedium
 
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text:  rowRoot.isPaired ? "󰂱" : "󰂴"
                 color: rowRoot.isConnected ? Theme.iconAccent : Theme.iconMain
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: Theme.animationFast } }
             }
 
             Text {
@@ -296,13 +296,13 @@ SystemComponents.TopbarPopup {
                     pixelSize: Theme.fontSizeBody
                     weight:    rowRoot.isConnected ? Font.DemiBold : Font.Normal
                 }
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: Theme.animationFast } }
             }
 
             Rectangle {
                 visible: rowRoot.isConnected
                 anchors.verticalCenter: parent.verticalCenter
-                width: 60; height: 18; radius: 9
+                width: 60; height: 18; radius: height / 2
                 color: Qt.rgba(0.20, 0.60, 1.0, 0.20)
                 Text {
                     anchors.centerIn: parent
@@ -314,17 +314,17 @@ SystemComponents.TopbarPopup {
             Rectangle {
                 visible: !rowRoot.isPaired
                 anchors.verticalCenter: parent.verticalCenter
-                width: 44; height: 18; radius: 9
+                width: 44; height: 18; radius: height / 2
                 color: rowHover.containsMouse
                     ? Qt.rgba(0.20, 0.60, 1.0, 0.25)
                     : Qt.rgba(1, 1, 1, 0.07)
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: Theme.animationFast } }
                 Text {
                     anchors.centerIn: parent
                     text:  "pair"
                     color: rowHover.containsMouse ? Theme.iconAccent : Qt.rgba(1, 1, 1, 0.40)
                     font { family: Theme.fontFamily; pixelSize: Theme.fontSizeMicro; weight: Font.DemiBold; letterSpacing: 0.3 }
-                    Behavior on color { ColorAnimation { duration: 150 } }
+                    Behavior on color { ColorAnimation { duration: Theme.animationFast } }
                 }
             }
         }

@@ -6,7 +6,7 @@ import "../../.."
 
 Row {
     id: root
-    spacing: 8
+    spacing: Theme.spacing
     height:  36
 
     function trayIconSource(icon) {
@@ -43,7 +43,7 @@ Row {
             width:  28; height: 28
             radius: Theme.radiusMedium
             color:  isHovered || isPressed ? (isPressed ? Qt.rgba(1, 1, 1, 0.2) : Theme.separator) : "transparent"
-            Behavior on color { ColorAnimation { duration: 150 } }
+            Behavior on color { ColorAnimation { duration: Theme.animationFast } }
 
             ToolTip.visible: isHovered && (modelData.tooltipTitle !== "" || modelData.title !== "")
             ToolTip.text:    modelData.tooltipTitle || modelData.title || ""

@@ -2,7 +2,7 @@ import Quickshell.Hyprland
 import QtQuick
 import "../../.."
 Row {
-    spacing: 6
+    spacing: Theme.spacingSmall
     Repeater {
         // Filtra workspaces especiais (ex: scratchpad 'special:magic' que tem id < 0)
         model: Hyprland.workspaces.values.filter(ws => ws.id > 0)
@@ -14,8 +14,8 @@ Row {
             radius: Theme.workspaceDotSize / 2
             color: isActive ? Theme.workspaceActive : Theme.workspaceInactive
             anchors.verticalCenter: parent.verticalCenter
-            Behavior on width { NumberAnimation { duration: 200; easing.type: Easing.OutExpo } }
-            Behavior on color { ColorAnimation  { duration: 180 } }
+            Behavior on width { NumberAnimation { duration: Theme.animationNormal; easing.type: Easing.OutExpo } }
+            Behavior on color { ColorAnimation  { duration: Theme.animationNormal - 20 } }
             MouseArea {
                 anchors.fill: parent
                 anchors.topMargin:    -10

@@ -53,8 +53,8 @@ Item {
                 renderType: Text.NativeRendering
                 Behavior on text {
                     SequentialAnimation {
-                        NumberAnimation { target: _dateText; property: "opacity"; to: 0; duration: 120 }
-                        NumberAnimation { target: _dateText; property: "opacity"; to: 1; duration: 120 }
+                        NumberAnimation { target: _dateText; property: "opacity"; to: 0; duration: Theme.animationQuick }
+                        NumberAnimation { target: _dateText; property: "opacity"; to: 1; duration: Theme.animationQuick }
                     }
                 }
             }
@@ -86,8 +86,8 @@ Item {
                 renderType: Text.NativeRendering
                 Behavior on text {
                     SequentialAnimation {
-                        NumberAnimation { target: _clockText; property: "opacity"; to: 0; duration: 150; easing.type: Easing.InQuad }
-                        NumberAnimation { target: _clockText; property: "opacity"; to: 1; duration: 200; easing.type: Easing.OutQuad }
+                        NumberAnimation { target: _clockText; property: "opacity"; to: 0; duration: Theme.animationFast; easing.type: Easing.InQuad }
+                        NumberAnimation { target: _clockText; property: "opacity"; to: 1; duration: Theme.animationNormal; easing.type: Easing.OutQuad }
                     }
                 }
             }
