@@ -44,13 +44,13 @@ SystemComponents.IndicatorButton {
             SequentialAnimation on opacity {
                 running: root.isScanning
                 loops:   Animation.Infinite
-                NumberAnimation { to: 0;   duration: 900 }
+                NumberAnimation { to: 0;   duration: Theme.animationPulse }
                 NumberAnimation { to: 0.9; duration: 0   }
             }
             SequentialAnimation on scale {
                 running: root.isScanning
                 loops:   Animation.Infinite
-                NumberAnimation { to: 1.8; duration: 900; easing.type: Easing.OutCubic }
+                NumberAnimation { to: 1.8; duration: Theme.animationPulse; easing.type: Easing.OutCubic }
                 NumberAnimation { to: 1.0; duration: 0   }
             }
         }
@@ -62,7 +62,7 @@ SystemComponents.IndicatorButton {
             color: !root.btOn ? Theme.iconMuted
                  : root.connectedCount > 0 ? Theme.iconAccent
                  : Theme.iconMain
-            Behavior on color { ColorAnimation { duration: 150 } }
+            Behavior on color { ColorAnimation { duration: Theme.animationFast } }
         }
     }
 

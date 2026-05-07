@@ -47,12 +47,12 @@ SystemComponents.TopbarPopup {
     signal muteChangeHandled(bool muted)
 
     popupWidth: 356
-    cardPadding: 16
-    contentSpacing: 12
+    cardPadding: Theme.spacingContainer
+    contentSpacing: Theme.spacingLarge
     backgroundColor: control.popupGlass
     washColor: control.popupWash
     borderColor: control.popupBorder
-    floatingAccessoryGap: 8
+    floatingAccessoryGap: Theme.spacing
     floatingAccessoryRightMargin: 2
     floatingAccessory: Component {
         Rectangle {
@@ -60,7 +60,7 @@ SystemComponents.TopbarPopup {
 
             implicitWidth: customizeRow.implicitWidth + 22
             implicitHeight: 30
-            radius: 15
+            radius: height / 2
             color: control.customizeMode
                 ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, customizeFloatArea.containsMouse ? 0.34 : 0.26)
                 : (customizeFloatArea.containsMouse ? Theme.surface : Theme.background)
@@ -69,13 +69,13 @@ SystemComponents.TopbarPopup {
                 ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.52)
                 : Theme.border
 
-            Behavior on color { ColorAnimation { duration: 140 } }
-            Behavior on border.color { ColorAnimation { duration: 140 } }
+            Behavior on color { ColorAnimation { duration: Theme.animationHover } }
+            Behavior on border.color { ColorAnimation { duration: Theme.animationHover } }
 
             Row {
                 id: customizeRow
                 anchors.centerIn: parent
-                spacing: 6
+                spacing: Theme.spacingSmall
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
@@ -399,7 +399,7 @@ SystemComponents.TopbarPopup {
             anchors.verticalCenter: parent.verticalCenter
             width: 30
             height: 30
-            radius: 15
+            radius: height / 2
             color: Theme.surface
 
             Text {
@@ -453,7 +453,7 @@ SystemComponents.TopbarPopup {
         Item {
             Row {
                 anchors.fill: parent
-                spacing: 10
+                spacing: Theme.spacingMedium
 
                 ConnectivityCard {
                     width: (parent.width - parent.spacing) / 2
@@ -525,25 +525,25 @@ SystemComponents.TopbarPopup {
         border.width: 1
         border.color: active ? Theme.barBorderHover : Theme.border
 
-        Behavior on color { ColorAnimation { duration: 160 } }
-        Behavior on border.color { ColorAnimation { duration: 160 } }
+        Behavior on color { ColorAnimation { duration: Theme.animationStandard } }
+        Behavior on border.color { ColorAnimation { duration: Theme.animationStandard } }
 
         Rectangle {
             id: mediaArt
             anchors.left: parent.left
             anchors.top: parent.top
-            anchors.leftMargin: 12
-            anchors.topMargin: 12
+            anchors.leftMargin: Theme.spacingLarge
+            anchors.topMargin: Theme.spacingLarge
             width: 46
             height: 46
-            radius: 12
+            radius: Theme.tileRadius
             clip: true
             color: Theme.surface
 
             Rectangle {
                 id: mediaArtMask
                 anchors.fill: parent
-                radius: 12
+                radius: Theme.tileRadius
                 visible: false
             }
 
@@ -573,9 +573,9 @@ SystemComponents.TopbarPopup {
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.top: mediaArt.bottom
-            anchors.leftMargin: 14
-            anchors.rightMargin: 12
-            anchors.topMargin: 14
+            anchors.leftMargin: Theme.spacingXLarge
+            anchors.rightMargin: Theme.spacingLarge
+            anchors.topMargin: Theme.spacingXLarge
             spacing: 3
 
             Text {
@@ -592,7 +592,7 @@ SystemComponents.TopbarPopup {
                 text: mediaCard.artist
                 color: Theme.textSecondary
                 elide: Text.ElideRight
-                opacity: 0.9
+                opacity: Theme.opacityEmphasis
                 maximumLineCount: 1
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeBody; weight: Font.Medium }
             }
@@ -602,8 +602,8 @@ SystemComponents.TopbarPopup {
             anchors.left: parent.left
             anchors.bottom: parent.bottom
             anchors.leftMargin: 15
-            anchors.bottomMargin: 14
-            spacing: 14
+            anchors.bottomMargin: Theme.spacingXLarge
+            spacing: Theme.spacingXLarge
 
             MediaButton {
                 icon: "󰒮"
@@ -641,8 +641,8 @@ SystemComponents.TopbarPopup {
                                   : (mediaArea.containsMouse ? Theme.separator : "transparent")
         opacity: enabled ? 1 : 0.38
 
-        Behavior on color { ColorAnimation { duration: 120 } }
-        Behavior on opacity { NumberAnimation { duration: 120 } }
+        Behavior on color { ColorAnimation { duration: Theme.animationQuick } }
+        Behavior on opacity { NumberAnimation { duration: Theme.animationQuick } }
 
         Text {
             anchors.centerIn: parent
@@ -671,8 +671,8 @@ SystemComponents.TopbarPopup {
 
         Column {
             anchors.fill: parent
-            anchors.margins: 8
-            spacing: 4
+            anchors.margins: Theme.spacing
+            spacing: Theme.spacingMicro
 
             ConnectivityRow {
                 width: parent.width
@@ -721,18 +721,18 @@ SystemComponents.TopbarPopup {
         color: active ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.22)
                       : (rowMouse.containsMouse ? Theme.separator : "transparent")
 
-        Behavior on color { ColorAnimation { duration: 130 } }
+        Behavior on color { ColorAnimation { duration: Theme.animationSubtle } }
 
         Row {
             anchors.fill: parent
-            anchors.leftMargin: 7
-            anchors.rightMargin: 7
-            spacing: 8
+            anchors.leftMargin: Theme.spacingInset
+            anchors.rightMargin: Theme.spacingInset
+            spacing: Theme.spacing
 
             Rectangle {
                 width: 28
                 height: 28
-                radius: 14
+                radius: Theme.cornerRadiusLarge
                 anchors.verticalCenter: parent.verticalCenter
                 color: rowRoot.active ? Theme.iconActive : Theme.surface
 
@@ -761,7 +761,7 @@ SystemComponents.TopbarPopup {
                     width: parent.width
                     text: rowRoot.subtitle
                     color: Theme.textSecondary
-                    opacity: 0.9
+                    opacity: Theme.opacityEmphasis
                     elide: Text.ElideRight
                     font { family: Theme.fontFamily; pixelSize: Theme.fontSizeMicro; weight: Font.Medium }
                 }
@@ -792,18 +792,18 @@ SystemComponents.TopbarPopup {
         border.width: 1
         border.color: active ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.36) : Theme.border
 
-        Behavior on color { ColorAnimation { duration: 140 } }
-        Behavior on border.color { ColorAnimation { duration: 140 } }
+        Behavior on color { ColorAnimation { duration: Theme.animationHover } }
+        Behavior on border.color { ColorAnimation { duration: Theme.animationHover } }
 
         Row {
             anchors.fill: parent
-            anchors.margins: 10
-            spacing: 9
+            anchors.margins: Theme.spacingMedium
+            spacing: Theme.spacingControlGap
 
             Rectangle {
                 width: 30
                 height: 30
-                radius: 15
+                radius: height / 2
                 anchors.verticalCenter: parent.verticalCenter
                 color: tile.active ? Theme.iconActive : Theme.surface
 
@@ -832,7 +832,7 @@ SystemComponents.TopbarPopup {
                     width: parent.width
                     text: tile.subtitle
                     color: Theme.textSecondary
-                    opacity: 0.9
+                    opacity: Theme.opacityEmphasis
                     elide: Text.ElideRight
                     font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption }
                 }
@@ -870,11 +870,11 @@ SystemComponents.TopbarPopup {
         Text {
             anchors.left: parent.left
             anchors.top: parent.top
-            anchors.leftMargin: 12
-            anchors.topMargin: 9
+            anchors.leftMargin: Theme.spacingLarge
+            anchors.topMargin: Theme.spacingControlGap
             text: sliderCard.title
             color: Theme.textActive
-            opacity: 0.86
+            opacity: Theme.opacitySubtle
             font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.DemiBold }
         }
 
@@ -882,8 +882,8 @@ SystemComponents.TopbarPopup {
             id: sliderLeftIcon
             anchors.left: parent.left
             anchors.bottom: parent.bottom
-            anchors.leftMargin: 12
-            anchors.bottomMargin: 12
+            anchors.leftMargin: Theme.spacingLarge
+            anchors.bottomMargin: Theme.spacingLarge
             text: sliderCard.leftIcon
             color: sliderCard.muted ? Theme.iconMuted : Theme.iconMain
             font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
@@ -902,8 +902,8 @@ SystemComponents.TopbarPopup {
             anchors.left: sliderLeftIcon.right
             anchors.right: sliderRightIcon.left
             anchors.verticalCenter: sliderLeftIcon.verticalCenter
-            anchors.leftMargin: 12
-            anchors.rightMargin: 12
+            anchors.leftMargin: Theme.spacingLarge
+            anchors.rightMargin: Theme.spacingLarge
             height: 24
 
             Rectangle {
@@ -925,7 +925,7 @@ SystemComponents.TopbarPopup {
                     }
                     Behavior on width {
                         enabled: sliderCard.animateValue
-                        NumberAnimation { duration: 60; easing.type: Easing.OutCubic }
+                        NumberAnimation { duration: Theme.animationSlider; easing.type: Easing.OutCubic }
                     }
                 }
             }
@@ -938,10 +938,10 @@ SystemComponents.TopbarPopup {
                 radius: width / 2
                 color: Theme.iconActive
 
-                Behavior on width { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+                Behavior on width { NumberAnimation { duration: Theme.animationMicro; easing.type: Easing.OutCubic } }
                 Behavior on x {
                     enabled: !sliderMouse.pressed && sliderCard.animateValue
-                    NumberAnimation { duration: 60; easing.type: Easing.OutCubic }
+                    NumberAnimation { duration: Theme.animationSlider; easing.type: Easing.OutCubic }
                 }
 
                 Rectangle {
@@ -975,8 +975,8 @@ SystemComponents.TopbarPopup {
             id: sliderRightIcon
             anchors.right: parent.right
             anchors.bottom: parent.bottom
-            anchors.rightMargin: 12
-            anchors.bottomMargin: 12
+            anchors.rightMargin: Theme.spacingLarge
+            anchors.bottomMargin: Theme.spacingLarge
             text: sliderCard.rightIcon
             color: sliderCard.muted ? Theme.iconMuted : Theme.iconMain
             font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }

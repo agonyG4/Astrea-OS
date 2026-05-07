@@ -2,6 +2,9 @@ import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
 import QtQuick
+// TODO(design-system): desktop temporarily imports the bar module only for Theme tokens;
+// move Quickshell surfaces to a shared shell theme module before removing this dependency.
+import "../bar"
 import "AstreaFiles" as AstreaFiles
 
 Item {
@@ -22,6 +25,9 @@ Item {
     property bool stateLoaded: false
     property var gridPositions: ({})
     property int layoutVersion: 0
+    property string activeDragDesktop: ""
+    property int dragPreviewSlot: -1
+    property int dragSourceSlot: -1
     property string appLoadStatus: ""
     property string desktopSignature: ""
     readonly property string modulePath: localPath(Qt.resolvedUrl("."))
@@ -92,21 +98,25 @@ Item {
         return false
     }
 
-    function occupiedSlot(slot, exceptDesktop) {
+    function slotOwner(slot, exceptDesktop) {
         var items = orderedApps()
 
         for (var i = 0; i < items.length; i++) {
             var desktop = items[i].desktop
             var itemSlot = gridPositions[desktop] !== undefined ? gridPositions[desktop] : i
             if (desktop !== exceptDesktop && itemSlot === slot)
-                return true
+                return desktop
         }
 
         for (var key in gridPositions) {
             if (key !== exceptDesktop && gridPositions[key] === slot)
-                return true
+                return key
         }
-        return false
+        return ""
+    }
+
+    function occupiedSlot(slot, exceptDesktop) {
+        return slotOwner(slot, exceptDesktop) !== ""
     }
 
     function nearestFreeSlot(preferredSlot, exceptDesktop) {
@@ -127,13 +137,44 @@ Item {
     }
 
     function setDesktopSlot(desktop, slot) {
+        moveDesktopToSlot(desktop, slot, gridPositions[desktop] !== undefined ? gridPositions[desktop] : indexForDesktop(desktop))
+    }
+
+    function moveDesktopToSlot(desktop, slot, sourceSlot) {
+        if (!desktop)
+            return
+
+        var targetSlot = Math.max(0, Math.round(Number(slot) || 0))
+        var fromSlot = Math.max(0, Math.round(Number(sourceSlot) || 0))
+        var owner = slotOwner(targetSlot, desktop)
         var next = {}
-        for (var key in gridPositions)
-            next[key] = gridPositions[key]
-        next[desktop] = nearestFreeSlot(slot, desktop)
+        var items = orderedApps()
+
+        for (var i = 0; i < items.length; i++) {
+            var itemDesktop = items[i].desktop
+            if (itemDesktop)
+                next[itemDesktop] = gridPositions[itemDesktop] !== undefined ? gridPositions[itemDesktop] : i
+        }
+
+        for (var key in gridPositions) {
+            if (next[key] === undefined)
+                next[key] = gridPositions[key]
+        }
+
+        next[desktop] = targetSlot
+        if (owner !== "")
+            next[owner] = fromSlot
+
         gridPositions = next
+        normalizeGridPositions()
         layoutVersion += 1
         saveState()
+    }
+
+    function clearDragPreview() {
+        activeDragDesktop = ""
+        dragPreviewSlot = -1
+        dragSourceSlot = -1
     }
 
     function clearGridPositions() {
@@ -471,6 +512,14 @@ Item {
                 return col * rows + row
             }
 
+            function slotIndexForTileCenter(tile) {
+                return slotIndexFor(tile.x + tile.width / 2, tile.y + tile.height / 2)
+            }
+
+            function updateDragPreview(tile) {
+                root.dragPreviewSlot = slotIndexForTileCenter(tile)
+            }
+
             function clampTile(tile) {
                 tile.x = Math.max(0, Math.min(tile.x, contextHost.width - tile.width))
                 tile.y = Math.max(48, Math.min(tile.y, contextHost.height - tile.height))
@@ -504,6 +553,26 @@ Item {
                     id: iconLayer
                     anchors.fill: parent
 
+                    Rectangle {
+                        id: dropPreview
+                        readonly property point previewPosition: desktopWindow.defaultPosition(root.dragPreviewSlot)
+
+                        visible: root.activeDragDesktop !== "" && root.dragPreviewSlot >= 0
+                        x: previewPosition.x + Math.round((root.cellWidth - width) / 2)
+                        y: previewPosition.y + 3
+                        width: root.highlightWidth
+                        height: root.highlightHeight
+                        radius: Theme.cornerRadius
+                        color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.13)
+                        border.width: 1
+                        border.color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.42)
+                        opacity: visible ? 1 : 0
+
+                        Behavior on x { NumberAnimation { duration: Theme.animationQuick; easing.type: Easing.OutCubic } }
+                        Behavior on y { NumberAnimation { duration: Theme.animationQuick; easing.type: Easing.OutCubic } }
+                        Behavior on opacity { NumberAnimation { duration: Theme.animationQuick } }
+                    }
+
                     Repeater {
                         id: iconRepeater
                         model: {
@@ -528,8 +597,11 @@ Item {
 
                             property bool dragging: false
                             property bool movedDuringDrag: false
+                            property bool suppressClick: false
                             property real pressTileX: 0
                             property real pressTileY: 0
+                            property real pressMouseX: 0
+                            property real pressMouseY: 0
                             readonly property bool selected: tile.appData && root.selectedDesktop === tile.appData.desktop
                             readonly property bool hovered: tileHover.hovered
 
@@ -551,12 +623,12 @@ Item {
 
                             Behavior on x {
                                 enabled: !tile.dragging
-                                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                                NumberAnimation { duration: Theme.animationQuick; easing.type: Easing.OutCubic }
                             }
 
                             Behavior on y {
                                 enabled: !tile.dragging
-                                NumberAnimation { duration: 120; easing.type: Easing.OutCubic }
+                                NumberAnimation { duration: Theme.animationQuick; easing.type: Easing.OutCubic }
                             }
 
                             Connections {
@@ -571,11 +643,11 @@ Item {
                                 height: root.highlightHeight
                                 x: Math.round((parent.width - width) / 2)
                                 y: 3
-                                radius: 8
+                                radius: Theme.cornerRadius
                                 color: tile.selected ? "#3a3a3c" : tile.hovered ? "#2e2e30" : "transparent"
 
                                 Behavior on color {
-                                    ColorAnimation { duration: 90 }
+                                    ColorAnimation { duration: Theme.animationInstant }
                                 }
                             }
 
@@ -595,12 +667,12 @@ Item {
                             Text {
                                 id: appLabel
                                 anchors.top: appIcon.bottom
-                                anchors.topMargin: 6
+                                anchors.topMargin: Theme.spacingSmall
                                 width: root.cellWidth + 20
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 text: tile.appData ? tile.appData.name : ""
                                 color: "#f8f8f8"
-                                font.family: "Inter Variable"
+                                font.family: Theme.fontFamily
                                 font.pixelSize: iconPreset === "large" ? 13 : iconPreset === "small" ? 12 : 12
                                 font.weight: Font.Normal
                                 font.hintingPreference: Font.PreferVerticalHinting
@@ -625,37 +697,66 @@ Item {
                                 z: 1
                                 hoverEnabled: true
                                 acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                cursorShape: Qt.PointingHandCursor
+                                cursorShape: tile.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
                                 propagateComposedEvents: false
-                                drag.target: tile
-                                drag.axis: Drag.XAndYAxis
-                                drag.minimumX: 0
-                                drag.minimumY: 48
-                                drag.maximumX: Math.max(0, contextHost.width - tile.width)
-                                drag.maximumY: Math.max(48, contextHost.height - tile.height)
-                                drag.threshold: 6
+
+                                function beginDrag() {
+                                    if (tile.dragging || !tile.appData)
+                                        return
+
+                                    tile.dragging = true
+                                    tile.movedDuringDrag = true
+                                    tile.suppressClick = true
+                                    root.activeDragDesktop = tile.appData.desktop
+                                    root.dragSourceSlot = tile.effectiveSlot
+                                    root.dragPreviewSlot = tile.effectiveSlot
+                                    desktopWindow.closeContext()
+                                }
+
+                                function updateTileFromMouse(mouse) {
+                                    const pt = pointer.mapToItem(contextHost, mouse.x, mouse.y)
+                                    tile.x = tile.pressTileX + pt.x - tile.pressMouseX
+                                    tile.y = tile.pressTileY + pt.y - tile.pressMouseY
+                                    desktopWindow.clampTile(tile)
+                                    desktopWindow.updateDragPreview(tile)
+                                }
 
                                 onPressed: function(mouse) {
                                     if (tile.appData)
                                         root.selectedDesktop = tile.appData.desktop
                                     if (mouse.button === Qt.LeftButton) {
+                                        const pt = pointer.mapToItem(contextHost, mouse.x, mouse.y)
                                         tile.pressTileX = tile.x
                                         tile.pressTileY = tile.y
+                                        tile.pressMouseX = pt.x
+                                        tile.pressMouseY = pt.y
                                         tile.movedDuringDrag = false
-                                        tile.dragging = true
+                                        tile.suppressClick = false
                                     }
                                 }
 
                                 onPositionChanged: function(mouse) {
-                                    if (pressedButtons & Qt.LeftButton) {
-                                        var moved = Math.abs(tile.x - tile.pressTileX) + Math.abs(tile.y - tile.pressTileY)
-                                        if (moved > 2)
-                                            tile.movedDuringDrag = true
-                                    }
+                                    if (!(pressedButtons & Qt.LeftButton))
+                                        return
+
+                                    const pt = pointer.mapToItem(contextHost, mouse.x, mouse.y)
+                                    const dx = pt.x - tile.pressMouseX
+                                    const dy = pt.y - tile.pressMouseY
+                                    const threshold = 8
+
+                                    if (!tile.dragging && Math.sqrt(dx * dx + dy * dy) >= threshold)
+                                        beginDrag()
+
+                                    if (tile.dragging)
+                                        updateTileFromMouse(mouse)
                                 }
 
                                 onClicked: function(mouse) {
                                     mouse.accepted = true
+                                    if (tile.suppressClick) {
+                                        tile.suppressClick = false
+                                        return
+                                    }
                                     if (!tile.appData)
                                         return
                                     root.selectedDesktop = tile.appData.desktop
@@ -678,22 +779,22 @@ Item {
 
                                 onReleased: function(mouse) {
                                     if (mouse.button === Qt.LeftButton) {
-                                        var moved = tile.movedDuringDrag
-                                            || Math.abs(tile.x - tile.pressTileX) + Math.abs(tile.y - tile.pressTileY) > 2
-                                        desktopWindow.clampTile(tile)
-                                        if (moved) {
-                                            var dropPoint = pointer.mapToItem(contextHost, mouse.x, mouse.y)
-                                            if (tile.appData)
-                                                root.setDesktopSlot(tile.appData.desktop, desktopWindow.slotIndexFor(dropPoint.x, dropPoint.y))
+                                        if (tile.dragging && tile.appData) {
+                                            updateTileFromMouse(mouse)
+                                            root.moveDesktopToSlot(tile.appData.desktop, root.dragPreviewSlot, root.dragSourceSlot)
                                         }
                                         tile.dragging = false
                                         tile.movedDuringDrag = false
+                                        root.clearDragPreview()
+                                        desktopWindow.clampTile(tile)
                                     }
                                 }
 
                                 onCanceled: {
                                     tile.dragging = false
                                     tile.movedDuringDrag = false
+                                    tile.suppressClick = false
+                                    root.clearDragPreview()
                                     desktopWindow.clampTile(tile)
                                 }
                             }

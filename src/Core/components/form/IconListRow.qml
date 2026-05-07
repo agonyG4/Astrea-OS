@@ -27,16 +27,16 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: rowArea.containsMouse && rowRoot.interactive ? Qt.rgba(1, 1, 1, 0.04) : "transparent"
-        Behavior on color { ColorAnimation { duration: 150 } }
-        radius: 8
-        anchors.margins: 2
+        Behavior on color { ColorAnimation { duration: Components.Theme.animationFast } }
+        radius: Components.Theme.cornerRadiusSmall
+        anchors.margins: Components.Theme.spacingTiny
     }
 
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: 16
-        anchors.rightMargin: 16
-        spacing: 12
+        anchors.leftMargin: Components.Theme.spacingLarge
+        anchors.rightMargin: Components.Theme.spacingLarge
+        spacing: Components.Theme.spacingMedium
 
         // Optional Left Icon
         Text {
@@ -82,7 +82,7 @@ Item {
             font.family: "JetBrainsMono Nerd Font"
             font.pixelSize: 14
             color: Components.Theme.textSecondary
-            opacity: 0.3
+            opacity: Components.Theme.opacityDisabled
         }
     }
     
@@ -92,10 +92,10 @@ Item {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.leftMargin: rowRoot.iconText !== "" ? 44 : 16
+        anchors.leftMargin: rowRoot.iconText !== "" ? 44 : Components.Theme.spacingLarge
         height: 1
         color: Components.Theme.cardBorder
-        opacity: 0.3
+        opacity: Components.Theme.opacityDisabled
     }
     
     MouseArea {
