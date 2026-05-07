@@ -26,6 +26,6 @@ SystemComponents.IndicatorButton {
             :                      "󰕾"
         color: root.volMuted ? Theme.iconMuted : Theme.iconMain
         font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
-        Behavior on color { ColorAnimation { duration: 150 } }
+        Behavior on color { ColorAnimation { duration: Theme.animationFast } }
     }
 }

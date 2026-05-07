@@ -1,11 +1,12 @@
 import QtQuick
+import "../../.."
 
 Item {
     id: root
 
     property var model: null
     property bool editMode: false
-    property real itemSpacing: 14
+    property real itemSpacing: Theme.spacingXLarge
     property var itemHeightProvider: function(key) { return 0 }
     property var itemLabelProvider: function(key) { return "" }
     property Component itemDelegate: null
@@ -15,12 +16,12 @@ Item {
     property int dragPreviewIndex: -1
     property real dragTop: 0
 
-    property real editOverlayRadius: 14
+    property real editOverlayRadius: Theme.cornerRadiusLarge
     property color editOverlayColor: Qt.rgba(0.10, 0.55, 1.0, 0.06)
     property color editOverlayBorderColor: Qt.rgba(0.35, 0.75, 1.0, 0.24)
     property color labelColor: Qt.rgba(1, 1, 1, 0.62)
-    property string labelFontFamily: "Inter"
-    property int labelPixelSize: 9
+    property string labelFontFamily: Theme.fontFamily
+    property int labelPixelSize: Theme.fontSizeMicro
 
     signal itemDropped()
 
@@ -157,14 +158,14 @@ Item {
             height: root.itemHeight(kind)
             z: isDragged ? 20 : (root.editMode ? 5 : 0)
             scale: isDragged ? 1.025 : 1
-            opacity: isDragged ? 0.94 : 1
+            opacity: isDragged ? Theme.opacityDragging : 1
 
             Behavior on y {
                 enabled: !stackDelegate.isDragged
-                NumberAnimation { duration: 150; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: Theme.animationFast; easing.type: Easing.OutCubic }
             }
-            Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
-            Behavior on opacity { NumberAnimation { duration: 120 } }
+            Behavior on scale { NumberAnimation { duration: Theme.animationQuick; easing.type: Easing.OutCubic } }
+            Behavior on opacity { NumberAnimation { duration: Theme.animationQuick } }
 
             Loader {
                 anchors.fill: parent
@@ -188,8 +189,8 @@ Item {
             Text {
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
-                anchors.leftMargin: 10
-                anchors.bottomMargin: 8
+                anchors.leftMargin: Theme.spacingMedium
+                anchors.bottomMargin: Theme.spacing
                 visible: root.editMode
                 text: root.itemLabel(kind)
                 color: root.labelColor

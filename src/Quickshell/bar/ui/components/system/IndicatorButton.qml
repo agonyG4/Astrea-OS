@@ -7,8 +7,8 @@ Item {
     property var popupRef: null
     property bool active: popupRef ? popupRef.shown : false
     property int fixedWidth: 0
-    property int horizontalPadding: 16
-    property int backgroundMargin: 3
+    property int horizontalPadding: Theme.spacingContainer
+    property int backgroundMargin: Theme.spacingTiny
     property int backgroundRadius: Theme.radiusMedium - 2
     property color activeColor: Qt.rgba(1, 1, 1, 0.15)
     property color pressedColor: Qt.rgba(1, 1, 1, 0.12)
@@ -52,7 +52,7 @@ Item {
              : control.hovered ? control.hoverColor
              : control.idleColor
 
-        Behavior on color { ColorAnimation { duration: 100 } }
+        Behavior on color { ColorAnimation { duration: Theme.animationMicro } }
     }
 
     HoverHandler {
@@ -62,7 +62,7 @@ Item {
     Row {
         id: contentRow
         anchors.centerIn: parent
-        spacing: 4
+        spacing: Theme.spacingMicro
     }
 
     MouseArea {

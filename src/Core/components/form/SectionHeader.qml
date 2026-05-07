@@ -13,7 +13,7 @@ Item {
 
     RowLayout {
         id: layout
-        spacing: 8
+        spacing: Components.Theme.spacing
         anchors.fill: parent
 
         Text {

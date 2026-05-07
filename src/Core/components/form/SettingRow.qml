@@ -21,19 +21,19 @@ Item {
     // Interactive subtle hover background
     Rectangle {
         id: bgHighlight
-        anchors { fill: parent; leftMargin: 4; rightMargin: 4; topMargin: 2; bottomMargin: 2 }
-        radius: 10
+        anchors { fill: parent; leftMargin: Components.Theme.spacingMicro; rightMargin: Components.Theme.spacingMicro; topMargin: Components.Theme.spacingTiny; bottomMargin: Components.Theme.spacingTiny }
+        radius: Components.Theme.controlRadius
         color: rowArea.containsMouse ? sr.rowHoverBg : "transparent"
-        Behavior on color { ColorAnimation { duration: 250; easing.type: Easing.OutQuart } }
+        Behavior on color { ColorAnimation { duration: Components.Theme.animationSlow; easing.type: Easing.OutQuart } }
     }
 
     RowLayout {
-        anchors { fill: parent; leftMargin: 18; rightMargin: 18 }
-        spacing: 16
+        anchors { fill: parent; leftMargin: Components.Theme.spacingXLarge; rightMargin: Components.Theme.spacingXLarge }
+        spacing: Components.Theme.spacingLarge
 
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 4
+            spacing: Components.Theme.spacingMicro
             
             Text { 
                 text: sr.label; 
@@ -59,13 +59,13 @@ Item {
             implicitHeight: children.length > 0 ? children[0].implicitHeight : 0
             Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
             scale: rowArea.pressed ? 0.98 : 1.0
-            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+            Behavior on scale { NumberAnimation { duration: Components.Theme.animationFast; easing.type: Easing.OutCubic } }
         }
     }
 
     Rectangle {
         visible: !sr.isLast
-        anchors { bottom: parent.bottom; left: parent.left; right: parent.right; leftMargin: 18 }
+        anchors { bottom: parent.bottom; left: parent.left; right: parent.right; leftMargin: Components.Theme.spacingXLarge }
         height: 1; 
         color: sr.cardBorder
     }
