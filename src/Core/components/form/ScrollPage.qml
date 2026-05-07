@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import ".." as Components
 
 /**
  * ScrollPage - A standardized scrollable container for settings pages.
@@ -13,7 +14,7 @@ ScrollView {
     clip: true
     
     // Configurable properties
-    property real contentMargins: 28
+    property real contentMargins: Components.Theme.pageMargin
     property real maxWidth:       800  // Maximum width for the content area
     property real scrollGap:      14
     

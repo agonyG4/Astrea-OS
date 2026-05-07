@@ -27,27 +27,27 @@ Item {
 
     readonly property int maxVisible: 5
     readonly property int itemH:      36
-    readonly property int popupPad:   6
+    readonly property int popupPad:   Components.Theme.spacingSmall
     readonly property int listH: Math.min(sel.options.length, sel.maxVisible) * sel.itemH + popupPad * 2
 
     // ── Main Button ───────────────────────────────────────────────────────
     Rectangle {
         id: btnRect
         anchors.fill: parent
-        radius: 10
+        radius: Components.Theme.controlRadius
         color: btnArea.containsMouse ? Qt.rgba(1, 1, 1, 0.09) : sel.cardBg
         border.width: 1
         border.color: (dropdown.visible || btnArea.pressed) ? sel.accent : sel.cardBorder
         
         // Premium Micro-animations
         scale: btnArea.pressed ? 0.96 : (dropdown.visible ? 0.98 : 1.0)
-        Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-        Behavior on color { ColorAnimation { duration: 200 } }
-        Behavior on border.color { ColorAnimation { duration: 200 } }
+        Behavior on scale { NumberAnimation { duration: Components.Theme.animationFast; easing.type: Easing.OutCubic } }
+        Behavior on color { ColorAnimation { duration: Components.Theme.animationNormal } }
+        Behavior on border.color { ColorAnimation { duration: Components.Theme.animationNormal } }
 
         RowLayout {
-            anchors { fill: parent; leftMargin: 14; rightMargin: 12 }
-            spacing: 8
+            anchors { fill: parent; leftMargin: 14; rightMargin: Components.Theme.spacingMedium }
+            spacing: Components.Theme.spacing
             Text {
                 Layout.fillWidth: true
                 text: sel.label
@@ -56,18 +56,18 @@ Item {
                 font.pixelSize: Components.Theme.fontSizeNormal
                 font.weight: Components.Theme.fontWeightMedium
                 elide: Text.ElideRight
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: Components.Theme.animationFast } }
             }
             Text {
                 visible: !sel.isButton
                 text: dropdown.visible ? "⌃" : "⌄"
                 color: dropdown.visible ? sel.accent : sel.textSecondary
                 font.pixelSize: Components.Theme.fontSizeNormal
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: Components.Theme.animationFast } }
                 
                 // Add a subtle rotation instead of snapping character
                 rotation: dropdown.visible ? 180 : 0
-                Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutBack } }
+                Behavior on rotation { NumberAnimation { duration: Components.Theme.animationNormal; easing.type: Easing.OutBack } }
             }
             Text {
                 visible: sel.isButton
@@ -75,7 +75,7 @@ Item {
                 font.family: "JetBrainsMono Nerd Font"
                 color: btnArea.containsMouse ? sel.accent : sel.textSecondary
                 font.pixelSize: Components.Theme.fontSizeNormal
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: Components.Theme.animationFast } }
             }
         }
 
@@ -107,7 +107,7 @@ Item {
 
         background: Rectangle {
             id: popupBgRect
-            radius: 12
+            radius: Components.Theme.cornerRadiusLarge
             color: sel.popupBg
             border.width: 1
             border.color: Qt.rgba(1, 1, 1, 0.1) // slightly brighter than cardBorder for elevation
@@ -126,16 +126,16 @@ Item {
         // Extremely snappy/premium enter transition
         enter: Transition {
             ParallelAnimation {
-                NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
-                NumberAnimation { property: "scale"; from: 0.9; to: 1.0; duration: 300; easing.type: Easing.OutElastic; easing.amplitude: 0.8 }
-                NumberAnimation { property: "y"; from: sel.popupDirection === "up" ? -(sel.listH + 1) : sel.height - 5; to: sel.popupDirection === "up" ? -(sel.listH + 6) : sel.height + 6; duration: 250; easing.type: Easing.OutCubic }
+                NumberAnimation { property: "opacity"; from: 0; to: 1; duration: Components.Theme.animationNormal; easing.type: Easing.OutCubic }
+                NumberAnimation { property: "scale"; from: 0.9; to: 1.0; duration: Components.Theme.animationPopover; easing.type: Easing.OutElastic; easing.amplitude: 0.8 }
+                NumberAnimation { property: "y"; from: sel.popupDirection === "up" ? -(sel.listH + 1) : sel.height - 5; to: sel.popupDirection === "up" ? -(sel.listH + 6) : sel.height + 6; duration: Components.Theme.animationSlow; easing.type: Easing.OutCubic }
             }
         }
         exit: Transition {
             ParallelAnimation {
-                NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 150; easing.type: Easing.InCubic }
-                NumberAnimation { property: "scale"; from: 1.0; to: 0.95; duration: 150; easing.type: Easing.InCubic }
-                NumberAnimation { property: "y"; from: sel.popupDirection === "up" ? -(sel.listH + 6) : sel.height + 6; to: sel.popupDirection === "up" ? -(sel.listH + 2) : sel.height + 2; duration: 150; easing.type: Easing.InCubic }
+                NumberAnimation { property: "opacity"; from: 1; to: 0; duration: Components.Theme.animationFast; easing.type: Easing.InCubic }
+                NumberAnimation { property: "scale"; from: 1.0; to: 0.95; duration: Components.Theme.animationFast; easing.type: Easing.InCubic }
+                NumberAnimation { property: "y"; from: sel.popupDirection === "up" ? -(sel.listH + 6) : sel.height + 6; to: sel.popupDirection === "up" ? -(sel.listH + 2) : sel.height + 2; duration: Components.Theme.animationFast; easing.type: Easing.InCubic }
             }
         }
 
@@ -143,7 +143,7 @@ Item {
             id: listView
             clip: true
             model: sel.options
-            spacing: 4
+            spacing: Components.Theme.spacingMicro
             boundsBehavior: Flickable.StopAtBounds
             onVisibleChanged: if (visible && sel.selectedIndex >= 0) positionViewAtIndex(sel.selectedIndex, ListView.Contain)
 
@@ -155,18 +155,18 @@ Item {
                 readonly property bool active: sel.selectedIndex === index
                 width: listView.width
                 height: sel.itemH
-                radius: 8
+                radius: Components.Theme.cornerRadiusSmall
                 color: rowArea.pressed 
                        ? Qt.rgba(sel.accent.r, sel.accent.g, sel.accent.b, 0.25)
                        : (active ? Qt.rgba(sel.accent.r, sel.accent.g, sel.accent.b, 0.15) 
                                  : (rowArea.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent"))
                 
                 scale: rowArea.pressed ? 0.97 : 1.0
-                Behavior on scale { NumberAnimation { duration: 100 } }
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on scale { NumberAnimation { duration: Components.Theme.animationMicro } }
+                Behavior on color { ColorAnimation { duration: Components.Theme.animationFast } }
 
                 RowLayout {
-                    anchors { fill: parent; leftMargin: 12; rightMargin: 12 }
+                    anchors { fill: parent; leftMargin: Components.Theme.spacingMedium; rightMargin: Components.Theme.spacingMedium }
                     Text {
                         Layout.fillWidth: true
                         text: modelData
@@ -174,7 +174,7 @@ Item {
                         font.family: Components.Theme.fontFamily
                         font.pixelSize: Components.Theme.fontSizeNormal
                         font.weight: active ? Components.Theme.fontWeightDemiBold : Components.Theme.fontWeightMedium
-                        Behavior on color { ColorAnimation { duration: 150 } }
+                        Behavior on color { ColorAnimation { duration: Components.Theme.animationFast } }
                     }
                     Text {
                         visible: active
