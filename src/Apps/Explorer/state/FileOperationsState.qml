@@ -26,6 +26,7 @@ QtObject {
     property string archiveExtractionError: ""
     property string archiveExtractionOutputBuffer: ""
     property string archiveExtractionDestination: ""
+    property string archiveOperationMode: ""
     property int archiveExtractionDoneCount: 0
     property int archiveExtractionTotalCount: 0
     property bool appImageInstallRunning: false
@@ -120,6 +121,7 @@ QtObject {
         archiveExtractionError = ""
         archiveExtractionOutputBuffer = ""
         archiveExtractionDestination = ""
+        archiveOperationMode = "extract"
         archiveExtractionDoneCount = 0
         archiveExtractionTotalCount = 0
 
@@ -149,16 +151,75 @@ QtObject {
             "}; " +
             "total=$(count_entries | tail -n1 | tr -dc '0-9'); total=${total:-0}; " +
             "printf 'START|%s|%s|%s\\n' \"$archive_name\" \"$dest\" \"$total\"; " +
-            "log=$(mktemp); extract_archive >\"$log\" 2>&1 & pid=$!; " +
+            "log=$(mktemp); extract_archive >\"$log\" 2>&1 & pid=$!; tick=0; " +
             "while kill -0 \"$pid\" 2>/dev/null; do " +
+            "  tick=$((tick + 1)); " +
             "  done_count=$(find \"$dest\" -mindepth 1 2>/dev/null | wc -l | tr -dc '0-9'); done_count=${done_count:-0}; " +
-            "  if [ \"$total\" -gt 0 ]; then pct=$((done_count * 100 / total)); [ \"$pct\" -gt 99 ] && pct=99; else pct=0; fi; " +
+            "  if [ \"$total\" -gt 0 ] && [ \"$done_count\" -gt 0 ]; then pct=$((done_count * 100 / total)); [ \"$pct\" -gt 99 ] && pct=99; " +
+            "  else pct=$((tick * 3)); [ \"$pct\" -gt 95 ] && pct=95; fi; " +
             "  printf 'PROGRESS|%s|%s|%s\\n' \"$done_count\" \"$total\" \"$pct\"; sleep 0.2; " +
             "done; " +
             "wait \"$pid\"; code=$?; rm -f -- \"$log\"; " +
             "done_count=$(find \"$dest\" -mindepth 1 2>/dev/null | wc -l | tr -dc '0-9'); done_count=${done_count:-0}; " +
             "if [ \"$code\" -eq 0 ]; then printf 'DONE|%s|%s|%s|100\\n' \"$dest\" \"$done_count\" \"$total\"; else printf 'ERROR|%s|%s\\n' \"$dest\" \"$code\"; fi; exit \"$code\"",
             "_", archivePath, folderName || basename(archivePath)
+        ]
+        archiveExtractProcess.running = false
+        archiveExtractProcess.running = true
+    }
+
+    function startFolderCompression(folderPath, format) {
+        if (!folderPath)
+            return
+
+        archiveExtractionRunning = true
+        archiveExtractionProgress = 0
+        archiveExtractionPercent = 0
+        archiveExtractionFileName = basename(folderPath)
+        archiveExtractionStatus = "Preparando compactacao..."
+        archiveExtractionError = ""
+        archiveExtractionOutputBuffer = ""
+        archiveExtractionDestination = ""
+        archiveOperationMode = "compress"
+        archiveExtractionDoneCount = 0
+        archiveExtractionTotalCount = 0
+
+        archiveExtractProcess.command = [
+            "bash", "-lc",
+            "folder=\"$1\"; format=\"$2\"; " +
+            "[ -d \"$folder\" ] || { printf 'ERROR||not-dir\\n'; exit 1; }; " +
+            "parent=$(dirname -- \"$folder\"); name=$(basename -- \"$folder\"); " +
+            "case \"$format\" in " +
+            "  zip) ext='zip' ;; " +
+            "  rar) ext='rar' ;; " +
+            "  tar) ext='tar' ;; " +
+            "  tar.gz) ext='tar.gz' ;; " +
+            "  tar.xz) ext='tar.xz' ;; " +
+            "  *) printf 'ERROR||bad-format\\n'; exit 1 ;; " +
+            "esac; " +
+            "target=\"$parent/$name.$ext\"; n=2; while [ -e \"$target\" ]; do target=\"$parent/$name $n.$ext\"; n=$((n+1)); done; " +
+            "total=$(find \"$folder\" -mindepth 1 2>/dev/null | wc -l | tr -dc '0-9'); total=${total:-0}; " +
+            "printf 'START|%s|%s|%s\\n' \"$name\" \"$target\" \"$total\"; " +
+            "compress_archive() { " +
+            "  cd \"$parent\" || return 1; " +
+            "  case \"$format\" in " +
+            "    zip) command -v zip >/dev/null 2>&1 || return 127; zip -qr \"$target\" \"$name\" ;; " +
+            "    rar) command -v rar >/dev/null 2>&1 || return 127; rar a -idq \"$target\" \"$name\" ;; " +
+            "    tar) tar -cf \"$target\" -- \"$name\" ;; " +
+            "    tar.gz) tar -czf \"$target\" -- \"$name\" ;; " +
+            "    tar.xz) tar -cJf \"$target\" -- \"$name\" ;; " +
+            "  esac; " +
+            "}; " +
+            "compress_archive & pid=$!; tick=0; " +
+            "while kill -0 \"$pid\" 2>/dev/null; do " +
+            "  tick=$((tick + 1)); " +
+            "  pct=$((tick * 2)); [ \"$pct\" -gt 95 ] && pct=95; " +
+            "  done_count=0; [ \"$total\" -gt 0 ] && [ \"$pct\" -gt 0 ] && done_count=$(((total * pct + 99) / 100)); " +
+            "  printf 'PROGRESS|%s|%s|%s\\n' \"$done_count\" \"$total\" \"$pct\"; sleep 0.25; " +
+            "done; " +
+            "wait \"$pid\"; code=$?; " +
+            "if [ \"$code\" -eq 0 ]; then printf 'DONE|%s|%s|%s|100\\n' \"$target\" \"$total\" \"$total\"; else rm -f -- \"$target\"; printf 'ERROR|%s|%s\\n' \"$target\" \"$code\"; fi; exit \"$code\"",
+            "_", folderPath, format || "zip"
         ]
         archiveExtractProcess.running = false
         archiveExtractProcess.running = true
@@ -174,7 +235,9 @@ QtObject {
             archiveExtractionDestination = parts[2] || archiveExtractionDestination
             archiveExtractionTotalCount = Number(parts[3] || 0)
             archiveExtractionDoneCount = 0
-            archiveExtractionStatus = "Extraindo..."
+            archiveExtractionStatus = archiveExtractionStatus.indexOf("compact") !== -1
+                ? "Compactando..."
+                : "Extraindo..."
             archiveExtractionPercent = 0
             archiveExtractionProgress = 0
         } else if (parts[0] === "PROGRESS") {
@@ -185,20 +248,25 @@ QtObject {
             archiveExtractionTotalCount = Number(parts[2] || archiveExtractionTotalCount)
             archiveExtractionPercent = Math.max(0, Math.min(99, Math.round(percent)))
             archiveExtractionProgress = archiveExtractionPercent / 100
+            var verb = archiveExtractionStatus.indexOf("Compact") === 0 ? "Compactando" : "Extraindo"
             archiveExtractionStatus = archiveExtractionPercent > 0
-                ? ("Extraindo... " + archiveExtractionPercent + "%")
-                : "Extraindo..."
+                ? (verb + "... " + archiveExtractionPercent + "%")
+                : (verb + "...")
         } else if (parts[0] === "DONE") {
             archiveExtractionDestination = parts[1] || archiveExtractionDestination
             archiveExtractionDoneCount = Number(parts[2] || archiveExtractionDoneCount)
             archiveExtractionTotalCount = Number(parts[3] || archiveExtractionTotalCount)
             archiveExtractionPercent = 100
             archiveExtractionProgress = 1
-            archiveExtractionStatus = "Extracao concluida"
+            archiveExtractionStatus = archiveExtractionStatus.indexOf("Compact") === 0
+                ? "Compactacao concluida"
+                : "Extracao concluida"
             archiveExtractionError = ""
         } else if (parts[0] === "ERROR") {
             archiveExtractionDestination = parts[1] || archiveExtractionDestination
-            archiveExtractionError = "Falha ao extrair"
+            archiveExtractionError = archiveExtractionStatus.indexOf("Compact") === 0
+                ? "Falha ao compactar"
+                : "Falha ao extrair"
             archiveExtractionStatus = archiveExtractionError
         }
     }
@@ -523,14 +591,18 @@ QtObject {
             if (exitCode === 0) {
                 ops.archiveExtractionPercent = 100
                 ops.archiveExtractionProgress = 1
-                ops.archiveExtractionStatus = "Extracao concluida"
+                ops.archiveExtractionStatus = ops.archiveOperationMode === "compress"
+                    ? "Compactacao concluida"
+                    : "Extracao concluida"
                 ops.archiveExtractionError = ""
-                if (ops.archiveExtractionDestination !== "")
-                    app.navigateTo(ops.archiveExtractionDestination)
-                else
-                    app.refreshCurrentFolder()
+            if (ops.archiveOperationMode === "extract" && ops.archiveExtractionDestination !== "")
+                app.navigateTo(ops.archiveExtractionDestination)
+            else
+                app.refreshCurrentFolder()
             } else {
-                ops.archiveExtractionError = "Falha ao extrair"
+                ops.archiveExtractionError = ops.archiveOperationMode === "compress"
+                    ? "Falha ao compactar"
+                    : "Falha ao extrair"
                 ops.archiveExtractionStatus = ops.archiveExtractionError
                 app.refreshCurrentFolder()
             }
@@ -549,6 +621,7 @@ QtObject {
             ops.archiveExtractionStatus = ""
             ops.archiveExtractionError = ""
             ops.archiveExtractionDestination = ""
+            ops.archiveOperationMode = ""
             ops.archiveExtractionDoneCount = 0
             ops.archiveExtractionTotalCount = 0
         }

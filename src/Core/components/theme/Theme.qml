@@ -120,6 +120,7 @@ Item {
     readonly property color accent:        accentHex
     readonly property color textPrimary:   themeMode === 1 ? "#111111" : "#ffffff"
     readonly property color textSecondary: themeMode === 1 ? "#5f6368" : "#98989f"
+    readonly property color textTertiary:  themeMode === 1 ? "#8e8e93" : "#b9b9c2"
     readonly property color cardBg: {
         if (shellStyle === 0 || shellStyle === 2)
             return themeMode === 1 ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.035)

@@ -54,12 +54,15 @@ Item {
         return text
     }
 
-    function startScan() {
+    function startScan(showLoading) {
         if (scanProc.running)
             return
+        if (showLoading === undefined)
+            showLoading = true
         errorMessage = ""
         scanning = true
-        loading = true
+        if (showLoading)
+            loading = true
         scanTimeout.restart()
         scanProc.running = true
     }
@@ -87,8 +90,12 @@ Item {
                     }
                     if (d.error === "No cache found" && !root.autoScanStarted) {
                         root.autoScanStarted = true
-                        root.startScan()
+                        root.startScan(true)
                         return
+                    }
+                    if (!d.error && d.cache_updated_ago_seconds > 86400 && root.storageData.length > 0 && !root.autoScanStarted) {
+                        root.autoScanStarted = true
+                        root.startScan(false)
                     }
                 } catch (e) {
                     root.errorMessage = "Could not parse storage data"
@@ -110,7 +117,7 @@ Item {
             root.scanning = false
             if (exitCode !== 0) {
                 root.loading = false
-                root.errorMessage = "Could not scan storage"
+                root.errorMessage = root.storageData.length > 0 ? "" : "Could not scan storage"
                 return
             }
             root.loading = true

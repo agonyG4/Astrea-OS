@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 
+import argparse
 import configparser
 import json
 import os
+import shutil
+import stat
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -82,6 +87,35 @@ def application_dirs() -> list[Path]:
     return deduped
 
 
+def xdg_desktop_dir() -> Path:
+    config_path = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "user-dirs.dirs"
+    fallback = Path.home() / "Desktop"
+
+    try:
+        for line in config_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = line.strip()
+            if not line.startswith("XDG_DESKTOP_DIR="):
+                continue
+            value = line.split("=", 1)[1].strip().strip('"')
+            value = value.replace("$HOME", str(Path.home()))
+            return Path(os.path.expandvars(value)).expanduser()
+    except Exception:
+        pass
+
+    return fallback
+
+
+def is_protected_app(app: dict) -> bool:
+    app_id = (app.get("id") or "").casefold()
+    desktop_file = (app.get("desktop_file") or "").casefold()
+    name = (app.get("name") or "").casefold()
+    return (
+        app_id == "astrea-settings.desktop"
+        or desktop_file.endswith("/astrea-settings.desktop")
+        or name in {"astrea settings", "settings"} and app_id.startswith("astrea-settings")
+    )
+
+
 def parse_desktop_file(path: Path, source: str) -> dict | None:
     parser = configparser.ConfigParser(interpolation=None, strict=False)
     parser.optionxform = str
@@ -122,6 +156,7 @@ def parse_desktop_file(path: Path, source: str) -> dict | None:
         "categories": categories,
         "desktop_file": str(path),
         "source": source,
+        "protected": path.name == "astrea-settings.desktop",
     }
 
 
@@ -151,8 +186,97 @@ def list_apps() -> dict:
     }
 
 
+def find_app(identifier: str) -> dict:
+    needle = str(Path(identifier).expanduser()) if "/" in identifier else identifier
+
+    for app in list_apps()["apps"]:
+        if identifier == app["id"] or needle == app["desktop_file"]:
+            return app
+
+    path = Path(identifier).expanduser()
+    if path.is_file():
+        parsed = parse_desktop_file(path, "user" if str(path).startswith(str(Path.home())) else "system")
+        if parsed:
+            return parsed
+
+    raise FileNotFoundError(f"App não encontrado: {identifier}")
+
+
+def refresh_desktop_index() -> None:
+    script = Path.home() / ".local/share/Astrea/Quickshell/desktop/app_index.py"
+    if script.is_file():
+        subprocess.run(["python3", str(script), "--json", "--write"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def create_desktop_shortcut(source: Path, desktop_dir: Path | None = None) -> dict:
+    source = source.expanduser()
+    if not source.is_file():
+        raise FileNotFoundError(f"Desktop file não existe: {source}")
+
+    desktop_dir = desktop_dir or xdg_desktop_dir()
+    desktop_dir.mkdir(parents=True, exist_ok=True)
+    target = desktop_dir / source.name
+    shutil.copy2(source, target)
+    target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    refresh_desktop_index()
+    return {"ok": True, "message": "Atalho criado na area de trabalho", "target": str(target)}
+
+
+def open_location(path: Path) -> dict:
+    target = path.expanduser()
+    if target.is_file():
+        target = target.parent
+    if not target.exists():
+        raise FileNotFoundError(f"Local não encontrado: {target}")
+
+    subprocess.Popen(["xdg-open", str(target)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return {"ok": True, "message": "Local do arquivo aberto", "target": str(target)}
+
+
+def uninstall_app(app: dict) -> dict:
+    if is_protected_app(app):
+        raise PermissionError("Settings é protegido e não pode ser desinstalado")
+
+    desktop_file = Path(app["desktop_file"]).expanduser()
+    if app.get("source") == "user" and desktop_file.is_file():
+        desktop_file.unlink()
+        refresh_desktop_index()
+        return {"ok": True, "message": "App removido da lista de aplicativos", "target": str(desktop_file)}
+
+    raise PermissionError("Este app é do sistema. Desinstale pelo gerenciador de pacotes.")
+
+
+def action_result(action: str, identifier: str) -> dict:
+    app = find_app(identifier)
+    if action == "create-shortcut":
+        return create_desktop_shortcut(Path(app["desktop_file"]))
+    if action == "open-location":
+        return open_location(Path(app["desktop_file"]))
+    if action == "uninstall":
+        return uninstall_app(app)
+    raise ValueError(f"Ação desconhecida: {action}")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="List and manage desktop applications for Astrea Settings.")
+    parser.add_argument("action", nargs="?", default="list", choices=["list", "create-shortcut", "open-location", "uninstall"])
+    parser.add_argument("identifier", nargs="?")
+    return parser.parse_args()
+
+
 def main() -> None:
-    print(json.dumps(list_apps(), ensure_ascii=False))
+    args = parse_args()
+    try:
+        if args.action == "list":
+            result = list_apps()
+        else:
+            if not args.identifier:
+                raise ValueError("Identificador do app ausente")
+            result = action_result(args.action, args.identifier)
+        print(json.dumps(result, ensure_ascii=False))
+    except Exception as exc:
+        print(json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False))
+        sys.exit(1)
 
 
 if __name__ == "__main__":

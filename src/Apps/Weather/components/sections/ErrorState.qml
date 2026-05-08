@@ -1,7 +1,8 @@
 import QtQuick.Controls 2.15
-import "../common" as Common
+import "../../AstreaComponents" as UI
+import "../common" as WeatherCommon
 
-Common.TextLabel {
+UI.TextLabel {
     property var colors
 
     anchors.centerIn: parent

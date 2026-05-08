@@ -466,17 +466,10 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true
                             Text { text: "Show on all workspaces"; font.pixelSize: 13; color: root.textPrimary; Layout.fillWidth: true }
-                            Rectangle {
-                                id: wsToggle; width: 36; height: 20; radius: 10; property bool on: true
-                                color: on ? root.accent : Qt.rgba(1,1,1,0.18)
-                                Behavior on color { ColorAnimation { duration: 150 } }
-                                Rectangle {
-                                    width: 14; height: 14; radius: 7; color: "#fff"
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    x: parent.on ? parent.width-width-3 : 3
-                                    Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                                }
-                                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: parent.on=!parent.on }
+                            ToggleSwitch {
+                                id: wsToggle
+                                checked: true
+                                onToggled: checked = !checked
                             }
                         }
 

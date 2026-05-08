@@ -1,7 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
-import "../common" as Common
-import "../.."
+import "../../AstreaComponents" as UI
+import "../common" as WeatherCommon
 
 ColumnLayout {
     property var weatherData
@@ -13,8 +13,8 @@ ColumnLayout {
     Rectangle {
         Layout.fillWidth: true
         implicitHeight: 160
-        radius: Theme.cardRadius
-        color: Theme.cardBg
+        radius: UI.Theme.cardRadius
+        color: UI.Theme.cardBg
         opacity: 0.92
 
         ColumnLayout {
@@ -23,19 +23,19 @@ ColumnLayout {
             anchors.margins: 14
             spacing: 8
 
-            Common.TextLabel {
+            UI.TextLabel {
                 text: "QUALIDADE DO AR"
-                font.pixelSize: Theme.fontSmall
+                font.pixelSize: UI.Theme.fontSizeSmall
                 font.weight: 600
-                textColor: Theme.textTertiary
+                textColor: UI.Theme.textTertiary
                 Layout.fillWidth: true
             }
 
-            Common.DisplayLabel {
+            UI.DisplayLabel {
                 text: aqiText(weatherData ? weatherData.aqi : 0)
                 font.pixelSize: 18
                 font.weight: 500
-                textColor: Theme.textPrimary
+                textColor: UI.Theme.textPrimary
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
@@ -75,10 +75,10 @@ ColumnLayout {
 
             Item { Layout.fillHeight: true }
 
-            Common.TextLabel {
+            UI.TextLabel {
                 text: "O nível é " + (weatherData ? weatherData.aqi : 0) + "."
-                font.pixelSize: Theme.fontSmall
-                textColor: Theme.textTertiary
+                font.pixelSize: UI.Theme.fontSizeSmall
+                textColor: UI.Theme.textTertiary
                 Layout.fillWidth: true
             }
         }

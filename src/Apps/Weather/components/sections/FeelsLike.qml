@@ -1,7 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
-import "../common" as Common
-import "../.."
+import "../../AstreaComponents" as UI
+import "../common" as WeatherCommon
 
 ColumnLayout {
     property var weatherData
@@ -13,8 +13,8 @@ ColumnLayout {
     Rectangle {
         Layout.fillWidth: true
         implicitHeight: 160
-        radius: Theme.cardRadius
-        color: Theme.cardBg
+        radius: UI.Theme.cardRadius
+        color: UI.Theme.cardBg
         opacity: 0.92
 
         ColumnLayout {
@@ -23,24 +23,24 @@ ColumnLayout {
             anchors.margins: 14
             spacing: 8
 
-            Common.TextLabel {
+            UI.TextLabel {
                 text: "SENSAÇÃO TÉRMICA"
-                font.pixelSize: Theme.fontSmall
+                font.pixelSize: UI.Theme.fontSizeSmall
                 font.weight: 600
-                textColor: Theme.textTertiary
+                textColor: UI.Theme.textTertiary
                 Layout.fillWidth: true
             }
 
-            Common.DisplayLabel {
+            UI.DisplayLabel {
                 text: (weatherData ? weatherData.feels_like : "--") + "°"
-                font.pixelSize: Theme.fontLarge
+                font.pixelSize: UI.Theme.fontSizeIconLarge
                 font.weight: 500
-                textColor: Theme.textPrimary
+                textColor: UI.Theme.textPrimary
             }
 
             Item { Layout.fillHeight: true }
 
-            Common.TextLabel {
+            UI.TextLabel {
                 id: messageLabel
                 text: {
                     if (!weatherData) return ""
@@ -54,7 +54,7 @@ ColumnLayout {
                     }
                     return "Igual à temperatura real."
                 }
-                font.pixelSize: Theme.fontRegular
+                font.pixelSize: UI.Theme.fontSizeLarge
                 textColor: "#F2F2F7"
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true

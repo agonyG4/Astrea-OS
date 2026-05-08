@@ -189,6 +189,7 @@ QtObject {
     function restoreSelected() { fileOps.restoreSelected() }
     function emptyTrash() { fileOps.emptyTrash() }
     function startArchiveExtraction(archivePath, folderName) { fileOps.startArchiveExtraction(archivePath, folderName) }
+    function startFolderCompression(folderPath, format) { fileOps.startFolderCompression(folderPath, format) }
     function isAppImageFileName(fileName) { return String(fileName || "").toLowerCase().endsWith(".appimage") }
     function installAppImage(path) { fileOps.installAppImage(path) }
 

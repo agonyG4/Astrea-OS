@@ -1,7 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
-import "../common" as Common
-import "../.."
+import "../../AstreaComponents" as UI
+import "../common" as WeatherCommon
 
 ColumnLayout {
     property var weatherData
@@ -14,8 +14,8 @@ ColumnLayout {
     Rectangle {
         Layout.fillWidth: true
         implicitHeight: weeklyColumn.implicitHeight + 20
-        radius: Theme.cardRadius
-        color: Theme.cardBg
+        radius: UI.Theme.cardRadius
+        color: UI.Theme.cardBg
         opacity: 0.92
 
         ColumnLayout {
@@ -28,16 +28,16 @@ ColumnLayout {
                 Layout.fillWidth: true
                 Layout.bottomMargin: 8
 
-                Common.TextLabel {
+                UI.TextLabel {
                     text: "10 dias de previsão"
-                    font.pixelSize: Theme.fontSmall
+                    font.pixelSize: UI.Theme.fontSizeSmall
                     font.weight: 500
-                    textColor: Theme.textTertiary
+                    textColor: UI.Theme.textTertiary
                     Layout.fillWidth: true
                 }
             }
 
-            Common.Divider {
+            UI.Divider {
                 lineColor: "#4A4A50"
             }
 
@@ -56,11 +56,11 @@ ColumnLayout {
                             anchors.fill: parent
                             spacing: 0
 
-                            Common.TextLabel {
+                            UI.TextLabel {
                                 text: index === 0 ? "Hoje" : modelData.day
-                                font.pixelSize: Theme.fontMedium
+                                font.pixelSize: UI.Theme.fontSizeTitle
                                 font.weight: 400
-                                textColor: Theme.textPrimary
+                                textColor: UI.Theme.textPrimary
                                 Layout.preferredWidth: 76
                             }
 
@@ -69,27 +69,27 @@ ColumnLayout {
                                 Layout.alignment: Qt.AlignVCenter
                                 spacing: 0
 
-                                Common.WeatherIcon {
+                                WeatherCommon.WeatherIcon {
                                     condition: modelData.cond
                                     iconSize: 22
                                     Layout.alignment: Qt.AlignHCenter
                                 }
 
-                                Common.TextLabel {
+                                UI.TextLabel {
                                     visible: (modelData.rain || 0) > 0
                                     text: modelData.rain + "%"
-                                    font.pixelSize: Theme.fontTiny
+                                    font.pixelSize: UI.Theme.fontSizeMicro
                                     font.weight: 500
-                                    textColor: Theme.rain
+                                    textColor: "#9CC7FF"
                                     Layout.alignment: Qt.AlignHCenter
                                 }
                             }
 
-                            Common.TextLabel {
+                            UI.TextLabel {
                                 text: modelData.lo + "°"
                                 font.pixelSize: 14
                                 font.weight: 400
-                                textColor: Theme.textTertiary
+                                textColor: UI.Theme.textTertiary
                                 horizontalAlignment: Text.AlignRight
                                 Layout.preferredWidth: 38
                             }
@@ -105,15 +105,15 @@ ColumnLayout {
                                     height: parent.height
                                     anchors.right: parent.right
                                     radius: 2
-                                    color: Theme.sun
+                                    color: "#F5D44A"
                                 }
                             }
 
-                            Common.TextLabel {
+                            UI.TextLabel {
                                 text: modelData.hi + "°"
                                 font.pixelSize: 14
                                 font.weight: 400
-                                textColor: Theme.textPrimary
+                                textColor: UI.Theme.textPrimary
                                 horizontalAlignment: Text.AlignRight
                                 Layout.preferredWidth: 38
                             }
@@ -127,7 +127,7 @@ ColumnLayout {
                         }
                     }
 
-                    Common.Divider {
+                    UI.Divider {
                         lineColor: "#424248"
                         visible: index < Math.min(10, weatherData ? weatherData.weekly.length : 0) - 1
                     }

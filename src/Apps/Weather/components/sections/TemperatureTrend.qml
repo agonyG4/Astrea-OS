@@ -1,7 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
-import "../common" as Common
-import "../.."
+import "../../AstreaComponents" as UI
+import "../common" as WeatherCommon
 
 ColumnLayout {
     property var weatherData
@@ -13,8 +13,8 @@ ColumnLayout {
     Rectangle {
         Layout.fillWidth: true
         implicitHeight: 160
-        radius: Theme.cardRadius
-        color: Theme.cardBg
+        radius: UI.Theme.cardRadius
+        color: UI.Theme.cardBg
         opacity: 0.92
 
         ColumnLayout {
@@ -23,11 +23,11 @@ ColumnLayout {
             anchors.margins: 14
             spacing: 8
 
-            Common.TextLabel {
+            UI.TextLabel {
                 text: "MÉDIA DE TEMP"
-                font.pixelSize: Theme.fontSmall
+                font.pixelSize: UI.Theme.fontSizeSmall
                 font.weight: 600
-                textColor: Theme.textTertiary
+                textColor: UI.Theme.textTertiary
                 Layout.fillWidth: true
             }
 
@@ -36,39 +36,39 @@ ColumnLayout {
                 spacing: 2
                 visible: weatherData && weatherData.temp_history_avg !== undefined && weatherData.temp_history_avg !== null
 
-                Common.DisplayLabel {
+                UI.DisplayLabel {
                     property int diff: (weatherData && weatherData.temp_history_avg !== undefined && weatherData.temp_history_avg !== null) ? (weatherData.temp - weatherData.temp_history_avg) : 0
                     text: (diff > 0 ? "+" : "") + diff + "°"
-                    font.pixelSize: Theme.fontLarge
+                    font.pixelSize: UI.Theme.fontSizeIconLarge
                     font.weight: 500
-                    textColor: Theme.textPrimary
+                    textColor: UI.Theme.textPrimary
                 }
 
-                Common.TextLabel {
+                UI.TextLabel {
                     property int diff: (weatherData && weatherData.temp_history_avg !== undefined && weatherData.temp_history_avg !== null) ? (weatherData.temp - weatherData.temp_history_avg) : 0
                     text: diff === 0 ? "Na média." :
                           Math.abs(diff) + "° " + (diff > 0 ? "acima" : "abaixo")
-                    font.pixelSize: Theme.fontRegular
+                    font.pixelSize: UI.Theme.fontSizeLarge
                     textColor: "#F2F2F7"
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                 }
             }
 
-            Common.TextLabel {
+            UI.TextLabel {
                 visible: !weatherData || weatherData.temp_history_avg === undefined || weatherData.temp_history_avg === null
                 text: "Dados indisponíveis."
-                font.pixelSize: Theme.fontRegular
-                textColor: Theme.textTertiary
+                font.pixelSize: UI.Theme.fontSizeLarge
+                textColor: UI.Theme.textTertiary
                 Layout.fillWidth: true
             }
             
             Item { Layout.fillHeight: true }
 
-            Common.TextLabel {
+            UI.TextLabel {
                 text: "Média: " + (weatherData && weatherData.temp_history_avg !== undefined && weatherData.temp_history_avg !== null ? weatherData.temp_history_avg : "--") + "°"
-                font.pixelSize: Theme.fontSmall
-                textColor: Theme.textTertiary
+                font.pixelSize: UI.Theme.fontSizeSmall
+                textColor: UI.Theme.textTertiary
                 Layout.fillWidth: true
             }
         }

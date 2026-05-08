@@ -22,6 +22,10 @@ ScrollPage {
     property string errorMessage: ""
     property string searchText: ""
     property string _appsBuf: ""
+    property string _actionBuf: ""
+    property string actionMessage: ""
+    property bool actionError: false
+    property string expandedAppId: ""
     property var appsData: ({ apps: [], total: 0 })
 
     readonly property var filteredApps: appsData.apps.filter(function(app) {
@@ -43,6 +47,33 @@ ScrollPage {
         root.errorMessage = ""
         root._appsBuf = ""
         appsProc.running = true
+    }
+
+    function appIdentifier(app) {
+        return app ? (app.desktop_file || app.id || "") : ""
+    }
+
+    function isProtectedApp(app) {
+        if (!app)
+            return false
+        return app.protected === true || (app.id || "") === "astrea-settings.desktop"
+    }
+
+    function toggleExpanded(app) {
+        const id = root.appIdentifier(app)
+        root.expandedAppId = root.expandedAppId === id ? "" : id
+    }
+
+    function runAction(action, app) {
+        if (!app || actionProc.running)
+            return
+
+        root.actionMessage = ""
+        root.actionError = false
+        root._actionBuf = ""
+        actionProc.currentAction = action
+        actionProc.command = ["python3", root.scriptPath, action, root.appIdentifier(app)]
+        actionProc.running = true
     }
 
     Component.onCompleted: reloadApps()
@@ -70,6 +101,31 @@ ScrollPage {
         }
     }
 
+    Process {
+        id: actionProc
+        property string currentAction: ""
+        command: []
+        running: false
+        stdout: SplitParser {
+            onRead: line => root._actionBuf += line
+        }
+        onExited: code => {
+            let payload = ({})
+            try {
+                payload = JSON.parse(root._actionBuf || "{}")
+            } catch (e) {
+                payload = ({ message: "Erro lendo resposta da ação: " + e })
+            }
+
+            root.actionError = code !== 0 || payload.ok === false
+            root.actionMessage = payload.message || (root.actionError ? "Ação falhou" : "Ação concluída")
+            root._actionBuf = ""
+
+            if (!root.actionError && (currentAction === "create-shortcut" || currentAction === "uninstall"))
+                root.reloadApps()
+        }
+    }
+
     component AppRow: Item {
         id: rowItem
         required property var modelData
@@ -78,7 +134,9 @@ ScrollPage {
 
         implicitWidth: parent ? parent.width : 200
         readonly property bool hasComment: !!(modelData.comment && modelData.comment !== "")
-        implicitHeight: hasComment ? 68 : 56
+        readonly property bool expanded: root.expandedAppId === root.appIdentifier(modelData)
+        readonly property int baseHeight: hasComment ? 68 : 56
+        implicitHeight: baseHeight + (expanded ? 124 : 0)
 
         Rectangle {
             anchors {
@@ -89,10 +147,13 @@ ScrollPage {
                 bottomMargin: 6
             }
             radius: 12
-            color: rowArea.containsMouse ? Qt.rgba(1, 1, 1, 0.04) : "transparent"
-            border.width: rowArea.containsMouse ? 1 : 0
-            border.color: Qt.rgba(1, 1, 1, 0.04)
+            color: rowItem.expanded
+                ? Qt.rgba(1, 1, 1, 0.055)
+                : (rowArea.containsMouse ? Qt.rgba(1, 1, 1, 0.04) : "transparent")
+            border.width: rowItem.expanded || rowArea.containsMouse ? 1 : 0
+            border.color: rowItem.expanded ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.35) : Qt.rgba(1, 1, 1, 0.04)
             Behavior on color { ColorAnimation { duration: 180 } }
+            Behavior on border.color { ColorAnimation { duration: 180 } }
         }
 
         Item {
@@ -102,7 +163,8 @@ ScrollPage {
                 right: parent.right
                 leftMargin: 22
                 rightMargin: 22
-                verticalCenter: parent.verticalCenter
+                top: parent.top
+                topMargin: rowItem.hasComment ? 13 : 10
             }
             height: parent.hasComment ? 42 : 36
 
@@ -159,6 +221,7 @@ ScrollPage {
                     left: iconBox.right
                     leftMargin: 14
                     right: parent.right
+                    rightMargin: 28
                     verticalCenter: parent.verticalCenter
                 }
                 spacing: rowItem.hasComment ? 2 : 0
@@ -184,6 +247,65 @@ ScrollPage {
                     elide: Text.ElideRight
                 }
             }
+
+            Text {
+                anchors {
+                    right: parent.right
+                    verticalCenter: parent.verticalCenter
+                }
+                text: rowItem.expanded ? "⌃" : "⌄"
+                color: root.textSecondary
+                font.pixelSize: 14
+                rotation: rowItem.expanded ? 180 : 0
+                Behavior on rotation { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
+            }
+        }
+
+        ColumnLayout {
+            id: actionPanel
+            anchors {
+                left: parent.left
+                right: parent.right
+                top: rowContent.bottom
+                leftMargin: 22
+                rightMargin: 22
+                topMargin: 12
+            }
+            spacing: 8
+            visible: rowItem.expanded
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: root.cardBorder
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                ActionChip {
+                    Layout.fillWidth: true
+                    label: "Criar atalho"
+                    enabled: !actionProc.running
+                    onTriggered: root.runAction("create-shortcut", rowItem.modelData)
+                }
+
+                ActionChip {
+                    Layout.fillWidth: true
+                    label: "Abrir local"
+                    enabled: !actionProc.running
+                    onTriggered: root.runAction("open-location", rowItem.modelData)
+                }
+            }
+
+            ActionChip {
+                Layout.fillWidth: true
+                label: root.isProtectedApp(rowItem.modelData) ? "Settings protegido" : "Desinstalar"
+                destructive: !root.isProtectedApp(rowItem.modelData)
+                enabled: !root.isProtectedApp(rowItem.modelData) && !actionProc.running
+                onTriggered: root.runAction("uninstall", rowItem.modelData)
+            }
         }
 
         Rectangle {
@@ -201,8 +323,58 @@ ScrollPage {
 
         MouseArea {
             id: rowArea
-            anchors.fill: parent
+            anchors {
+                left: parent.left
+                right: parent.right
+                top: parent.top
+            }
+            height: rowItem.baseHeight
             hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            acceptedButtons: Qt.LeftButton
+            onClicked: root.toggleExpanded(rowItem.modelData)
+        }
+    }
+
+    component ActionChip: Rectangle {
+        id: chip
+        property string label: ""
+        property bool destructive: false
+        signal triggered()
+
+        implicitHeight: 34
+        radius: 9
+        color: chip.enabled
+            ? (chipMouse.containsMouse ? Qt.rgba(1, 1, 1, 0.1) : Qt.rgba(1, 1, 1, 0.055))
+            : Qt.rgba(1, 1, 1, 0.035)
+        border.width: 1
+        border.color: chip.enabled && chip.destructive
+            ? Qt.rgba(root.errorColor.r, root.errorColor.g, root.errorColor.b, 0.38)
+            : root.cardBorder
+        Behavior on color { ColorAnimation { duration: 120 } }
+
+        Text {
+            anchors.centerIn: parent
+            width: parent.width - 20
+            text: chip.label
+            color: !chip.enabled
+                ? root.textSecondary
+                : (chip.destructive ? root.errorColor : root.textPrimary)
+            opacity: chip.enabled ? 1 : 0.55
+            font.family: Theme.fontFamily
+            font.pixelSize: 12
+            font.weight: Font.Medium
+            horizontalAlignment: Text.AlignHCenter
+            elide: Text.ElideRight
+        }
+
+        MouseArea {
+            id: chipMouse
+            anchors.fill: parent
+            enabled: chip.enabled
+            hoverEnabled: true
+            cursorShape: chip.enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onClicked: chip.triggered()
         }
     }
 
@@ -297,6 +469,15 @@ ScrollPage {
                     visible: root.errorMessage !== ""
                     text: root.errorMessage
                     color: root.errorColor
+                    font.pixelSize: 12
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+
+                Text {
+                    visible: root.actionMessage !== ""
+                    text: root.actionMessage
+                    color: root.actionError ? root.errorColor : root.textSecondary
                     font.pixelSize: 12
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true

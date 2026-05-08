@@ -129,29 +129,6 @@ Item {
         loadConfigProc.running = true
     }
 
-    // ── Inline Components ─────────────────────────────────────────────────
-    component ToggleSwitch: Rectangle {
-        id: toggle
-        width: 36; height: 20; radius: 10
-        implicitWidth: 36; implicitHeight: 20
-        property bool checked: false
-        signal toggled()
-        color: checked ? root.accent : Qt.rgba(1, 1, 1, 0.18)
-        Behavior on color { ColorAnimation { duration: 150 } }
-        Rectangle {
-            width: 14; height: 14; radius: 7; color: "#fff"
-            anchors.verticalCenter: parent.verticalCenter
-            x: toggle.checked ? parent.width - width - 3 : 3
-            Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-        }
-        MouseArea { 
-            anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-            onClicked: { 
-                toggle.toggled() 
-            }
-        }
-    }
-
     // ── Layout ────────────────────────────────────────────────────────────
     ScrollView {
         anchors.fill: parent

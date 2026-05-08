@@ -1,10 +1,10 @@
 import Quickshell
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
-import "components/common" as Common
+import "AstreaComponents" as UI
+import "components/common" as WeatherCommon
 import "components/sections" as Sections
 import "state" as State
-import "."
 
 FloatingWindow {
     id: root
@@ -16,6 +16,12 @@ FloatingWindow {
     property var selectedDay: null
     property var selectedAlert: null
     property bool settingsOpen: false
+    readonly property var colors: ({
+        primary: UI.Theme.textPrimary,
+        secondary: UI.Theme.textSecondary,
+        tertiary: UI.Theme.textTertiary,
+        error: UI.Theme.errorColor
+    })
 
     function rainHours(day) {
         if (!day || !day.hours)
@@ -38,10 +44,6 @@ FloatingWindow {
             Qt.quit()
     }
 
-    State.ThemeState {
-        id: theme
-    }
-
     State.WeatherState {
         id: weather
     }
@@ -57,13 +59,13 @@ FloatingWindow {
 
         Sections.LoadingState {
             visible: weather.loading
-            colors: theme.colors
+            colors: root.colors
         }
 
         Sections.ErrorState {
             visible: !weather.loading && weather.errorMsg !== ""
             text: weather.errorMsg
-            colors: theme.colors
+            colors: root.colors
         }
 
         Flickable {
@@ -84,12 +86,12 @@ FloatingWindow {
 
                 Sections.CurrentSummary {
                     weatherData: weather.weatherData
-                    colors: theme.colors
+                    colors: root.colors
                 }
 
                 Sections.WeatherAlerts {
                     weatherData: weather.weatherData
-                    colors: theme.colors
+                    colors: root.colors
                     onAlertSelected: function(alert) {
                         root.selectedAlert = alert
                     }
@@ -97,12 +99,12 @@ FloatingWindow {
 
                 Sections.HourlyForecast {
                     weatherData: weather.weatherData
-                    colors: theme.colors
+                    colors: root.colors
                 }
 
                 Sections.WeeklyForecast {
                     weatherData: weather.weatherData
-                    colors: theme.colors
+                    colors: root.colors
                     onDaySelected: function(day) {
                         root.selectedDay = day
                     }
@@ -116,14 +118,14 @@ FloatingWindow {
                         Layout.fillWidth: true
                         Layout.preferredWidth: 1
                         weatherData: weather.weatherData
-                        colors: theme.colors
+                        colors: root.colors
                     }
                     
                     Sections.TemperatureTrend {
                         Layout.fillWidth: true
                         Layout.preferredWidth: 1
                         weatherData: weather.weatherData
-                        colors: theme.colors
+                        colors: root.colors
                     }
                 }
 
@@ -135,7 +137,7 @@ FloatingWindow {
                         Layout.fillWidth: true
                         Layout.preferredWidth: 1
                         weatherData: weather.weatherData
-                        colors: theme.colors
+                        colors: root.colors
                     }
                     
                     Item {
@@ -162,11 +164,11 @@ FloatingWindow {
             border.color: "#45454C"
             border.width: 1
 
-            Common.TextLabel {
+            UI.TextLabel {
                 anchors.centerIn: parent
                 text: "⚙"
                 font.pixelSize: 16
-                textColor: Theme.textPrimary
+                textColor: UI.Theme.textPrimary
             }
 
             MouseArea {
@@ -201,7 +203,7 @@ FloatingWindow {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 0
                 radius: 26
-                color: Theme.cardBg
+                color: UI.Theme.cardBg
                 border.color: "#45454C"
                 border.width: 1
 
@@ -218,12 +220,12 @@ FloatingWindow {
                         Layout.fillWidth: true
                         spacing: 12
 
-                        Common.DisplayLabel {
+                        UI.DisplayLabel {
                             Layout.fillWidth: true
                             text: "Settings"
-                            font.pixelSize: Theme.fontLarge
+                            font.pixelSize: UI.Theme.fontSizeIconLarge
                             font.weight: 500
-                            textColor: Theme.textPrimary
+                            textColor: UI.Theme.textPrimary
                         }
 
                         Rectangle {
@@ -232,11 +234,11 @@ FloatingWindow {
                             radius: 16
                             color: closeSettingsArea.containsMouse ? "#424248" : "#36363C"
 
-                            Common.TextLabel {
+                            UI.TextLabel {
                                 anchors.centerIn: parent
                                 text: "×"
                                 font.pixelSize: 18
-                                textColor: Theme.textSecondary
+                                textColor: UI.Theme.textSecondary
                             }
 
                             MouseArea {
@@ -249,7 +251,7 @@ FloatingWindow {
                         }
                     }
 
-                    Common.Divider {
+                    UI.Divider {
                         lineColor: "#4A4A50"
                     }
 
@@ -261,44 +263,23 @@ FloatingWindow {
                             Layout.fillWidth: true
                             spacing: 3
 
-                            Common.TextLabel {
+                            UI.TextLabel {
                                 text: "Notifications"
-                                font.pixelSize: Theme.fontMedium
+                                font.pixelSize: UI.Theme.fontSizeTitle
                                 font.weight: 500
-                                textColor: Theme.textPrimary
+                                textColor: UI.Theme.textPrimary
                             }
 
-                            Common.TextLabel {
+                            UI.TextLabel {
                                 text: "INMET alerts"
-                                font.pixelSize: Theme.fontRegular
-                                textColor: Theme.textTertiary
+                                font.pixelSize: UI.Theme.fontSizeLarge
+                                textColor: UI.Theme.textTertiary
                             }
                         }
 
-                        Rectangle {
-                            Layout.preferredWidth: 52
-                            Layout.preferredHeight: 30
-                            radius: 15
-                            color: weather.alertNotificationsEnabled ? Theme.accent : "#55555D"
-
-                            Rectangle {
-                                width: 24
-                                height: 24
-                                radius: 12
-                                anchors.verticalCenter: parent.verticalCenter
-                                x: weather.alertNotificationsEnabled ? parent.width - width - 3 : 3
-                                color: "#FFFFFF"
-
-                                Behavior on x {
-                                    NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
-                                }
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: weather.setAlertNotificationsEnabled(!weather.alertNotificationsEnabled)
-                            }
+                        UI.ToggleSwitch {
+                            checked: weather.alertNotificationsEnabled
+                            onToggled: weather.setAlertNotificationsEnabled(!weather.alertNotificationsEnabled)
                         }
                     }
 
@@ -333,7 +314,7 @@ FloatingWindow {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 0
                 radius: 26
-                color: Theme.cardBg
+                color: UI.Theme.cardBg
                 border.color: "#45454C"
                 border.width: 1
 
@@ -350,7 +331,7 @@ FloatingWindow {
                         Layout.fillWidth: true
                         spacing: 12
 
-                        Common.WeatherIcon {
+                        WeatherCommon.WeatherIcon {
                             condition: root.selectedDay ? root.selectedDay.cond : ""
                             iconSize: 38
                         }
@@ -359,30 +340,30 @@ FloatingWindow {
                             Layout.fillWidth: true
                             spacing: 2
 
-                            Common.DisplayLabel {
+                            UI.DisplayLabel {
                                 text: root.selectedDay ? root.selectedDay.day : ""
-                                font.pixelSize: Theme.fontLarge
+                                font.pixelSize: UI.Theme.fontSizeIconLarge
                                 font.weight: 500
-                                textColor: Theme.textPrimary
+                                textColor: UI.Theme.textPrimary
                             }
 
-                            Common.TextLabel {
+                            UI.TextLabel {
                                 text: root.selectedDay ? root.selectedDay.cond : ""
-                                font.pixelSize: Theme.fontRegular
+                                font.pixelSize: UI.Theme.fontSizeLarge
                                 font.weight: 400
                                 textColor: "#C9CAD2"
                             }
                         }
 
-                        Common.TextLabel {
+                        UI.TextLabel {
                             text: root.selectedDay ? root.selectedDay.hi + "° / " + root.selectedDay.lo + "°" : ""
                             font.pixelSize: 18
                             font.weight: 500
-                            textColor: Theme.textPrimary
+                            textColor: UI.Theme.textPrimary
                         }
                     }
 
-                    Common.Divider {
+                    UI.Divider {
                         lineColor: "#4A4A50"
                     }
 
@@ -392,31 +373,31 @@ FloatingWindow {
                         columnSpacing: 12
                         rowSpacing: 10
 
-                        Common.TextLabel {
+                        UI.TextLabel {
                             text: root.selectedDay ? "Chuva " + root.selectedDay.rain + "%" : ""
-                            font.pixelSize: Theme.fontRegular
+                            font.pixelSize: UI.Theme.fontSizeLarge
                             textColor: "#F2F2F7"
                             Layout.fillWidth: true
                         }
 
-                        Common.TextLabel {
+                        UI.TextLabel {
                             text: root.selectedDay ? "UV " + root.selectedDay.uv : ""
-                            font.pixelSize: Theme.fontRegular
+                            font.pixelSize: UI.Theme.fontSizeLarge
                             horizontalAlignment: Text.AlignRight
                             textColor: "#F2F2F7"
                             Layout.fillWidth: true
                         }
 
-                        Common.TextLabel {
+                        UI.TextLabel {
                             text: root.selectedDay ? "Nascer " + root.selectedDay.sunrise : ""
-                            font.pixelSize: Theme.fontRegular
+                            font.pixelSize: UI.Theme.fontSizeLarge
                             textColor: "#C9CAD2"
                             Layout.fillWidth: true
                         }
 
-                        Common.TextLabel {
+                        UI.TextLabel {
                             text: root.selectedDay ? "Pôr " + root.selectedDay.sunset : ""
-                            font.pixelSize: Theme.fontRegular
+                            font.pixelSize: UI.Theme.fontSizeLarge
                             horizontalAlignment: Text.AlignRight
                             textColor: "#C9CAD2"
                             Layout.fillWidth: true
@@ -429,11 +410,11 @@ FloatingWindow {
                         color: "#424248"
                     }
 
-                    Common.TextLabel {
+                    UI.TextLabel {
                         text: "Horários com chance de chuva"
                         font.pixelSize: 12
                         font.weight: 500
-                        textColor: Theme.textTertiary
+                        textColor: UI.Theme.textTertiary
                     }
 
                     ListView {
@@ -447,44 +428,44 @@ FloatingWindow {
                             width: ListView.view.width
                             spacing: 10
 
-                            Common.TextLabel {
+                            UI.TextLabel {
                                 text: modelData.time
-                                font.pixelSize: Theme.fontRegular
+                                font.pixelSize: UI.Theme.fontSizeLarge
                                 font.weight: 500
-                                textColor: Theme.textPrimary
+                                textColor: UI.Theme.textPrimary
                                 Layout.preferredWidth: 48
                             }
 
-                            Common.WeatherIcon {
+                            WeatherCommon.WeatherIcon {
                                 condition: modelData.cond
                                 isoTime: modelData.iso_time || ""
                                 iconSize: 22
                             }
 
-                            Common.TextLabel {
+                            UI.TextLabel {
                                 text: modelData.cond
-                                font.pixelSize: Theme.fontRegular
+                                font.pixelSize: UI.Theme.fontSizeLarge
                                 elide: Text.ElideRight
                                 textColor: "#C9CAD2"
                                 Layout.fillWidth: true
                             }
 
-                            Common.TextLabel {
+                            UI.TextLabel {
                                 text: modelData.rain + "%"
-                                font.pixelSize: Theme.fontRegular
+                                font.pixelSize: UI.Theme.fontSizeLarge
                                 font.weight: 500
                                 horizontalAlignment: Text.AlignRight
-                                textColor: Theme.rain
+                                textColor: "#9CC7FF"
                                 Layout.preferredWidth: 40
                             }
                         }
                     }
 
-                    Common.TextLabel {
+                    UI.TextLabel {
                         Layout.fillWidth: true
                         visible: root.rainHours(root.selectedDay).length === 0
                         text: "Sem horários de chuva nos dados disponíveis."
-                        font.pixelSize: Theme.fontRegular
+                        font.pixelSize: UI.Theme.fontSizeLarge
                         horizontalAlignment: Text.AlignHCenter
                         textColor: "#C9CAD2"
                     }
@@ -515,7 +496,7 @@ FloatingWindow {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 0
                 radius: 26
-                color: Theme.cardBg
+                color: UI.Theme.cardBg
                 border.color: root.selectedAlert ? (root.selectedAlert.color || "#F96602") : "#F96602"
                 border.width: 1
 
@@ -551,35 +532,35 @@ FloatingWindow {
                                 Layout.fillWidth: true
                                 spacing: 2
 
-                                Common.TextLabel {
+                                UI.TextLabel {
                                     text: "INMET"
                                     font.pixelSize: 10
                                     font.weight: 600
                                     textColor: root.selectedAlert ? (root.selectedAlert.color || "#F96602") : "#F96602"
                                 }
 
-                                Common.DisplayLabel {
+                                UI.DisplayLabel {
                                     text: root.selectedAlert ? (root.selectedAlert.title || "Aviso meteorológico") : ""
-                                    font.pixelSize: Theme.fontLarge
+                                    font.pixelSize: UI.Theme.fontSizeIconLarge
                                     font.weight: 500
-                                    textColor: Theme.textPrimary
+                                    textColor: UI.Theme.textPrimary
                                     elide: Text.ElideRight
                                     Layout.fillWidth: true
                                 }
 
-                                Common.TextLabel {
+                                UI.TextLabel {
                                     text: root.selectedAlert ? (root.selectedAlert.severity || "") : ""
-                                    font.pixelSize: Theme.fontRegular
+                                    font.pixelSize: UI.Theme.fontSizeLarge
                                     textColor: "#C9CAD2"
                                 }
                             }
                         }
 
-                        Common.Divider {
+                        UI.Divider {
                             lineColor: "#4A4A50"
                         }
 
-                        Common.TextLabel {
+                        UI.TextLabel {
                             Layout.fillWidth: true
                             text: root.selectedAlert && root.selectedAlert.start && root.selectedAlert.end
                                 ? "Válido de " + root.selectedAlert.start + " até " + root.selectedAlert.end
@@ -590,41 +571,41 @@ FloatingWindow {
                             textColor: "#C9CAD2"
                         }
 
-                        Common.TextLabel {
+                        UI.TextLabel {
                             text: "Riscos"
                             font.pixelSize: 12
                             font.weight: 500
-                            textColor: Theme.textTertiary
+                            textColor: UI.Theme.textTertiary
                         }
 
                         Repeater {
                             model: root.selectedAlert && root.selectedAlert.risks ? root.selectedAlert.risks : []
 
-                            delegate: Common.TextLabel {
+                            delegate: UI.TextLabel {
                                 Layout.fillWidth: true
                                 text: modelData
                                 wrapMode: Text.WordWrap
-                                font.pixelSize: Theme.fontRegular
+                                font.pixelSize: UI.Theme.fontSizeLarge
                                 lineHeight: 1.14
                                 textColor: "#F2F2F7"
                             }
                         }
 
-                        Common.TextLabel {
+                        UI.TextLabel {
                             text: "O que fazer"
                             font.pixelSize: 12
                             font.weight: 500
-                            textColor: Theme.textTertiary
+                            textColor: UI.Theme.textTertiary
                         }
 
                         Repeater {
                             model: root.selectedAlert && root.selectedAlert.instructions ? root.selectedAlert.instructions : []
 
-                            delegate: Common.TextLabel {
+                            delegate: UI.TextLabel {
                                 Layout.fillWidth: true
                                 text: "• " + modelData
                                 wrapMode: Text.WordWrap
-                                font.pixelSize: Theme.fontRegular
+                                font.pixelSize: UI.Theme.fontSizeLarge
                                 lineHeight: 1.12
                                 textColor: "#DDDDE4"
                             }

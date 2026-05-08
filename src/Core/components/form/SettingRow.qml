@@ -16,7 +16,7 @@ Item {
 
     default property alias control: slot.data
     implicitWidth: parent ? parent.width : 200
-    implicitHeight: sr.sublabel !== "" ? 64 : 52
+    implicitHeight: Math.max(sr.sublabel !== "" ? 64 : 52, rowLayout.implicitHeight + Components.Theme.spacingMedium * 2)
 
     // Interactive subtle hover background
     Rectangle {
@@ -28,11 +28,13 @@ Item {
     }
 
     RowLayout {
+        id: rowLayout
         anchors { fill: parent; leftMargin: Components.Theme.spacingXLarge; rightMargin: Components.Theme.spacingXLarge }
         spacing: Components.Theme.spacingLarge
 
         ColumnLayout {
             Layout.fillWidth: true
+            Layout.minimumWidth: 0
             spacing: Components.Theme.spacingMicro
             
             Text { 
@@ -41,6 +43,8 @@ Item {
                 font.family: Components.Theme.fontFamily
                 font.pixelSize: Components.Theme.fontSizeLarge; 
                 font.weight: Components.Theme.fontWeightMedium 
+                Layout.fillWidth: true
+                elide: Text.ElideRight
                 // Subtle scale or translation could theoretically be added here
             }
             Text {
@@ -50,13 +54,18 @@ Item {
                 font.family: Components.Theme.fontFamily
                 font.pixelSize: Components.Theme.fontSizeSmall; 
                 font.weight: Components.Theme.fontWeightNormal
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
             }
         }
 
         Item {
             id: slot
-            implicitWidth:  children.length > 0 ? children[0].implicitWidth  : 0
-            implicitHeight: children.length > 0 ? children[0].implicitHeight : 0
+            implicitWidth:  children.length > 0 ? Math.max(children[0].implicitWidth, children[0].width)  : 0
+            implicitHeight: children.length > 0 ? Math.max(children[0].implicitHeight, children[0].height) : 0
+            Layout.preferredWidth: implicitWidth
+            Layout.preferredHeight: implicitHeight
+            Layout.maximumWidth: Math.max(0, sr.width - rowLayout.anchors.leftMargin - rowLayout.anchors.rightMargin)
             Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
             scale: rowArea.pressed ? 0.98 : 1.0
             Behavior on scale { NumberAnimation { duration: Components.Theme.animationFast; easing.type: Easing.OutCubic } }

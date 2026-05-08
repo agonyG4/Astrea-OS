@@ -25,9 +25,6 @@ Item {
     property bool stateLoaded: false
     property var gridPositions: ({})
     property int layoutVersion: 0
-    property string activeDragDesktop: ""
-    property int dragPreviewSlot: -1
-    property int dragSourceSlot: -1
     property string appLoadStatus: ""
     property string desktopSignature: ""
     readonly property string modulePath: localPath(Qt.resolvedUrl("."))
@@ -119,6 +116,14 @@ Item {
         return slotOwner(slot, exceptDesktop) !== ""
     }
 
+    function slotOwnerIn(positions, slot, exceptDesktop) {
+        for (var key in positions) {
+            if (key !== exceptDesktop && positions[key] === slot)
+                return key
+        }
+        return ""
+    }
+
     function nearestFreeSlot(preferredSlot, exceptDesktop) {
         var maxSlots = orderedApps().length + 80
         var start = Math.max(0, preferredSlot)
@@ -136,17 +141,11 @@ Item {
         return start
     }
 
-    function setDesktopSlot(desktop, slot) {
-        moveDesktopToSlot(desktop, slot, gridPositions[desktop] !== undefined ? gridPositions[desktop] : indexForDesktop(desktop))
-    }
-
-    function moveDesktopToSlot(desktop, slot, sourceSlot) {
+    function setDesktopSlot(desktop, slot, swapWithOwner) {
         if (!desktop)
             return
 
         var targetSlot = Math.max(0, Math.round(Number(slot) || 0))
-        var fromSlot = Math.max(0, Math.round(Number(sourceSlot) || 0))
-        var owner = slotOwner(targetSlot, desktop)
         var next = {}
         var items = orderedApps()
 
@@ -161,20 +160,21 @@ Item {
                 next[key] = gridPositions[key]
         }
 
-        next[desktop] = targetSlot
-        if (owner !== "")
-            next[owner] = fromSlot
+        gridPositions = next
+        var sourceSlot = next[desktop] !== undefined ? next[desktop] : indexForDesktop(desktop)
+        var owner = slotOwnerIn(next, targetSlot, desktop)
+
+        if (swapWithOwner && owner !== "" && targetSlot !== sourceSlot) {
+            next[desktop] = targetSlot
+            next[owner] = sourceSlot
+        } else {
+            next[desktop] = nearestFreeSlot(targetSlot, desktop)
+        }
 
         gridPositions = next
         normalizeGridPositions()
         layoutVersion += 1
         saveState()
-    }
-
-    function clearDragPreview() {
-        activeDragDesktop = ""
-        dragPreviewSlot = -1
-        dragSourceSlot = -1
     }
 
     function clearGridPositions() {
@@ -506,18 +506,44 @@ Item {
                 var usableHeight = Math.max(root.cellHeight, contextHost.height - top - bottom)
                 var rows = Math.max(1, Math.ceil(usableHeight / root.cellHeight))
                 var rowStep = rows > 1 ? (usableHeight - root.cellHeight) / (rows - 1) : root.cellHeight
-                var col = Math.max(0, Math.round((x - left) / root.cellWidth))
-                var row = Math.max(0, Math.round((y - top) / rowStep))
+                var col = Math.max(0, Math.floor((x - left) / root.cellWidth))
+                var row = Math.max(0, Math.floor((y - top) / rowStep))
                 row = Math.min(row, rows - 1)
                 return col * rows + row
             }
 
-            function slotIndexForTileCenter(tile) {
-                return slotIndexFor(tile.x + tile.width / 2, tile.y + tile.height / 2)
+            function pointInsideSlotHitbox(slot, x, y) {
+                var pos = defaultPosition(slot)
+                var side = root.iconSize
+                var centerX = pos.x + root.cellWidth / 2
+                var centerY = pos.y + 3 + 8 + root.iconSize / 2
+
+                return Math.abs(x - centerX) <= side / 2
+                    && Math.abs(y - centerY) <= side / 2
             }
 
-            function updateDragPreview(tile) {
-                root.dragPreviewSlot = slotIndexForTileCenter(tile)
+            function occupiedHitboxSlotForPoint(x, y, exceptDesktop) {
+                var items = root.orderedApps()
+
+                for (var i = 0; i < items.length; i++) {
+                    var desktop = items[i].desktop
+                    if (!desktop || desktop === exceptDesktop)
+                        continue
+
+                    var slot = root.gridPositions[desktop] !== undefined ? root.gridPositions[desktop] : i
+                    if (pointInsideSlotHitbox(slot, x, y))
+                        return slot
+                }
+
+                return -1
+            }
+
+            function dropTargetForPoint(x, y, desktop) {
+                var hitSlot = occupiedHitboxSlotForPoint(x, y, desktop)
+                if (hitSlot >= 0)
+                    return { slot: hitSlot, swap: true }
+
+                return { slot: slotIndexFor(x, y), swap: false }
             }
 
             function clampTile(tile) {
@@ -553,26 +579,6 @@ Item {
                     id: iconLayer
                     anchors.fill: parent
 
-                    Rectangle {
-                        id: dropPreview
-                        readonly property point previewPosition: desktopWindow.defaultPosition(root.dragPreviewSlot)
-
-                        visible: root.activeDragDesktop !== "" && root.dragPreviewSlot >= 0
-                        x: previewPosition.x + Math.round((root.cellWidth - width) / 2)
-                        y: previewPosition.y + 3
-                        width: root.highlightWidth
-                        height: root.highlightHeight
-                        radius: Theme.cornerRadius
-                        color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.13)
-                        border.width: 1
-                        border.color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.42)
-                        opacity: visible ? 1 : 0
-
-                        Behavior on x { NumberAnimation { duration: Theme.animationQuick; easing.type: Easing.OutCubic } }
-                        Behavior on y { NumberAnimation { duration: Theme.animationQuick; easing.type: Easing.OutCubic } }
-                        Behavior on opacity { NumberAnimation { duration: Theme.animationQuick } }
-                    }
-
                     Repeater {
                         id: iconRepeater
                         model: {
@@ -596,7 +602,6 @@ Item {
                             z: tile.dragging ? 20 : tile.selected ? 10 : 1
 
                             property bool dragging: false
-                            property bool movedDuringDrag: false
                             property bool suppressClick: false
                             property real pressTileX: 0
                             property real pressTileY: 0
@@ -705,11 +710,7 @@ Item {
                                         return
 
                                     tile.dragging = true
-                                    tile.movedDuringDrag = true
                                     tile.suppressClick = true
-                                    root.activeDragDesktop = tile.appData.desktop
-                                    root.dragSourceSlot = tile.effectiveSlot
-                                    root.dragPreviewSlot = tile.effectiveSlot
                                     desktopWindow.closeContext()
                                 }
 
@@ -718,7 +719,19 @@ Item {
                                     tile.x = tile.pressTileX + pt.x - tile.pressMouseX
                                     tile.y = tile.pressTileY + pt.y - tile.pressMouseY
                                     desktopWindow.clampTile(tile)
-                                    desktopWindow.updateDragPreview(tile)
+                                }
+
+                                function finishDrag(mouse) {
+                                    if (tile.dragging && tile.appData) {
+                                        if (mouse)
+                                            updateTileFromMouse(mouse)
+                                        const center = appIcon.mapToItem(contextHost, appIcon.width / 2, appIcon.height / 2)
+                                        const target = desktopWindow.dropTargetForPoint(center.x, center.y, tile.appData.desktop)
+                                        root.setDesktopSlot(tile.appData.desktop, target.slot, target.swap)
+                                    }
+
+                                    tile.dragging = false
+                                    desktopWindow.clampTile(tile)
                                 }
 
                                 onPressed: function(mouse) {
@@ -730,7 +743,6 @@ Item {
                                         tile.pressTileY = tile.y
                                         tile.pressMouseX = pt.x
                                         tile.pressMouseY = pt.y
-                                        tile.movedDuringDrag = false
                                         tile.suppressClick = false
                                     }
                                 }
@@ -778,24 +790,12 @@ Item {
                                 }
 
                                 onReleased: function(mouse) {
-                                    if (mouse.button === Qt.LeftButton) {
-                                        if (tile.dragging && tile.appData) {
-                                            updateTileFromMouse(mouse)
-                                            root.moveDesktopToSlot(tile.appData.desktop, root.dragPreviewSlot, root.dragSourceSlot)
-                                        }
-                                        tile.dragging = false
-                                        tile.movedDuringDrag = false
-                                        root.clearDragPreview()
-                                        desktopWindow.clampTile(tile)
-                                    }
+                                    finishDrag(mouse)
                                 }
 
                                 onCanceled: {
-                                    tile.dragging = false
-                                    tile.movedDuringDrag = false
+                                    finishDrag(null)
                                     tile.suppressClick = false
-                                    root.clearDragPreview()
-                                    desktopWindow.clampTile(tile)
                                 }
                             }
                         }

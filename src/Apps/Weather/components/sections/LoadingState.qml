@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
-import "../common" as Common
+import "../../AstreaComponents" as UI
+import "../common" as WeatherCommon
 
 ColumnLayout {
     property var colors
@@ -8,14 +9,14 @@ ColumnLayout {
     anchors.centerIn: parent
     spacing: 12
 
-    Common.DisplayLabel {
+    UI.DisplayLabel {
         Layout.alignment: Qt.AlignHCenter
         text: "⛅"
         font.pixelSize: 48
         textColor: colors.primary
     }
 
-    Common.TextLabel {
+    UI.TextLabel {
         Layout.alignment: Qt.AlignHCenter
         text: "Carregando..."
         font.pixelSize: 14

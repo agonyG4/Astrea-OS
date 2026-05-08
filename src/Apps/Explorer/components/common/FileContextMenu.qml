@@ -17,14 +17,27 @@ Item {
     property var clipboardProxy
     property bool creatingFolder: false
     property bool renamingItem: false
+    property bool compressionSubmenuOpen: false
+    property bool rarAvailable: false
+    property real compressionSubmenuX: 0
+    property real compressionSubmenuY: 0
     property string pendingFolderName: ""
     property string pendingRenameName: ""
     readonly property bool isBackgroundTarget: itemPath === AppState.currentPath && itemIsDir
     readonly property bool isArchiveTarget: !itemIsDir && /\.(zip|tar|tgz|tar\.gz|tar\.bz2|tbz2|tar\.xz|txz|7z|rar)$/i.test(itemPath)
     readonly property bool isAppImageTarget: !itemIsDir && AppState.isAppImageFileName(itemPath)
+    readonly property bool canCompressTarget: itemIsDir && !isBackgroundTarget && !AppState.inTrashView
+    readonly property var compressionFormats: [
+        { "label": "ZIP", "format": "zip" },
+        { "label": "RAR", "format": "rar" },
+        { "label": "TAR", "format": "tar" },
+        { "label": "TAR.GZ", "format": "tar.gz" },
+        { "label": "TAR.XZ", "format": "tar.xz" }
+    ]
 
     function dismissTransientUi() {
         menuFrame.closeMenu()
+        compressionSubmenuOpen = false
         creatingFolder = false
         renamingItem = false
     }
@@ -33,16 +46,22 @@ Item {
         itemPath = path
         itemIsDir = isDir
         itemUrl = url
+        compressionSubmenuOpen = false
         menuFrame.openAt(x, y)
     }
 
-    function closeMenu() { menuFrame.closeMenu() }
+    function closeMenu() {
+        compressionSubmenuOpen = false
+        menuFrame.closeMenu()
+    }
 
     Shortcut {
         sequence: "Esc"
         enabled: menuRoot.visible
         onActivated: menuRoot.dismissTransientUi()
     }
+
+    Component.onCompleted: rarProbe.running = true
 
     function runOpen() {
         closeMenu()
@@ -87,6 +106,31 @@ Item {
             return
         closeMenu()
         AppState.startArchiveExtraction(itemPath, extractionFolderName())
+    }
+
+    function openCompressionSubmenu(anchorItem) {
+        if (!canCompressTarget)
+            return
+        compressionCloseTimer.stop()
+        var submenuWidth = compressionSubmenu.width
+        var submenuHeight = compressionFormats.length * 32 + 8
+        var rightPoint = anchorItem.mapToItem(menuRoot, anchorItem.width - 4, 0)
+        var leftPoint = anchorItem.mapToItem(menuRoot, -submenuWidth + 4, 0)
+        var prefersRight = rightPoint.x + submenuWidth <= menuRoot.width - 10
+        compressionSubmenuX = Math.max(10, Math.min(prefersRight ? rightPoint.x : leftPoint.x, menuRoot.width - submenuWidth - 10))
+        compressionSubmenuY = Math.max(10, Math.min(rightPoint.y - 4, menuRoot.height - submenuHeight - 10))
+        compressionSubmenuOpen = true
+    }
+
+    function scheduleCompressionSubmenuClose() {
+        compressionCloseTimer.restart()
+    }
+
+    function runCompress(format) {
+        if (!canCompressTarget)
+            return
+        closeMenu()
+        AppState.startFolderCompression(itemPath, format)
     }
 
     function runInstallAppImage() {
@@ -180,6 +224,20 @@ Item {
             onTriggered: menuRoot.runRename()
         }
         Common.ContextMenuAction {
+            id: compressAction
+            label: "Compactar"
+            actionEnabled: true
+            hasSubmenu: true
+            visible: menuRoot.canCompressTarget
+            onHoveredChanged: {
+                if (hovered)
+                    menuRoot.openCompressionSubmenu(compressAction)
+                else
+                    menuRoot.scheduleCompressionSubmenuClose()
+            }
+            onTriggered: menuRoot.openCompressionSubmenu(compressAction)
+        }
+        Common.ContextMenuAction {
             label: "Extrair"
             actionEnabled: true
             visible: menuRoot.isArchiveTarget
@@ -209,6 +267,70 @@ Item {
             visible: !menuRoot.isBackgroundTarget && !AppState.inTrashView
             destructive: true
             onTriggered: menuRoot.runDelete()
+        }
+    }
+
+    Timer {
+        id: compressionCloseTimer
+        interval: 180
+        repeat: false
+        onTriggered: {
+            if (!compressionSubmenuHover.hovered && !compressAction.hovered)
+                menuRoot.compressionSubmenuOpen = false
+        }
+    }
+
+    Rectangle {
+        id: compressionSubmenu
+        visible: menuFrame.menuOpen && menuRoot.compressionSubmenuOpen
+        x: menuRoot.compressionSubmenuX
+        y: menuRoot.compressionSubmenuY
+        width: 144
+        height: compressionColumn.implicitHeight + 8
+        radius: 10
+        color: "#1e1e20"
+        border.width: 1
+        border.color: "#3a3a3c"
+        z: menuFrame.z + 1
+
+        HoverHandler {
+            id: compressionSubmenuHover
+            onHoveredChanged: {
+                if (hovered)
+                    compressionCloseTimer.stop()
+                else
+                    menuRoot.scheduleCompressionSubmenuClose()
+            }
+        }
+
+        Column {
+            id: compressionColumn
+            anchors {
+                left: parent.left
+                right: parent.right
+                top: parent.top
+                margins: 4
+            }
+            spacing: 0
+
+            Repeater {
+                model: menuRoot.compressionFormats
+
+                Common.ContextMenuAction {
+                    label: modelData.label
+                    actionEnabled: modelData.format !== "rar" || menuRoot.rarAvailable
+                    onTriggered: menuRoot.runCompress(modelData.format)
+                }
+            }
+        }
+    }
+
+    Process {
+        id: rarProbe
+        command: ["bash", "-lc", "command -v rar >/dev/null 2>&1"]
+        running: false
+        onExited: function(exitCode) {
+            menuRoot.rarAvailable = exitCode === 0
         }
     }
 

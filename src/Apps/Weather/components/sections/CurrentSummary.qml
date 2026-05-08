@@ -1,7 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
-import "../common" as Common
-import "../.."
+import "../../AstreaComponents" as UI
+import "../common" as WeatherCommon
 
 ColumnLayout {
     property var weatherData
@@ -10,37 +10,37 @@ ColumnLayout {
     Layout.fillWidth: true
     spacing: 0
 
-    Common.DisplayLabel {
+    UI.DisplayLabel {
         Layout.fillWidth: true
         text: weatherData ? weatherData.city : ""
-        font.pixelSize: Theme.fontLarge
+        font.pixelSize: UI.Theme.fontSizeIconLarge
         font.weight: 400
         horizontalAlignment: Text.AlignHCenter
         topPadding: 8
-        textColor: Theme.textPrimary
+        textColor: UI.Theme.textPrimary
     }
 
-    Common.DisplayLabel {
+    UI.DisplayLabel {
         Layout.fillWidth: true
         text: weatherData ? weatherData.temp : "--"
-        font.pixelSize: Theme.fontGiant
+        font.pixelSize: 92
         font.weight: 200
         lineHeight: 0.88
         horizontalAlignment: Text.AlignHCenter
-        textColor: Theme.textPrimary
+        textColor: UI.Theme.textPrimary
     }
 
-    Common.TextLabel {
+    UI.TextLabel {
         Layout.fillWidth: true
         text: weatherData ? weatherData.condition : ""
-        font.pixelSize: Theme.fontMedium
+        font.pixelSize: UI.Theme.fontSizeTitle
         font.weight: 400
         horizontalAlignment: Text.AlignHCenter
-        textColor: Theme.textSecondary
+        textColor: UI.Theme.textSecondary
         topPadding: 0
     }
 
-    Common.TextLabel {
+    UI.TextLabel {
         Layout.fillWidth: true
         text: weatherData ? "H:" + weatherData.temp_max + "°  L:" + weatherData.temp_min + "°" : ""
         font.pixelSize: 14
@@ -63,16 +63,16 @@ ColumnLayout {
         RowLayout {
             spacing: 6
             visible: weatherData && weatherData.wind !== undefined
-            Common.WeatherIcon {
+            WeatherCommon.WeatherIcon {
                 condition: "vento"
                 iconSize: 16
                 Layout.alignment: Qt.AlignVCenter
             }
-            Common.TextLabel {
+            UI.TextLabel {
                 text: weatherData ? weatherData.wind + " km/h" : ""
-                font.pixelSize: Theme.fontRegular
+                font.pixelSize: UI.Theme.fontSizeLarge
                 font.weight: 500
-                textColor: Theme.textSecondary
+                textColor: UI.Theme.textSecondary
             }
         }
 
@@ -93,13 +93,13 @@ ColumnLayout {
             return currentMinutes > sunsetMin
         }
 
-        Common.WeatherIcon {
+        WeatherCommon.WeatherIcon {
             condition: sunInfo.isAfterSunset ? "nascer do sol" : "pôr do sol"
             iconSize: 18
             Layout.alignment: Qt.AlignVCenter
         }
 
-        Common.TextLabel {
+        UI.TextLabel {
             text: {
                 if (!weatherData) return ""
                 if (sunInfo.isAfterSunset) {
@@ -112,9 +112,9 @@ ColumnLayout {
                     return "Pôr do sol " + weatherData.sunset
                 }
             }
-            font.pixelSize: Theme.fontRegular
+            font.pixelSize: UI.Theme.fontSizeLarge
             font.weight: 500
-            textColor: Theme.textSecondary
+            textColor: UI.Theme.textSecondary
         }
     }
 }

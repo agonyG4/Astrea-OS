@@ -1,7 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
-import "../common" as Common
-import "../.."
+import "../../AstreaComponents" as UI
+import "../common" as WeatherCommon
 
 Item {
     property var weatherData
@@ -16,8 +16,8 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: Theme.cardRadius
-        color: Theme.cardBg
+        radius: UI.Theme.cardRadius
+        color: UI.Theme.cardBg
         border.color: mainAlert ? (mainAlert.color || "#F96602") : "#F96602"
         border.width: 1
 
@@ -37,23 +37,23 @@ Item {
                 Layout.fillWidth: true
                 spacing: 3
 
-                Common.TextLabel {
+                UI.TextLabel {
                     text: "INMET"
                     font.pixelSize: 10
                     font.weight: 600
                     textColor: mainAlert ? (mainAlert.color || "#F96602") : "#F96602"
                 }
 
-                Common.DisplayLabel {
+                UI.DisplayLabel {
                     text: mainAlert ? (mainAlert.title || "Aviso meteorológico") : ""
                     font.pixelSize: 19
                     font.weight: 500
-                    textColor: Theme.textPrimary
+                    textColor: UI.Theme.textPrimary
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                 }
 
-                Common.TextLabel {
+                UI.TextLabel {
                     text: mainAlert ? (mainAlert.severity || "") : ""
                     font.pixelSize: 12
                     textColor: "#C9CAD2"
@@ -62,7 +62,7 @@ Item {
                 }
             }
 
-            Common.TextLabel {
+            UI.TextLabel {
                 text: alerts.length > 1 ? alerts.length + " avisos" : "Detalhes"
                 font.pixelSize: 12
                 font.weight: 500
