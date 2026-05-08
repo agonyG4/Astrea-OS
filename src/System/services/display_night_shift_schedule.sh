@@ -11,9 +11,26 @@ state_dir="${HOME}/.local/state/Astrea/display"
 state_path="${state_dir}/night-shift-state"
 lock_path="${state_dir}/night-shift.lock"
 
+read_conf_value() {
+    local key="$1"
+    local fallback="${2:-}"
+    awk -F= -v key="${key}" -v fallback="${fallback}" '
+        /^[[:space:]]*#/ { next }
+        $1 ~ "^[[:space:]]*" key "[[:space:]]*$" {
+            value = substr($0, index($0, "=") + 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+            if (value ~ /^[A-Za-z0-9_.:@+,% -]+$/) { print value; found=1; exit }
+        }
+        END { if (!found) print fallback }
+    ' "${conf_path}"
+}
+
 write_units() {
     mkdir -p "${unit_dir}"
-    cat > "${service_path}" <<EOF
+    local tmp_service tmp_timer
+    tmp_service="$(mktemp "${service_path}.XXXXXX")"
+    tmp_timer="$(mktemp "${timer_path}.XXXXXX")"
+    cat > "${tmp_service}" <<EOF
 [Unit]
 Description=Apply Astrea Night Shift schedule
 Documentation=file://${HOME}/.local/share/Astrea/System/services/display_night_shift_schedule.sh
@@ -26,7 +43,7 @@ TimeoutStartSec=8s
 Nice=5
 EOF
 
-    cat > "${timer_path}" <<EOF
+    cat > "${tmp_timer}" <<EOF
 [Unit]
 Description=Check Astrea Night Shift schedule
 
@@ -40,6 +57,8 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+    mv -f "${tmp_service}" "${service_path}"
+    mv -f "${tmp_timer}" "${timer_path}"
 }
 
 disable_units() {
@@ -116,13 +135,11 @@ apply_schedule() {
     flock -n 9 || exit 0
 
     [ -f "${conf_path}" ] || exit 0
-    # shellcheck source=/dev/null
-    source "${conf_path}"
 
-    night_shift_schedule=${night_shift_schedule:-0}
-    night_shift_strength=${night_shift_strength:-35}
-    night_shift_start=${night_shift_start:-20:00}
-    night_shift_end=${night_shift_end:-07:00}
+    night_shift_schedule="$(read_conf_value night_shift_schedule 0)"
+    night_shift_strength="$(read_conf_value night_shift_strength 35)"
+    night_shift_start="$(read_conf_value night_shift_start 20:00)"
+    night_shift_end="$(read_conf_value night_shift_end 07:00)"
 
     if ! [[ "${night_shift_strength}" =~ ^[0-9]+$ ]]; then
         night_shift_strength=35
