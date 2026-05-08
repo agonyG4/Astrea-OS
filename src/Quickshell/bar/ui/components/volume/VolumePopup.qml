@@ -81,7 +81,7 @@ SystemComponents.TopbarPopup {
         Rectangle {
             id: mutePill
             anchors.centerIn: parent
-            width: 28; height: 28; radius: 14
+            width: 28; height: 28; radius: Theme.cornerRadiusLarge
 
             color: root.masterMuted
                 ? Qt.rgba(1, 0.23, 0.19, 0.25)
@@ -92,15 +92,15 @@ SystemComponents.TopbarPopup {
                 ? Qt.rgba(1, 0.23, 0.19, 0.40)
                 : Qt.rgba(1, 1, 1, 0.08)
 
-            Behavior on color        { ColorAnimation { duration: 150 } }
-            Behavior on border.color { ColorAnimation { duration: 150 } }
+            Behavior on color        { ColorAnimation { duration: Theme.animationFast } }
+            Behavior on border.color { ColorAnimation { duration: Theme.animationFast } }
 
             Text {
                 anchors.centerIn: parent
                 text:  root.volIcon(root.masterVol, root.masterMuted)
                 color: root.masterMuted ? Theme.iconWarning : Theme.iconMain
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeBody }
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: Theme.animationFast } }
             }
 
             MouseArea {
@@ -115,7 +115,7 @@ SystemComponents.TopbarPopup {
 
     Row {
         width:   parent.width
-        spacing: 10
+        spacing: Theme.spacingMedium
 
         Text {
             text:  "󰕿"
@@ -144,7 +144,7 @@ SystemComponents.TopbarPopup {
                         GradientStop { position: 0.0; color: root.masterMuted ? Qt.rgba(1,1,1,0.15) : Qt.rgba(1,1,1,0.45) }
                         GradientStop { position: 1.0; color: root.masterMuted ? Qt.rgba(1,1,1,0.20) : Qt.rgba(1,1,1,0.90) }
                     }
-                    Behavior on width { NumberAnimation { duration: 60; easing.type: Easing.OutCubic } }
+                    Behavior on width { NumberAnimation { duration: Theme.animationSlider; easing.type: Easing.OutCubic } }
                 }
             }
 
@@ -158,10 +158,10 @@ SystemComponents.TopbarPopup {
                 radius: width / 2
                 color:  "white"
 
-                Behavior on width { NumberAnimation { duration: 100; easing.type: Easing.OutCubic } }
+                Behavior on width { NumberAnimation { duration: Theme.animationMicro; easing.type: Easing.OutCubic } }
                 Behavior on x     {
                     enabled: !sliderMouse.pressed
-                    NumberAnimation { duration: 60; easing.type: Easing.OutCubic }
+                    NumberAnimation { duration: Theme.animationSlider; easing.type: Easing.OutCubic }
                 }
 
                 Rectangle {

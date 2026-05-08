@@ -79,6 +79,43 @@ Item {
 
     readonly property real trackingHeader:    0
 
+    // ── Layout tokens ─────────────────────────────────────────────────────
+    // Authority note: Core Theme owns app-window and Settings tokens. Quickshell
+    // shell surfaces currently keep a separate Theme with tighter bar-specific
+    // values; do not assume matching names imply matching values yet.
+    // Keep these additive for compatibility while Settings pages migrate away
+    // from one-off literals in small, reviewable passes.
+    readonly property real radiusSmall: 8
+    readonly property real radiusMedium: 10
+    readonly property real radiusLarge: 12
+    readonly property real cornerRadiusSmall: radiusSmall
+    readonly property real cornerRadius: radiusMedium
+    readonly property real cornerRadiusLarge: radiusLarge
+    readonly property real cardRadius: radiusLarge
+    readonly property real controlRadius: radiusMedium
+
+    readonly property real spacingTiny: 2
+    readonly property real spacingMicro: 4
+    readonly property real spacingSmall: 6
+    readonly property real spacing: 8
+    readonly property real spacingMedium: 12
+    readonly property real spacingLarge: 16
+    readonly property real spacingXLarge: 18
+    readonly property real pageMargin: 28
+
+    // ── Motion tokens ─────────────────────────────────────────────────────
+    readonly property int animationMicro: 100
+    readonly property int animationQuick: 120
+    readonly property int animationFast: 150
+    readonly property int animationNormal: 200
+    readonly property int animationSlow: 250
+    readonly property int animationPopover: 300
+
+    // ── Opacity tokens ────────────────────────────────────────────────────
+    readonly property real opacityDisabled: 0.3
+    readonly property real opacitySecondary: 0.5
+    readonly property real opacityMuted: 0.6
+
     // ── Theme ─────────────────────────────────────────────────────────────
     readonly property color accent:        accentHex
     readonly property color textPrimary:   themeMode === 1 ? "#111111" : "#ffffff"

@@ -20,7 +20,7 @@ SystemComponents.TopbarPopup {
 
     Row {
         width: parent.width
-        spacing: 20
+        spacing: Theme.spacingXXLarge
 
         Repeater {
             model: [
@@ -28,7 +28,7 @@ SystemComponents.TopbarPopup {
                 { icon: "󰕒", label: "Upload",   value: root.uploadText   }
             ]
             delegate: Row {
-                spacing: 8
+                spacing: Theme.spacing
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text:  modelData.icon
@@ -40,7 +40,7 @@ SystemComponents.TopbarPopup {
                     Text {
                         text:    modelData.value
                         color:   Theme.textActive
-                        opacity: 0.85
+                        opacity: Theme.opacitySecondary
                         font { family: Theme.fontFamily; pixelSize: Theme.fontSizeBody; weight: Font.Medium }
                     }
                 }

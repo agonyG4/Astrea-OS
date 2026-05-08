@@ -24,7 +24,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         text: control.title
         color: Theme.textActive
-        opacity: 0.85
+        opacity: Theme.opacitySecondary
         width: parent.width - trailingSlot.width - control.trailingGap
         elide: Text.ElideRight
         font {

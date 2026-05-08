@@ -5,7 +5,7 @@ import ".." as Components
 Rectangle {
     id: cardRoot
     Layout.fillWidth: true
-    radius: 12
+    radius: Components.Theme.cardRadius
     color: Components.Theme.cardBg
     border.width: 1
     border.color: Components.Theme.cardBorder

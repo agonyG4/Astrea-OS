@@ -88,7 +88,7 @@ Item {
         property: "opacity"
         from: 0
         to: 1
-        duration: 400
+        duration: Theme.animationSlow
         easing.type: Easing.OutCubic
     }
 
@@ -109,13 +109,13 @@ Item {
             border.width: 1
             border.color: leftHover.hovered ? Theme.barBorderHover : Theme.border
 
-            Behavior on border.color { ColorAnimation { duration: 200 } }
+            Behavior on border.color { ColorAnimation { duration: Theme.animationNormal } }
         }
 
         Row {
             id: leftRow
             anchors.centerIn: parent
-            spacing: 8
+            spacing: Theme.spacing
 
             Rectangle {
                 id: logoButton
@@ -131,7 +131,7 @@ Item {
                     width: 18
                     height: 18
                     fillMode: Image.PreserveAspectFit
-                    opacity: 0.80
+                    opacity: Theme.opacityMuted
                 }
 
                 MouseArea {
@@ -170,7 +170,7 @@ Item {
             border.width: 1
             border.color: rightHover.hovered ? Theme.barBorderHover : Theme.border
 
-            Behavior on border.color { ColorAnimation { duration: 200 } }
+            Behavior on border.color { ColorAnimation { duration: Theme.animationNormal } }
         }
 
         Row {
@@ -252,8 +252,8 @@ Item {
 
                     Behavior on text {
                         SequentialAnimation {
-                            NumberAnimation { target: dateLabel; property: "opacity"; to: 0; duration: 120 }
-                            NumberAnimation { target: dateLabel; property: "opacity"; to: 1; duration: 120 }
+                            NumberAnimation { target: dateLabel; property: "opacity"; to: 0; duration: Theme.animationQuick }
+                            NumberAnimation { target: dateLabel; property: "opacity"; to: 1; duration: Theme.animationQuick }
                         }
                     }
                 }
@@ -279,8 +279,8 @@ Item {
 
                     Behavior on text {
                         SequentialAnimation {
-                            NumberAnimation { target: clockLabel; property: "opacity"; to: 0; duration: 150; easing.type: Easing.InQuad }
-                            NumberAnimation { target: clockLabel; property: "opacity"; to: 1; duration: 200; easing.type: Easing.OutQuad }
+                            NumberAnimation { target: clockLabel; property: "opacity"; to: 0; duration: Theme.animationFast; easing.type: Easing.InQuad }
+                            NumberAnimation { target: clockLabel; property: "opacity"; to: 1; duration: Theme.animationNormal; easing.type: Easing.OutQuad }
                         }
                     }
                 }
