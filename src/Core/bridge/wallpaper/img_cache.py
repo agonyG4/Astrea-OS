@@ -3,7 +3,9 @@
 Astrea Orchestrator — O motor de miniaturas do Vitor.
 """
 import argparse
+import os
 import sys
+import tempfile
 from pathlib import Path
 from PIL import Image
 
@@ -37,9 +39,19 @@ def process_image(src: Path, dest: Path) -> bool:
             print(f"  [ERR] não encontrado: {src}", file=sys.stderr)
             return False
         dest.parent.mkdir(parents=True, exist_ok=True)
-        with Image.open(src) as img:
-            thumb = _crop_center(img.convert("RGB"), THUMB_SIZE)
-            thumb.save(dest, "JPEG", quality=THUMB_QUALITY, optimize=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{dest.name}.", suffix=".tmp", dir=str(dest.parent))
+        os.close(fd)
+        tmp = Path(tmp_name)
+        try:
+            with Image.open(src) as img:
+                thumb = _crop_center(img.convert("RGB"), THUMB_SIZE)
+                thumb.save(tmp, "JPEG", quality=THUMB_QUALITY, optimize=True)
+            os.replace(tmp, dest)
+        finally:
+            try:
+                tmp.unlink()
+            except FileNotFoundError:
+                pass
         return True
     except Exception as e:
         print(f"  [ERR] {src.name}: {e}", file=sys.stderr)

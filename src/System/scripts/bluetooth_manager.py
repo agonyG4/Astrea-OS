@@ -13,6 +13,12 @@ import time
 import traceback
 from pathlib import Path
 
+BRIDGE_DIR = Path(__file__).resolve().parents[2] / "Core" / "bridge"
+if str(BRIDGE_DIR) not in sys.path:
+    sys.path.insert(0, str(BRIDGE_DIR))
+
+from astrea_shared import atomic_write_json, read_json
+
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
 STATE_DIR   = Path.home() / ".local" / "state" / "Astrea" / "bluetooth"
@@ -73,21 +79,13 @@ def _ensure_state_dir() -> None:
 
 
 def _read_json(path: Path, default: dict) -> dict:
-    if not path.exists():
-        return dict(default)
-    try:
-        data = json.loads(path.read_text())
-        return data if isinstance(data, dict) else dict(default)
-    except Exception:
-        return dict(default)
+    data = read_json(path, dict(default))
+    return data if isinstance(data, dict) else dict(default)
 
 
 def _write_json(path: Path, data: dict) -> None:
     _ensure_state_dir()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
-    tmp.replace(path)
+    atomic_write_json(path, data, indent=2, sort_keys=True)
 
 
 def _unlink(path: Path) -> None:

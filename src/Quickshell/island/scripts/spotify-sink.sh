@@ -4,6 +4,43 @@ set -u
 CAVA_CONF="$(dirname "$0")/../config/cava.conf"
 MONITOR_SOURCE=""
 
+write_cava_conf() {
+    local source_name="$1"
+    mkdir -p "$(dirname "${CAVA_CONF}")"
+    local tmp
+    tmp="$(mktemp "${CAVA_CONF}.XXXXXX")"
+    cat > "${tmp}" <<EOF
+[general]
+bars = 6
+framerate = 60
+sensitivity = 100
+[input]
+method = pulse
+source = ${source_name}
+[output]
+method = raw
+raw_target = /dev/stdout
+data_format = ascii
+ascii_max_range = 100
+EOF
+    mv -f "${tmp}" "${CAVA_CONF}"
+}
+
+require_commands() {
+    local missing=()
+    local cmd
+    for cmd in pactl pw-dump jq awk grep mktemp; do
+        command -v "${cmd}" >/dev/null 2>&1 || missing+=("${cmd}")
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+        write_cava_conf "__astrea_missing_dependency__.monitor"
+        printf 'missing:%s\n' "${missing[*]}"
+        exit 0
+    fi
+}
+
+require_commands
+
 source_exists() {
     local source_name="$1"
     [ -n "$source_name" ] || return 1
@@ -81,37 +118,16 @@ for i in {1..15}; do
 done
 
 if [ -z "$MONITOR_SOURCE" ]; then
-cat > "$CAVA_CONF" << EOF
-[general]
-bars = 6
-framerate = 60
-sensitivity = 100
-[input]
-method = pulse
-source = __astrea_no_music_app__.monitor
-[output]
-method = raw
-raw_target = /dev/stdout
-data_format = ascii
-ascii_max_range = 100
-EOF
+    write_cava_conf "__astrea_no_music_app__.monitor"
     echo "no-music:"
     exit 0
 fi
 
-cat > "$CAVA_CONF" << EOF
-[general]
-bars = 6
-framerate = 60
-sensitivity = 100
-[input]
-method = pulse
-source = $MONITOR_SOURCE
-[output]
-method = raw
-raw_target = /dev/stdout
-data_format = ascii
-ascii_max_range = 100
-EOF
+if ! [[ "${MONITOR_SOURCE}" =~ ^[A-Za-z0-9_.:-]+$ ]]; then
+    write_cava_conf "__astrea_invalid_source__.monitor"
+    echo "invalid-source:"
+    exit 0
+fi
 
+write_cava_conf "${MONITOR_SOURCE}"
 echo "ok:$MONITOR_SOURCE"

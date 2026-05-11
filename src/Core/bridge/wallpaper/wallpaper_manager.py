@@ -8,6 +8,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+BRIDGE_DIR = Path(__file__).resolve().parents[1]
+if str(BRIDGE_DIR) not in sys.path:
+    sys.path.insert(0, str(BRIDGE_DIR))
+
+from astrea_shared import atomic_write_text
+
 PROJECT_DIR = Path.home() / ".local/share/Astrea"
 FEATURES_DIR = PROJECT_DIR / "Features/Paper"
 USER_DATA_DIR = PROJECT_DIR / "Data/user"
@@ -47,8 +53,7 @@ def read_text(path: Path, default: str = "") -> str:
 
 
 def write_text(path: Path, value: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"{value}\n", encoding="utf-8")
+    atomic_write_text(path, f"{value}\n")
 
 
 def relink(target: Path, source: Path) -> None:
