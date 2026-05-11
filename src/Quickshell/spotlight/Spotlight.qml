@@ -234,7 +234,7 @@ ShellRoot {
         property var usageCounts: ({})
         readonly property string usageFilePath: Quickshell.env("HOME") + "/.local/state/Astrea/spotlight-usage.json"
         readonly property string configFilePath: Quickshell.env("HOME") + "/.config/AstreaOS/spotlight.json"
-        readonly property string weatherScript: Quickshell.env("HOME") + "/.local/share/Astrea/Core/bridge/apps/weather.py"
+        readonly property string weatherCli: Quickshell.env("HOME") + "/.local/share/Astrea/Apps/Weather/backend/target/release/weather-cli"
         property string usageLoadBuffer: ""
         property string configLoadBuffer: ""
         property string weatherBuffer: ""
@@ -339,7 +339,7 @@ ShellRoot {
 
         function weatherAssetForCondition(condition) {
             const text = (condition || "").toLowerCase()
-            const assetRoot = "file://" + Quickshell.env("HOME") + "/.local/share/Astrea/Apps/Weather/assets/weather/"
+            const assetRoot = "file://" + Quickshell.env("HOME") + "/.local/share/Astrea/Apps/Weather/assets/icons/weather/"
 
             if (text.indexOf("trovoada") >= 0) return assetRoot + "thunderstorm.png"
             if (text.indexOf("chuva gelada") >= 0 || text.indexOf("garoa gelada") >= 0) return assetRoot + "freezing_rain.png"
@@ -530,7 +530,7 @@ ShellRoot {
 
         property var weatherProc: Process {
             id: weatherProc
-            command: ["/usr/bin/env", "python3", spotlight.weatherScript, "get", "--summary-json"]
+            command: ["/usr/bin/env", spotlight.weatherCli, "summary"]
             running: false
             stdout: SplitParser {
                 onRead: data => spotlight.weatherBuffer += data

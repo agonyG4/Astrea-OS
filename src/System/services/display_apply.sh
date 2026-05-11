@@ -14,7 +14,7 @@ refreshrate=${refreshrate:-60}
 scale=${scale:-1}
 bitdepth=${bitdepth:-8}
 vrr=${vrr:-0}
-saturation=${saturation:-950}
+saturation=${saturation:-93}
 night_shift=${night_shift:-0}
 night_shift_strength=${night_shift_strength:-35}
 night_shift_schedule=${night_shift_schedule:-0}
@@ -26,7 +26,15 @@ if [ -z "${monitor}" ]; then
 fi
 [ -n "${monitor}" ] || exit 0
 
-saturation=$(( saturation < 0 ? 0 : (saturation > 1023 ? 1023 : saturation) ))
+if ! [[ "${saturation}" =~ ^[0-9]+$ ]]; then
+    saturation=93
+fi
+if [ "${saturation}" -gt 100 ]; then
+    saturation_raw=$(( saturation > 1023 ? 1023 : saturation ))
+else
+    saturation=$(( saturation < 0 ? 0 : saturation ))
+    saturation_raw=$(( (saturation * 1023 + 50) / 100 ))
+fi
 monitor_rule="monitor=${monitor},${resolution}@${refreshrate},0x0,${scale},bitdepth,${bitdepth},vrr,${vrr}"
 night_shift_color="${HOME}/.local/share/Astrea/System/services/display_night_shift_color.sh"
 
@@ -57,5 +65,5 @@ if [ "${apply_mode}" = "full" ] || [ "${apply_mode}" = "colors-only" ] || [ "${a
 fi
 
 if [ "${apply_mode}" = "full" ] || [ "${apply_mode}" = "colors-only" ] || [ "${apply_mode}" = "saturation-only" ]; then
-    nvibrant "${monitor}" "${saturation}" >/dev/null 2>&1 || true
+    nvibrant "${monitor}" "${saturation_raw}" >/dev/null 2>&1 || true
 fi

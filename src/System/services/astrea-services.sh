@@ -101,6 +101,29 @@ WantedBy=default.target
 EOF
 }
 
+write_weather_unit() {
+    mkdir -p "${unit_dir}"
+    write_file_if_changed "${unit_dir}/astrea-weatherd.service" 0644 <<EOF
+[Unit]
+Description=Astrea weather monitor service
+After=graphical-session.target
+PartOf=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=${astrea_root}/Apps/Weather/backend/target/release/astrea-weatherd
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=3
+KillMode=mixed
+
+[Install]
+WantedBy=default.target
+EOF
+}
+
 reload_user_systemd() {
     if command -v systemctl >/dev/null 2>&1; then
         systemctl --user daemon-reload >/dev/null 2>&1 || true
@@ -110,8 +133,12 @@ reload_user_systemd() {
 install_services() {
     write_portal_files
     write_status_unit
+    write_weather_unit
     write_night_shift_units
     reload_user_systemd
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --user enable --now astrea-weatherd.service >/dev/null 2>&1 || true
+    fi
 }
 
 verify_services() {
@@ -119,6 +146,7 @@ verify_services() {
     local paths=(
         "${unit_dir}/astrea-filechooser-portal.service"
         "${unit_dir}/astrea-status.service"
+        "${unit_dir}/astrea-weatherd.service"
         "${unit_dir}/astrea-night-shift.service"
         "${unit_dir}/astrea-night-shift.timer"
         "${dbus_dir}/org.freedesktop.impl.portal.desktop.astrea.service"
@@ -138,6 +166,7 @@ verify_services() {
         if ! verify_output="$(systemd-analyze --user verify \
             "${unit_dir}/astrea-filechooser-portal.service" \
             "${unit_dir}/astrea-status.service" \
+            "${unit_dir}/astrea-weatherd.service" \
             "${unit_dir}/astrea-night-shift.service" \
             "${unit_dir}/astrea-night-shift.timer" 2>&1)"; then
             if grep -Eq 'Operation not permitted|Failed to connect to (user|system) scope bus|SO_PASS' <<<"${verify_output}"; then
@@ -153,7 +182,11 @@ verify_services() {
     bash -n "${astrea_root}/System/services/display_night_shift_color.sh" || failed=1
     bash -n "${astrea_root}/System/services/display_night_shift_schedule.sh" || failed=1
     python3 -m py_compile "${astrea_root}/System/services/astrea_statusd.py" || failed=1
+    python3 -m py_compile "${astrea_root}/System/services/astrea_notify.py" || failed=1
     python3 -m py_compile "${astrea_root}/System/portal/astrea_filechooser_portal.py" || failed=1
+    if [[ -f "${astrea_root}/Apps/Weather/backend/Cargo.toml" ]]; then
+        cargo check --manifest-path "${astrea_root}/Apps/Weather/backend/Cargo.toml" --workspace --offline || failed=1
+    fi
 
     if [[ "${failed}" -eq 0 ]]; then
         printf 'Astrea services verified\n'

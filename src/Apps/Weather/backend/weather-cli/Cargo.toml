@@ -1,0 +1,12 @@
+[package]
+name = "weather-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "weather-cli"
+path = "src/main.rs"
+
+[dependencies]
+weather-core = { path = "../weather-core" }
+serde_json.workspace = true

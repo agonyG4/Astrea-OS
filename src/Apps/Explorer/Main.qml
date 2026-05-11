@@ -18,8 +18,6 @@ ApplicationWindow {
         Qt.application.name = "Explorer"
         Qt.application.organization = "agony"
         Qt.application.domain = "local"
-        AppState.navigateTo(AppState.currentPath || "/home/agony")
-        AppState.scheduleHomeThumbnailWarmup()
     }
 
     onClosing: function(close) {
@@ -210,7 +208,16 @@ ApplicationWindow {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "Pasta vazia"; color: Theme.textTer; font.pixelSize: 15
+                        text: {
+                            if (AppState.searchActive)
+                                return "Nenhum resultado para \"" + AppState.searchQuery + "\""
+                            if (AppState.inTrashView)
+                                return "Lixeira vazia"
+                            if (AppState.isRecentPath(AppState.currentPath))
+                                return "Nenhum item recente"
+                            return "Pasta vazia"
+                        }
+                        color: Theme.textTer; font.pixelSize: 15
                         visible: !AppState.loadingDir && AppState.fileModel.count === 0 && AppState.loadError === ""
                     }
 
@@ -233,19 +240,25 @@ ApplicationWindow {
                             bottom: parent.bottom; bottomMargin: 14
                         }
                         width: Math.min(320, parent.width - 28)
-                        visible: AppState.archiveExtractionRunning
+                        readonly property bool fileOpVisible: AppState.fileOperationRunning
+                        readonly property bool archiveVisible: AppState.archiveExtractionRunning
+                        visible: fileOpVisible || archiveVisible
                         opacity: visible ? 1 : 0
                         z: 20
-                        title: AppState.archiveExtractionStatus || "Extraindo..."
-                        detail: AppState.archiveExtractionFileName
-                        destination: AppState.archiveExtractionDestination !== ""
-                            ? AppState.archiveExtractionDestination.split("/").filter(Boolean).pop()
+                        title: fileOpVisible
+                            ? (AppState.fileOperationStatus || "Copiando...")
+                            : (AppState.archiveExtractionStatus || "Extraindo...")
+                        detail: fileOpVisible
+                            ? AppState.fileOperationFileName
+                            : AppState.archiveExtractionFileName
+                        destination: (fileOpVisible ? AppState.fileOperationDestination : AppState.archiveExtractionDestination) !== ""
+                            ? (fileOpVisible ? AppState.fileOperationDestination : AppState.archiveExtractionDestination).split("/").filter(Boolean).pop()
                             : ""
-                        progress: AppState.archiveExtractionProgress
-                        percent: AppState.archiveExtractionPercent
-                        completedItems: AppState.archiveExtractionDoneCount
-                        totalItems: AppState.archiveExtractionTotalCount
-                        failed: AppState.archiveExtractionError !== ""
+                        progress: fileOpVisible ? AppState.fileOperationProgress : AppState.archiveExtractionProgress
+                        percent: fileOpVisible ? AppState.fileOperationPercent : AppState.archiveExtractionPercent
+                        completedItems: fileOpVisible ? AppState.fileOperationDoneCount : AppState.archiveExtractionDoneCount
+                        totalItems: fileOpVisible ? AppState.fileOperationTotalCount : AppState.archiveExtractionTotalCount
+                        failed: fileOpVisible ? AppState.fileOperationError !== "" : AppState.archiveExtractionError !== ""
                         panelColor: Theme.panel
                         borderColor: Theme.border
                         primaryTextColor: Theme.text

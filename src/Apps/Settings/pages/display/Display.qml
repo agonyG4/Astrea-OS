@@ -38,7 +38,7 @@ Item {
     property int  selectedBitdepth:   1
     property int  selectedScale:      2
     property int  selectedVrrMode:    0
-    property int  selectedSaturation: 950
+    property int  selectedSaturation: 93
     property bool nightShiftEnabled:  false
     property int  nightShiftStrength: 35
     property bool nightShiftScheduleEnabled: false
@@ -104,7 +104,7 @@ Item {
         selectedBitdepth   = _idx(mon.bitdepths, cur.bitdepth)
         selectedScale      = _idx(mon.scales, cur.scale)
         selectedVrrMode    = _idx(vrrModeOptions.map(option => option.value), cur.vrrMode ?? 0)
-        selectedSaturation = cur.saturation ?? 950
+        selectedSaturation = cur.saturation ?? 93
         nightShiftEnabled  = cur.nightShift ?? false
         nightShiftStrength = cur.nightShiftStrength ?? 35
         nightShiftScheduleEnabled = cur.nightShiftSchedule ?? false
@@ -196,6 +196,11 @@ Item {
             return
         pendingLiveApplyMode = mode
         liveColorApplyTimer.restart()
+    }
+
+    function saturationPercentToNvibrant(value) {
+        const percent = Math.max(0, Math.min(100, Math.round(value)))
+        return Math.round(percent * 1023 / 100)
     }
 
     function persistSettingsOnly(showFeedback = false) {
@@ -323,7 +328,7 @@ Item {
             const mode = root.pendingLiveApplyMode || "colors-only"
             root.pendingLiveApplyMode = ""
             if (mode === "saturation-only") {
-                saturationProc.command = ["nvibrant", root.mon.name, String(root.selectedSaturation)]
+                saturationProc.command = ["nvibrant", root.mon.name, String(root.saturationPercentToNvibrant(root.selectedSaturation))]
                 saturationProc.running = false
                 saturationProc.running = true
                 root.persistSettingsOnly(false)
@@ -842,8 +847,8 @@ Item {
                             ValueSlider {
                                 width: 220
                                 minValue: 0
-                                maxValue: 1023
-                                stepSize: 25
+                                maxValue: 100
+                                stepSize: 1
                                 value: root.selectedSaturation
                                 onValueModified: (value) => root.selectedSaturation = Math.round(value)
                             }
@@ -851,7 +856,7 @@ Item {
                             Text {
                                 width: 52
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: root.selectedSaturation
+                                text: root.selectedSaturation + "%"
                                 color: root.textSecondary
                                 font.pixelSize: 11
                                 horizontalAlignment: Text.AlignRight

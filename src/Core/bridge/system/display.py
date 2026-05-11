@@ -6,8 +6,9 @@ import os
 
 AVAILABLE_SCALES    = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0]
 AVAILABLE_BITDEPTHS = [6, 8, 10]
-DEFAULT_SATURATION = 950
-MAX_SATURATION = 1023
+DEFAULT_SATURATION = 93
+MAX_SATURATION = 100
+MAX_NVIBRANT_SATURATION = 1023
 DEFAULT_NIGHT_SHIFT_STRENGTH = 35
 DEFAULT_NIGHT_SHIFT_START = "20:00"
 DEFAULT_NIGHT_SHIFT_END = "07:00"
@@ -56,6 +57,18 @@ def valid_time(value: str, fallback: str) -> str:
         return f"{hour:02d}:{minute:02d}"
     except (ValueError, TypeError):
         return fallback
+
+
+def saturation_to_percent(value: str | int) -> int:
+    try:
+        saturation = int(value)
+    except (ValueError, TypeError):
+        return DEFAULT_SATURATION
+
+    if saturation > MAX_SATURATION:
+        saturation = round(max(0, min(MAX_NVIBRANT_SATURATION, saturation)) * 100 / MAX_NVIBRANT_SATURATION)
+
+    return max(0, min(MAX_SATURATION, saturation))
 
 
 def parse_mode(mode: str) -> tuple[str, float]:
@@ -142,8 +155,7 @@ def build_monitor_info(raw: dict, saved: dict) -> dict:
             current_vrr_mode = 1 if current_vrr_state else 0
         current_vrr_mode = max(0, min(2, current_vrr_mode))
         try:
-            current_saturation = int(saved.get("saturation", DEFAULT_SATURATION))
-            current_saturation = max(0, min(MAX_SATURATION, current_saturation))
+            current_saturation = saturation_to_percent(saved.get("saturation", DEFAULT_SATURATION))
         except (ValueError, TypeError):
             current_saturation = DEFAULT_SATURATION
         try:

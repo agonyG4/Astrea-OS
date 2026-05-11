@@ -126,6 +126,10 @@ QtObject {
         deviceListProcess.running = true
     }
 
+    function scheduleStartupDeviceRefresh() {
+        startupDeviceRefreshTimer.restart()
+    }
+
     function ensureAutoMountDevices() {
         if (deviceOperationProcess.running)
             return
@@ -288,6 +292,12 @@ QtObject {
         interval: 5000
         repeat: true
         running: true
+        onTriggered: deviceNet.refreshDevices()
+    }
+
+    property Timer startupDeviceRefreshTimer: Timer {
+        interval: 900
+        repeat: false
         onTriggered: deviceNet.refreshDevices()
     }
 }

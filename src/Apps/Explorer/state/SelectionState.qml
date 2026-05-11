@@ -69,4 +69,18 @@ QtObject {
         if (all.length > 0)
             selectedFile = all[all.length - 1]
     }
+
+    function selectByName(name) {
+        if (!name)
+            return
+        selectedFile = name
+        selectedFiles = [name]
+        lastSelectedIndex = -1
+        for (var i = 0; i < app.fileModel.count; i++) {
+            if (app.fileModel.get(i).fileName === name) {
+                lastSelectedIndex = i
+                return
+            }
+        }
+    }
 }

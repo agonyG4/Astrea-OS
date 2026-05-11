@@ -74,6 +74,16 @@ QtObject {
     property alias archiveExtractionDestination: fileOpsObj.archiveExtractionDestination
     property alias archiveExtractionDoneCount: fileOpsObj.archiveExtractionDoneCount
     property alias archiveExtractionTotalCount: fileOpsObj.archiveExtractionTotalCount
+    property alias fileOperationRunning: fileOpsObj.fileOperationRunning
+    property alias fileOperationProgress: fileOpsObj.fileOperationProgress
+    property alias fileOperationPercent: fileOpsObj.fileOperationPercent
+    property alias fileOperationFileName: fileOpsObj.fileOperationFileName
+    property alias fileOperationStatus: fileOpsObj.fileOperationStatus
+    property alias fileOperationError: fileOpsObj.fileOperationError
+    property alias fileOperationDestination: fileOpsObj.fileOperationDestination
+    property alias fileOperationDoneCount: fileOpsObj.fileOperationDoneCount
+    property alias fileOperationTotalCount: fileOpsObj.fileOperationTotalCount
+    property alias fileOperationMode: fileOpsObj.fileOperationMode
     property alias appImageInstallRunning: fileOpsObj.appImageInstallRunning
 
     property alias showPreview: previewObj.showPreview
@@ -148,13 +158,14 @@ QtObject {
     Component.onCompleted: {
         navigation.initialize()
         deviceNet.loadSavedAutoMounts()
-        deviceNet.refreshDevices()
+        deviceNet.scheduleStartupDeviceRefresh()
     }
 
     function isSelected(name) { return selection.isSelected(name) }
     function clearSelection() { selection.clearSelection() }
     function handleSelection(name, index, ctrlMode, shiftMode, preserveCurrentSelection) { selection.handleSelection(name, index, ctrlMode, shiftMode, preserveCurrentSelection) }
     function selectAll() { selection.selectAll() }
+    function selectByName(name) { selection.selectByName(name) }
 
     function createTab(initialPath) { navigation.createTab(initialPath) }
     function closeTab(index) { navigation.closeTab(index) }
