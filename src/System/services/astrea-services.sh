@@ -13,6 +13,9 @@ xdg_portal_conf_dir="${home}/.config/xdg-desktop-portal"
 weather_bin_dir="${astrea_root}/bin"
 weather_backend_dir="${astrea_root}/Apps/Weather/backend"
 
+info() { printf '[astrea-services] %s\n' "$*"; }
+warn() { printf '[astrea-services][warn] %s\n' "$*" >&2; }
+
 write_file_if_changed() {
     local path="$1"
     local mode="$2"
@@ -108,17 +111,30 @@ EOF
 
 install_weather_binaries() {
     if [[ ! -f "${weather_backend_dir}/Cargo.toml" ]]; then
-        printf 'missing weather backend manifest: %s\n' "${weather_backend_dir}/Cargo.toml" >&2
+        warn "weather backend manifest not found; leaving existing weather binaries in place: ${weather_backend_dir}/Cargo.toml"
         return 1
     fi
     if ! command -v cargo >/dev/null 2>&1; then
-        printf 'cargo is required to build Astrea weather binaries\n' >&2
+        warn 'cargo not found; leaving existing Astrea weather binaries in place'
         return 1
     fi
 
-    cargo build --manifest-path "${weather_backend_dir}/Cargo.toml" --workspace --release
+    if ! cargo build --manifest-path "${weather_backend_dir}/Cargo.toml" --workspace --release; then
+        warn 'failed to build Astrea weather binaries; leaving existing binaries in place'
+        return 1
+    fi
+
+    if [[ ! -x "${weather_backend_dir}/target/release/weather-cli" || ! -x "${weather_backend_dir}/target/release/astrea-weatherd" ]]; then
+        warn 'weather build completed but expected binaries are missing'
+        return 1
+    fi
+
     install -Dm755 "${weather_backend_dir}/target/release/weather-cli" "${weather_bin_dir}/weather-cli"
     install -Dm755 "${weather_backend_dir}/target/release/astrea-weatherd" "${weather_bin_dir}/astrea-weatherd"
+}
+
+weather_binaries_available() {
+    [[ -x "${weather_bin_dir}/weather-cli" && -x "${weather_bin_dir}/astrea-weatherd" ]]
 }
 
 write_weather_unit() {
@@ -153,12 +169,22 @@ reload_user_systemd() {
 install_services() {
     write_portal_files
     write_status_unit
-    install_weather_binaries
-    write_weather_unit
+    if ! install_weather_binaries; then
+        warn 'Astrea weather binaries were not rebuilt during install.'
+    fi
+    if weather_binaries_available; then
+        write_weather_unit
+    else
+        warn 'Astrea weather service not installed/enabled because weather binaries are missing.'
+    fi
     write_night_shift_units
     reload_user_systemd
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl --user enable --now astrea-weatherd.service >/dev/null 2>&1 || true
+        if weather_binaries_available; then
+            systemctl --user enable --now astrea-weatherd.service >/dev/null 2>&1 || true
+        else
+            systemctl --user disable --now astrea-weatherd.service >/dev/null 2>&1 || true
+        fi
     fi
 }
 
@@ -206,7 +232,15 @@ verify_services() {
     python3 -m py_compile "${astrea_root}/System/services/astrea_notify.py" || failed=1
     python3 -m py_compile "${astrea_root}/System/portal/astrea_filechooser_portal.py" || failed=1
     if [[ -f "${weather_backend_dir}/Cargo.toml" ]]; then
-        cargo check --manifest-path "${weather_backend_dir}/Cargo.toml" --workspace --offline || failed=1
+        if command -v cargo >/dev/null 2>&1; then
+            cargo check --manifest-path "${weather_backend_dir}/Cargo.toml" --workspace --offline || failed=1
+        else
+            warn 'missing dependency for weather backend verification: cargo'
+            failed=1
+        fi
+    else
+        warn "missing weather backend manifest: ${weather_backend_dir}/Cargo.toml"
+        failed=1
     fi
 
     if [[ ! -x "${weather_bin_dir}/weather-cli" ]]; then
@@ -219,7 +253,7 @@ verify_services() {
     fi
 
     if [[ "${failed}" -eq 0 ]]; then
-        printf 'Astrea services verified\n'
+        info 'Astrea services verified'
     fi
     return "${failed}"
 }

@@ -23,7 +23,8 @@ OBJECT_PATH = "/org/freedesktop/portal/desktop"
 INTERFACE = "org.freedesktop.impl.portal.FileChooser"
 RESULT_PREFIX = "__ASTREA_FILE_DIALOG__"
 QSLOG_PATH_PATTERN = re.compile(r'Saving logs to "([^"]+log\.qslog)"')
-PORTAL_DIALOG_QML = "/home/agony/.local/share/Astrea/Apps/Explorer/PortalDialog.qml"
+ASTREA_ROOT = Path(os.environ.get("ASTREA_ROOT", Path.home() / ".local/share/Astrea"))
+PORTAL_DIALOG_QML = str(ASTREA_ROOT / "Apps/Explorer/PortalDialog.qml")
 QS_BIN = "/usr/bin/qs"
 RESPONSE_SUCCESS = dbus.UInt32(0)
 RESPONSE_CANCELLED = dbus.UInt32(1)
@@ -189,20 +190,31 @@ def run_dialog(mode, title, options):
     env["BENCH_FILE_DIALOG_OPTIONS"] = dialog_options
     env["BENCH_FILE_DIALOG_RESULT_FILE"] = result_path
     log_debug(f"run_dialog mode={mode} title={title!r}")
+    if not Path(PORTAL_DIALOG_QML).is_file():
+        log_debug(f"Portal dialog QML not found: {PORTAL_DIALOG_QML}")
+        try:
+            os.unlink(result_path)
+        except FileNotFoundError:
+            pass
+        return {"accepted": False}
 
     child = None
     output_buffer = ""
     qslog_path = None
     try:
-        child = subprocess.Popen(
-            [QS_BIN, "-p", PORTAL_DIALOG_QML],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            env=env,
-            start_new_session=True,
-            text=True,
-            bufsize=1,
-        )
+        try:
+            child = subprocess.Popen(
+                [QS_BIN, "-p", PORTAL_DIALOG_QML],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                env=env,
+                start_new_session=True,
+                text=True,
+                bufsize=1,
+            )
+        except OSError as exc:
+            log_debug(f"Failed to start portal dialog: {exc}")
+            return {"accepted": False}
         selector = selectors.DefaultSelector()
         if child.stdout is not None:
             selector.register(child.stdout, selectors.EVENT_READ)
@@ -219,7 +231,7 @@ def run_dialog(mode, title, options):
             if qslog_result is not None:
                 return qslog_result
 
-            events = selector.select(timeout=0.1)
+            events = selector.select(timeout=0.25)
             for key, _mask in events:
                 chunk = key.fileobj.readline()
                 if not chunk:

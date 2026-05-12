@@ -76,7 +76,11 @@ pub struct CheckResult {
 pub fn home_dir() -> PathBuf {
     env::var_os("HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/home/agony"))
+        .or_else(|| {
+            env::var_os("XDG_STATE_HOME")
+                .and_then(|p| PathBuf::from(p).parent().map(PathBuf::from))
+        })
+        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("/tmp")))
 }
 
 pub fn astrea_root() -> PathBuf {
@@ -135,9 +139,15 @@ pub fn write_json_atomic(path: PathBuf, value: &Value) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, serde_json::to_vec(value)?)?;
-    fs::rename(tmp, path)?;
+    let tmp = path.with_extension(format!("tmp.{}.{}", std::process::id(), now_unix()));
+    if let Err(err) = fs::write(&tmp, serde_json::to_vec(value)?) {
+        let _ = fs::remove_file(&tmp);
+        return Err(err);
+    }
+    if let Err(err) = fs::rename(&tmp, &path) {
+        let _ = fs::remove_file(&tmp);
+        return Err(err);
+    }
     Ok(())
 }
 
@@ -196,10 +206,15 @@ pub fn fetch_weather_json(city: &str, force: bool) -> Result<Value, String> {
         }
     }
 
+    let weather_py = weather_py_path();
+    if !weather_py.is_file() {
+        return Err(format!("weather backend not found: {}", weather_py.display()));
+    }
+
     let mut command = Command::new("/usr/bin/env");
     command
         .arg("python3")
-        .arg(weather_py_path())
+        .arg(&weather_py)
         .arg("get")
         .arg(city)
         .arg("--json")

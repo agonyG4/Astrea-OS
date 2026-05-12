@@ -85,11 +85,14 @@ ok "systemd recarregado."
 info "Compilando e instalando serviços de usuário do Astrea..."
 ASTREA_SERVICES="${REAL_HOME}/.local/share/Astrea/System/services/astrea-services.sh"
 if [[ -x "$ASTREA_SERVICES" ]]; then
-    runuser -u "$REAL_USER" -- env \
+    if runuser -u "$REAL_USER" -- env \
         HOME="$REAL_HOME" \
         XDG_RUNTIME_DIR="/run/user/${REAL_UID}" \
-        bash "$ASTREA_SERVICES" install
-    ok "Serviços de usuário do Astrea instalados."
+        bash "$ASTREA_SERVICES" install; then
+        ok "Serviços de usuário do Astrea instalados."
+    else
+        warn "Falha ao instalar serviços de usuário do Astrea; continuando update. Rode ${ASTREA_SERVICES} doctor como ${REAL_USER} para detalhes."
+    fi
 else
     warn "astrea-services.sh não encontrado em $ASTREA_SERVICES; pulando serviços de usuário."
 fi
