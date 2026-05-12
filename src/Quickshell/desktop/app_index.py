@@ -2,106 +2,18 @@
 
 from __future__ import annotations
 
-import json
-import locale
 import argparse
-import os
-from configparser import ConfigParser
+import json
+import sys
 from pathlib import Path
 
+BRIDGE_DIR = Path(__file__).resolve().parents[2] / "Core" / "bridge"
+if str(BRIDGE_DIR) not in sys.path:
+    sys.path.insert(0, str(BRIDGE_DIR))
+
+from astrea_shared import FALLBACK_ICON, atomic_write_json, atomic_write_text, parse_desktop_file, xdg_desktop_dir
 
 MAX_APPS = 64
-FALLBACK_ICON = "application-x-executable"
-
-
-def xdg_desktop_dir() -> Path:
-    config_path = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "user-dirs.dirs"
-    fallback = Path.home() / "Desktop"
-
-    try:
-        for line in config_path.read_text(encoding="utf-8", errors="ignore").splitlines():
-            line = line.strip()
-            if not line.startswith("XDG_DESKTOP_DIR="):
-                continue
-
-            value = line.split("=", 1)[1].strip().strip('"')
-            value = value.replace("$HOME", str(Path.home()))
-            return Path(os.path.expandvars(value)).expanduser()
-    except Exception:
-        pass
-
-    return fallback
-def localized_keys(base: str) -> list[str]:
-    lang, _ = locale.getlocale()
-    keys: list[str] = []
-    if lang:
-        normalized = lang.replace("-", "_")
-        keys.append(f"{base}[{normalized}]")
-        if "_" in normalized:
-            keys.append(f"{base}[{normalized.split('_', 1)[0]}]")
-    keys.append(base)
-    return keys
-
-
-def localized_value(entry, base: str) -> str:
-    for key in localized_keys(base):
-        value = entry.get(key, "").strip()
-        if value:
-            return value
-    return ""
-
-
-def icon_has_localhost_reference(icon: str) -> bool:
-    if "/" not in icon:
-        return False
-
-    path = Path(icon)
-    try:
-        return path.suffix.lower() == ".svg" and path.is_file() and "localhost:" in path.read_text(encoding="utf-8", errors="ignore")
-    except Exception:
-        return False
-
-
-def parse_entry(path: Path) -> dict[str, str] | None:
-    parser = ConfigParser(interpolation=None, strict=False)
-    parser.optionxform = str
-
-    try:
-        parser.read(path, encoding="utf-8")
-    except Exception:
-        return None
-
-    if "Desktop Entry" not in parser:
-        return None
-
-    entry = parser["Desktop Entry"]
-    if entry.get("Type", "Application") != "Application":
-        return None
-    if entry.get("NoDisplay", "false").lower() == "true":
-        return None
-    if entry.get("Hidden", "false").lower() == "true":
-        return None
-    if entry.get("Terminal", "false").lower() == "true":
-        return None
-
-    name = localized_value(entry, "Name")
-    icon = entry.get("Icon", "").strip()
-    exec_line = entry.get("Exec", "").strip()
-    if not name or not exec_line:
-        return None
-    if "://" in icon:
-        icon = FALLBACK_ICON
-    if icon_has_localhost_reference(icon):
-        icon = FALLBACK_ICON
-    if not icon:
-        icon = FALLBACK_ICON
-
-    return {
-        "name": name,
-        "generic": localized_value(entry, "GenericName"),
-        "icon": icon,
-        "desktop": str(path),
-    }
 
 
 def collect_apps() -> list[dict[str, str]]:
@@ -113,16 +25,21 @@ def collect_apps() -> list[dict[str, str]]:
         return items
 
     for path in sorted(desktop_dir.glob("*.desktop")):
-        item = parse_entry(path)
-        if not item:
+        parsed = parse_desktop_file(path, source="desktop", skip_terminal=True, require_exec=True)
+        if not parsed:
             continue
 
-        key = Path(item["desktop"]).name
+        key = Path(parsed["desktop_file"]).name
         if key in seen:
             continue
 
         seen.add(key)
-        items.append(item)
+        items.append({
+            "name": str(parsed.get("name") or ""),
+            "generic": str(parsed.get("generic") or ""),
+            "icon": str(parsed.get("icon") or FALLBACK_ICON),
+            "desktop": str(parsed.get("desktop_file") or path),
+        })
 
     items.sort(key=lambda item: item["name"].casefold())
     return items
@@ -130,12 +47,11 @@ def collect_apps() -> list[dict[str, str]]:
 
 def write_js(items: list[dict[str, str]], output_path: Path) -> None:
     payload = json.dumps(items, ensure_ascii=False, indent=2)
-    output_path.write_text(f"var APPS = {payload};\n", encoding="utf-8")
+    atomic_write_text(output_path, f"var APPS = {payload};\n")
 
 
 def write_json(items: list[dict[str, str]], output_path: Path) -> None:
-    payload = json.dumps(items, ensure_ascii=False, indent=2)
-    output_path.write_text(payload + "\n", encoding="utf-8")
+    atomic_write_json(output_path, items, indent=2)
 
 
 def parse_args() -> argparse.Namespace:

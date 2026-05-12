@@ -4,7 +4,9 @@ blur_lockscreen.py — Astrea lockscreen blur generator
 Gera o blur no mesmo diretório do arquivo original e cria um symlink (aponta para ele)
 """
 import argparse
+import os
 import sys
+import tempfile
 from pathlib import Path
 from PIL import Image, ImageFilter
 
@@ -23,9 +25,19 @@ def generate_blur(input_path: Path, output_path: Path | None = None) -> Path:
     blurred_file = real_output_dir / "blurred.jpg"
 
     if not blurred_file.exists() or real_input.stat().st_mtime > blurred_file.stat().st_mtime:
-        with Image.open(real_input) as img:
-            blurred = img.convert("RGB").filter(ImageFilter.GaussianBlur(radius=RADIUS))
-            blurred.save(blurred_file, "JPEG", quality=92, optimize=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{blurred_file.name}.", suffix=".tmp", dir=str(real_output_dir))
+        os.close(fd)
+        tmp = Path(tmp_name)
+        try:
+            with Image.open(real_input) as img:
+                blurred = img.convert("RGB").filter(ImageFilter.GaussianBlur(radius=RADIUS))
+                blurred.save(tmp, "JPEG", quality=92, optimize=True)
+            os.replace(tmp, blurred_file)
+        finally:
+            try:
+                tmp.unlink()
+            except FileNotFoundError:
+                pass
 
     if output_path:
         if output_path.exists() or output_path.is_symlink():

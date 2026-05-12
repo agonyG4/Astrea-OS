@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import json
-import os
 import signal
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -14,6 +14,7 @@ BLUETOOTH_HELPER = ASTREA_ROOT / "System/scripts/bluetooth_manager.py"
 AUDIO_PATH = STATE_DIR / "audio.json"
 NETWORK_PATH = STATE_DIR / "network.json"
 BLUETOOTH_PATH = STATE_DIR / "bluetooth.json"
+HEALTH_PATH = STATE_DIR / "health.json"
 
 REFRESH_AUDIO_SEC = 10
 REFRESH_NETWORK_SEC = 30
@@ -24,7 +25,18 @@ refresh_requested = False
 running = True
 
 
+def dependency_payload(name: str, *, kind: str = "dependency_missing") -> dict:
+    return {"ok": False, "degraded": True, "error": kind, "message": f"Missing dependency: {name}"}
+
+
+def command_available(name: str) -> bool:
+    return shutil.which(name) is not None
+
+
 def run_cmd(args, timeout=6):
+    if not args or not command_available(str(args[0])):
+        name = str(args[0]) if args else ""
+        return subprocess.CompletedProcess(args, 127, "", f"Missing dependency: {name}")
     try:
         return subprocess.run(args, text=True, capture_output=True, timeout=timeout, check=False)
     except Exception as exc:
@@ -45,6 +57,10 @@ def write_json_if_changed(path, payload):
 
 
 def audio_status():
+    if not command_available("wpctl"):
+        payload = dependency_payload("wpctl")
+        payload.update({"level": 0, "muted": False})
+        return payload
     proc = run_cmd(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"], timeout=3)
     muted = "[MUTED]" in proc.stdout
     level = 0
@@ -54,14 +70,21 @@ def audio_status():
             break
         except ValueError:
             pass
-    return {
+    payload = {
         "ok": proc.returncode == 0,
         "level": max(0, min(150, level)),
         "muted": muted,
     }
+    if proc.returncode != 0:
+        payload.update({"degraded": True, "error": proc.stderr.strip() or "wpctl_failed"})
+    return payload
 
 
 def network_status():
+    if not command_available("ip"):
+        payload = dependency_payload("ip")
+        payload.update({"connected": False, "type": "none", "ssid": "", "download": "0 B/s", "upload": "0 B/s"})
+        return payload
     route = run_cmd(["ip", "route", "get", "1.1.1.1"], timeout=3).stdout.split()
     iface = ""
     for index, token in enumerate(route):
@@ -74,11 +97,12 @@ def network_status():
     if (Path("/sys/class/net") / iface / "wireless").exists():
         net_type = "wifi"
         ssid = ""
-        wifi = run_cmd(["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"], timeout=4).stdout
-        for line in wifi.splitlines():
-            if line.startswith("yes:"):
-                ssid = line.split(":", 1)[1]
-                break
+        if command_available("nmcli"):
+            wifi = run_cmd(["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"], timeout=4).stdout
+            for line in wifi.splitlines():
+                if line.startswith("yes:"):
+                    ssid = line.split(":", 1)[1]
+                    break
     else:
         net_type = "wired"
         ssid = "Ethernet"
@@ -93,6 +117,14 @@ def network_status():
 
 
 def bluetooth_status():
+    if not command_available("python3"):
+        payload = dependency_payload("python3")
+        payload.update({"powered": False, "connected_name": "", "paired_devices": []})
+        return payload
+    if not BLUETOOTH_HELPER.exists():
+        payload = dependency_payload(str(BLUETOOTH_HELPER), kind="helper_missing")
+        payload.update({"powered": False, "connected_name": "", "paired_devices": []})
+        return payload
     proc = run_cmd(["python3", str(BLUETOOTH_HELPER), "status"], timeout=8)
     try:
         payload = json.loads(proc.stdout or "{}")
@@ -106,7 +138,24 @@ def bluetooth_status():
 
 
 def bluetooth_autoconnect():
-    run_cmd(["python3", str(BLUETOOTH_HELPER), "autoconnect"], timeout=20)
+    if command_available("python3") and BLUETOOTH_HELPER.exists():
+        run_cmd(["python3", str(BLUETOOTH_HELPER), "autoconnect"], timeout=20)
+
+
+def health_payload() -> dict:
+    deps = {
+        "wpctl": command_available("wpctl"),
+        "ip": command_available("ip"),
+        "nmcli": command_available("nmcli"),
+        "python3": command_available("python3"),
+        "bluetooth_helper": BLUETOOTH_HELPER.exists(),
+    }
+    return {
+        "ok": all(deps.values()),
+        "degraded": not all(deps.values()),
+        "dependencies": deps,
+        "updated_at": int(time.time()),
+    }
 
 
 def handle_refresh(_signum, _frame):
@@ -135,6 +184,7 @@ def main():
             refresh_requested = False
 
         if now >= next_audio:
+            write_json_if_changed(HEALTH_PATH, health_payload())
             write_json_if_changed(AUDIO_PATH, audio_status())
             next_audio = now + REFRESH_AUDIO_SEC
 

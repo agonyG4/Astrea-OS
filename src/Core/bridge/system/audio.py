@@ -11,8 +11,13 @@ import sys
 import json
 import subprocess
 import re
-import os
 from pathlib import Path
+
+BRIDGE_DIR = Path(__file__).resolve().parents[1]
+if str(BRIDGE_DIR) not in sys.path:
+    sys.path.insert(0, str(BRIDGE_DIR))
+
+from astrea_shared import atomic_write_json, atomic_write_text, read_json, resolve_icon_path
 
 # ── WirePlumber config path ───────────────────────────────────────────────────
 WP_CONF = Path.home() / ".config/wireplumber/wireplumber.conf.d/50-astrea-audio.conf"
@@ -29,27 +34,46 @@ def eprint(msg):
     print(msg, file=sys.stderr)
 
 def get_aliases():
-    if not ALIASES_CONF.exists():
+    data = read_json(ALIASES_CONF, {})
+    if not isinstance(data, dict):
         return {}
-    try:
-        c = ALIASES_CONF.read_text()
-        return json.loads(c) if c else {}
-    except Exception:
-        return {}
+    aliases = {}
+    for name, alias in data.items():
+        try:
+            name_s = validate_wp_string(str(name), field="device name")
+            alias_s = validate_wp_string(str(alias), field="alias")
+        except ValueError:
+            continue
+        aliases[name_s] = alias_s
+    return aliases
+
+
+def validate_wp_string(value: str, *, field: str) -> str:
+    value = (value or "").strip()
+    if not value:
+        raise ValueError(f"{field} vazio")
+    if len(value) > 256:
+        raise ValueError(f"{field} muito longo")
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in value):
+        raise ValueError(f"{field} contem caracteres de controle")
+    return value
+
+
+def wp_quote(value: str) -> str:
+    return json.dumps(validate_wp_string(value, field="WirePlumber string"), ensure_ascii=False)
+
 
 def save_alias(name, custom_name):
     aliases = get_aliases()
-    if custom_name.strip() == "":
-        if name in aliases:
-            del aliases[name]
+    device_name = validate_wp_string(str(name), field="device name")
+    alias = str(custom_name or "").strip()
+    if alias == "":
+        aliases.pop(device_name, None)
     else:
-        aliases[name] = custom_name.strip()
-    ALIASES_CONF.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        ALIASES_CONF.write_text(json.dumps(aliases, ensure_ascii=False))
-    except Exception:
-        pass
+        aliases[device_name] = validate_wp_string(alias, field="alias")
+    atomic_write_json(ALIASES_CONF, aliases, indent=None, sort_keys=True)
     update_wp_aliases_file()
+
 
 def update_wp_aliases_file():
     aliases = get_aliases()
@@ -59,73 +83,28 @@ def update_wp_aliases_file():
             conf.unlink()
         return
 
-    out = []
-    for k, v in aliases.items():
-        out.append(f"""  {{
-    matches = [ {{ node.name = "{k}" }} ]
-    actions = {{ update-props = {{ node.description = "{v}" }} }}
-  }}""")
-    rules_str = ",\n".join(out)
+    rules = []
+    for name, alias in sorted(aliases.items()):
+        try:
+            quoted_name = wp_quote(name)
+            quoted_alias = wp_quote(alias)
+        except ValueError as exc:
+            eprint(f"[aliases] ignorando alias invalido: {exc}")
+            continue
+        rules.append(
+            "  {\n"
+            f"    matches = [ {{ node.name = {quoted_name} }} ]\n"
+            f"    actions = {{ update-props = {{ node.description = {quoted_alias} }} }}\n"
+            "  }"
+        )
+    if not rules:
+        if conf.exists():
+            conf.unlink()
+        return
+    rules_str = ",\n".join(rules)
     content = f"monitor.alsa.rules = [\n{rules_str}\n]\n\n"
     content += f"monitor.bluez.rules = [\n{rules_str}\n]\n\n"
-    conf.parent.mkdir(parents=True, exist_ok=True)
-    conf.write_text(content)
-
-# ── Resolve path do ícone no tema ─────────────────────────────────────────────
-def resolve_icon_path(icon_name: str) -> str:
-    if not icon_name:
-        return ""
-
-    theme = "hicolor"
-    try:
-        gtk = subprocess.check_output(
-            ["gsettings", "get", "org.gnome.desktop.interface", "icon-theme"],
-            stderr=subprocess.DEVNULL, text=True
-        ).strip().strip("'")
-        if gtk:
-            theme = gtk
-    except Exception:
-        pass
-
-    # tenta o tema exato e variantes sem sufixo (-dark, -light)
-    theme_variants = [theme]
-    for suffix in ["-dark", "-light", "-Dark", "-Light"]:
-        if theme.endswith(suffix):
-            theme_variants.append(theme[:-len(suffix)])
-
-    base_dirs = [os.path.expanduser("~/.local/share/icons"), "/usr/share/icons"]
-    sizes = ["48x48", "64x64", "128x128", "256x256", "scalable", "32x32", "22x22", "16x16"]
-    exts  = [".svg", ".png", ".xpm"]
-
-    # estruturas de pasta que diferentes temas usam
-    subpaths = [
-        "{size}/apps/{name}{ext}",   # hicolor padrão
-        "apps/{size}/{name}{ext}",   # Numix
-        "apps/scalable/{name}{ext}", # WhiteSur (ignora size)
-    ]
-
-    for base in base_dirs:
-        for t in theme_variants:
-            theme_dir = os.path.join(base, t)
-            if not os.path.isdir(theme_dir):
-                continue
-            for size in sizes:
-                for subpath in subpaths:
-                    for ext in exts:
-                        path = os.path.join(
-                            theme_dir,
-                            subpath.format(size=size, name=icon_name, ext=ext)
-                        )
-                        if os.path.isfile(path):
-                            return path
-
-    # fallback: pixmaps
-    for ext in exts:
-        path = f"/usr/share/pixmaps/{icon_name}{ext}"
-        if os.path.isfile(path):
-            return path
-
-    return ""
+    atomic_write_text(conf, content)
 
 # ── Lê dispositivos via pactl ─────────────────────────────────────────────────
 def get_default_sink() -> str:
@@ -299,14 +278,20 @@ def apply_config(cfg: dict):
         print("wp_restart_required: true")
 
 def _write_wp_conf(cfg: dict):
-    WP_CONF.parent.mkdir(parents=True, exist_ok=True)
-    WP_CONF.write_text(
+    sample_rate = int(cfg.get("sample_rate", 48000))
+    buffer_size = int(cfg.get("buffer_size", 1024))
+    if sample_rate < 8000 or sample_rate > 384000:
+        raise ValueError("sample_rate fora do intervalo seguro")
+    if buffer_size < 32 or buffer_size > 8192:
+        raise ValueError("buffer_size fora do intervalo seguro")
+    atomic_write_text(
+        WP_CONF,
         "# Astrea Audio Settings — gerado automaticamente\n"
         "wireplumber.settings = {\n"
-        f"  default.clock.rate          = {cfg['sample_rate']}\n"
-        f"  default.clock.quantum       = {cfg['buffer_size']}\n"
-        f"  default.clock.min-quantum   = 32\n"
-        f"  default.clock.max-quantum   = 8192\n"
+        f"  default.clock.rate          = {sample_rate}\n"
+        f"  default.clock.quantum       = {buffer_size}\n"
+        "  default.clock.min-quantum   = 32\n"
+        "  default.clock.max-quantum   = 8192\n"
         "}\n"
     )
 

@@ -39,7 +39,10 @@ monitor_rule="monitor=${monitor},${resolution}@${refreshrate},0x0,${scale},bitde
 night_shift_color="${HOME}/.local/share/Astrea/System/services/display_night_shift_color.sh"
 
 mkdir -p "${HOME}/.config/hypr/core"
-printf '%s\n' "${monitor_rule}" > "${HOME}/.config/hypr/core/monitors.conf"
+monitors_conf="${HOME}/.config/hypr/core/monitors.conf"
+tmp_monitors="$(mktemp "${monitors_conf}.XXXXXX")"
+printf '%s\n' "${monitor_rule}" > "${tmp_monitors}"
+mv -f "${tmp_monitors}" "${monitors_conf}"
 
 if [ "${apply_mode}" = "full" ]; then
     # Apply immediately for the current session, then reload so the persisted
