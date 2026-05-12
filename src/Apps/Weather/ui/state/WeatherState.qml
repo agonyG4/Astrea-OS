@@ -19,7 +19,7 @@ Item {
     Timer {
         interval: 1800000
         repeat: true
-        running: root.settingsLoaded
+        running: root.settingsLoaded && root.errorMsg.indexOf("Backend do clima nao encontrado") !== 0
         onTriggered: root.refresh()
     }
 
@@ -31,8 +31,14 @@ Item {
         weatherProc.running = true
     }
 
+    function missingBackendMessage() {
+        return "Backend do clima nao encontrado: " + weatherCli + ". Reinstale os servicos do Astrea ou rode astrea-services.sh doctor."
+    }
+
     function setAlertNotificationsEnabled(enabled) {
         alertNotificationsEnabled = enabled
+        if (root.errorMsg.indexOf("Backend do clima nao encontrado") === 0)
+            return
         settingsSaveProc.command = [
             "/usr/bin/env",
             root.weatherCli,
@@ -64,7 +70,9 @@ Item {
             }
         }
         onExited: exitCode => {
-            if (exitCode !== 0 && root.errorMsg === "")
+            if (exitCode === 126 || exitCode === 127)
+                root.errorMsg = root.missingBackendMessage()
+            else if (exitCode !== 0 && root.errorMsg === "")
                 root.errorMsg = "Falha ao atualizar o clima"
             root.loading = false
         }
@@ -75,6 +83,8 @@ Item {
         command: ["/usr/bin/env", root.weatherCli, "settings"]
         stdout: StdioCollector {
             onStreamFinished: {
+                if (this.text.trim().length === 0)
+                    return
                 try {
                     var data = JSON.parse(this.text)
                     root.alertNotificationsEnabled = data.notifications_enabled !== false
@@ -85,11 +95,21 @@ Item {
                 root.refresh()
             }
         }
-        stderr: StdioCollector {}
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (this.text.indexOf(root.weatherCli) !== -1)
+                    root.errorMsg = root.missingBackendMessage()
+            }
+        }
         onExited: exitCode => {
+            if (exitCode === 126 || exitCode === 127)
+                root.errorMsg = root.missingBackendMessage()
             if (!root.settingsLoaded) {
                 root.settingsLoaded = true
-                root.refresh()
+                if (root.errorMsg.indexOf("Backend do clima nao encontrado") !== 0)
+                    root.refresh()
+                else
+                    root.loading = false
             }
         }
     }

@@ -76,7 +76,11 @@ pub struct CheckResult {
 pub fn home_dir() -> PathBuf {
     env::var_os("HOME")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("/home/agony"))
+        .or_else(|| {
+            env::var_os("XDG_STATE_HOME")
+                .and_then(|p| PathBuf::from(p).parent().map(PathBuf::from))
+        })
+        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("/tmp")))
 }
 
 pub fn astrea_root() -> PathBuf {

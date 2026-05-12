@@ -2,6 +2,7 @@ use rayon::prelude::*;
 use std::cmp::Ordering;
 use std::env;
 use std::fs;
+use std::io::{self, Write};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -53,8 +54,9 @@ fn run() -> Result<(), String> {
         Some("remount") => run_remount_cmd(&args[2..]),
         Some("warm-thumbnails") => run_warm_thumbnails(&args[2..]),
         Some("install-appimage") => run_install_appimage(&args[2..]),
+        Some("file-op") => run_file_op(&args[2..]),
         _ if args.len() >= 6 => run_list(&args[1..]),
-        _ => Err("usage: explorer_backend list|search|devices|mount|unmount|remount|warm-thumbnails|install-appimage ...".into()),
+        _ => Err("usage: explorer_backend list|search|devices|mount|unmount|remount|warm-thumbnails|install-appimage|file-op ...".into()),
     }
 }
 
@@ -85,7 +87,9 @@ fn run_devices() -> Result<(), String> {
 
 fn run_search(args: &[String]) -> Result<(), String> {
     if args.len() < 6 {
-        return Err("expected: <path> <query> <show_hidden> <sort_field> <sort_asc> <folders_first>".into());
+        return Err(
+            "expected: <path> <query> <show_hidden> <sort_field> <sort_asc> <folders_first>".into(),
+        );
     }
 
     let dir = Path::new(&args[0]);
@@ -266,9 +270,269 @@ fn run_install_appimage(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn run_file_op(args: &[String]) -> Result<(), String> {
+    match run_file_op_inner(args) {
+        Ok(()) => Ok(()),
+        Err(err) => {
+            println!("ERROR|{}", err);
+            flush_stdout();
+            Err(err)
+        }
+    }
+}
+
+fn run_file_op_inner(args: &[String]) -> Result<(), String> {
+    if args.len() < 5 {
+        return Err("usage: explorer_backend file-op <copy|move|cut> <destination> <overwrite|skip|rename|keep-both> <rename> <paths...>".into());
+    }
+
+    let mode = normalize_file_op_mode(&args[0])?;
+    let destination = Path::new(&args[1]);
+    let policy = args[2].as_str();
+    let rename = args[3].trim();
+    let sources: Vec<PathBuf> = args[4..].iter().map(PathBuf::from).collect();
+
+    if !destination.is_dir() {
+        return Err(format!(
+            "destination is not a directory: {}",
+            destination.display()
+        ));
+    }
+
+    println!(
+        "START|{}|{}|{}",
+        mode,
+        destination.to_string_lossy(),
+        sources.len()
+    );
+    flush_stdout();
+
+    let mut completed = 0usize;
+    for source in &sources {
+        let name = source
+            .file_name()
+            .and_then(|v| v.to_str())
+            .ok_or_else(|| format!("invalid source path: {}", source.display()))?;
+        let target_name = if policy == "rename" && sources.len() == 1 && !rename.is_empty() {
+            rename
+        } else {
+            name
+        };
+        let initial_target = destination.join(target_name);
+
+        if same_path(source, &initial_target) {
+            completed += 1;
+            emit_file_op_progress(completed, sources.len(), source);
+            continue;
+        }
+
+        let Some(target) = resolve_conflict_target(&initial_target, policy)? else {
+            completed += 1;
+            emit_file_op_progress(completed, sources.len(), source);
+            continue;
+        };
+
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+        }
+
+        if mode == "move" {
+            move_path(source, &target)?;
+        } else {
+            copy_path(source, &target)?;
+        }
+
+        completed += 1;
+        emit_file_op_progress(completed, sources.len(), source);
+    }
+
+    println!(
+        "DONE|{}|{}|{}",
+        destination.to_string_lossy(),
+        completed,
+        sources.len()
+    );
+    flush_stdout();
+    Ok(())
+}
+
+fn normalize_file_op_mode(mode: &str) -> Result<&'static str, String> {
+    match mode {
+        "copy" => Ok("copy"),
+        "move" | "cut" => Ok("move"),
+        other => Err(format!("unsupported file operation mode: {other}")),
+    }
+}
+
+fn emit_file_op_progress(done: usize, total: usize, source: &Path) {
+    let percent = if total == 0 {
+        100
+    } else {
+        done.saturating_mul(100) / total
+    };
+    let name = source
+        .file_name()
+        .and_then(|v| v.to_str())
+        .unwrap_or_default();
+    println!("PROGRESS|{}|{}|{}|{}", done, total, percent, name);
+    flush_stdout();
+}
+
+fn flush_stdout() {
+    let _ = io::stdout().flush();
+}
+
+fn resolve_conflict_target(target: &Path, policy: &str) -> Result<Option<PathBuf>, String> {
+    if !target.exists() {
+        return Ok(Some(target.to_path_buf()));
+    }
+
+    match policy {
+        "skip" => Ok(None),
+        "overwrite" => {
+            remove_existing(target)?;
+            Ok(Some(target.to_path_buf()))
+        }
+        "rename" | "keep-both" => Ok(Some(unique_path(target))),
+        other => Err(format!("unsupported conflict policy: {other}")),
+    }
+}
+
+fn unique_path(path: &Path) -> PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+
+    let parent = path.parent().unwrap_or_else(|| Path::new(""));
+    let stem = path
+        .file_stem()
+        .and_then(|v| v.to_str())
+        .filter(|v| !v.is_empty())
+        .or_else(|| path.file_name().and_then(|v| v.to_str()))
+        .unwrap_or("item");
+    let extension = path.extension().and_then(|v| v.to_str()).unwrap_or("");
+
+    for n in 2..10_000usize {
+        let name = if extension.is_empty() {
+            format!("{stem} {n}")
+        } else {
+            format!("{stem} {n}.{extension}")
+        };
+        let candidate = parent.join(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+
+    parent.join(format!("{stem} {}", unix_millis()))
+}
+
+fn unix_millis() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    if a == b {
+        return true;
+    }
+    match (fs::canonicalize(a), fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
+}
+
+fn remove_existing(path: &Path) -> Result<(), String> {
+    if path.is_dir() && !path.is_symlink() {
+        fs::remove_dir_all(path).map_err(|e| format!("remove {}: {e}", path.display()))
+    } else {
+        fs::remove_file(path).map_err(|e| format!("remove {}: {e}", path.display()))
+    }
+}
+
+fn move_path(source: &Path, target: &Path) -> Result<(), String> {
+    match fs::rename(source, target) {
+        Ok(()) => Ok(()),
+        Err(rename_err) => {
+            copy_path(source, target)?;
+            remove_existing(source).map_err(|remove_err| {
+                format!(
+                    "move {} to {}: rename failed ({rename_err}); cleanup failed ({remove_err})",
+                    source.display(),
+                    target.display()
+                )
+            })
+        }
+    }
+}
+
+fn copy_path(source: &Path, target: &Path) -> Result<(), String> {
+    let meta =
+        fs::symlink_metadata(source).map_err(|e| format!("metadata {}: {e}", source.display()))?;
+    if meta.file_type().is_symlink() {
+        copy_symlink(source, target)
+    } else if meta.is_dir() {
+        copy_dir_recursive(source, target)
+    } else if meta.is_file() {
+        fs::copy(source, target)
+            .map(|_| ())
+            .map_err(|e| format!("copy {} to {}: {e}", source.display(), target.display()))
+    } else {
+        Err(format!("unsupported file type: {}", source.display()))
+    }
+}
+
+#[cfg(unix)]
+fn copy_symlink(source: &Path, target: &Path) -> Result<(), String> {
+    use std::os::unix::fs::symlink;
+    let link = fs::read_link(source).map_err(|e| format!("readlink {}: {e}", source.display()))?;
+    symlink(&link, target).map_err(|e| format!("symlink {}: {e}", target.display()))
+}
+
+#[cfg(not(unix))]
+fn copy_symlink(source: &Path, target: &Path) -> Result<(), String> {
+    let link = fs::read_link(source).map_err(|e| format!("readlink {}: {e}", source.display()))?;
+    if link.is_dir() {
+        copy_dir_recursive(&link, target)
+    } else {
+        fs::copy(&link, target)
+            .map(|_| ())
+            .map_err(|e| format!("copy {} to {}: {e}", link.display(), target.display()))
+    }
+}
+
+fn copy_dir_recursive(source: &Path, target: &Path) -> Result<(), String> {
+    if target.starts_with(source) {
+        return Err(format!(
+            "refusing to copy directory into itself: {} -> {}",
+            source.display(),
+            target.display()
+        ));
+    }
+
+    fs::create_dir_all(target).map_err(|e| format!("create {}: {e}", target.display()))?;
+    let meta = fs::metadata(source).map_err(|e| format!("metadata {}: {e}", source.display()))?;
+    let _ = fs::set_permissions(target, meta.permissions());
+
+    for entry in fs::read_dir(source).map_err(|e| format!("read {}: {e}", source.display()))? {
+        let entry = entry.map_err(|e| format!("read {}: {e}", source.display()))?;
+        let child_source = entry.path();
+        let child_target = target.join(entry.file_name());
+        if child_target.exists() {
+            remove_existing(&child_target)?;
+        }
+        copy_path(&child_source, &child_target)?;
+    }
+    Ok(())
+}
+
 fn parse_list_args(args: &[String]) -> Result<(&Path, bool, &str, bool, bool), String> {
     if args.len() < 5 {
-        return Err("expected: <path> <show_hidden> <sort_field> <sort_asc> <folders_first>".into());
+        return Err(
+            "expected: <path> <show_hidden> <sort_field> <sort_asc> <folders_first>".into(),
+        );
     }
     Ok((
         Path::new(&args[0]),
@@ -524,7 +788,8 @@ fn parse_lsblk_line(line: &str) -> Option<Device> {
 fn show_device(d: &Device) -> bool {
     !d.path.is_empty()
         && !d.fstype.eq_ignore_ascii_case("swap")
-        && ((matches!(d.dev_type.as_str(), "part" | "disk" | "crypt" | "lvm") && !d.fstype.is_empty())
+        && ((matches!(d.dev_type.as_str(), "part" | "disk" | "crypt" | "lvm")
+            && !d.fstype.is_empty())
             || d.mountpoints.iter().any(|m| is_user_mount(m)))
         && !d.mountpoints.iter().any(|m| is_system_mount(m))
 }
@@ -652,8 +917,14 @@ fn is_small_svg(path: &Path) -> bool {
 
     let text = String::from_utf8_lossy(&output.stdout);
     let mut parts = text.split_whitespace();
-    let width = parts.next().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
-    let height = parts.next().and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
+    let width = parts
+        .next()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(0);
+    let height = parts
+        .next()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(0);
     width > 0 && height > 0 && width <= 64 && height <= 64
 }
 
@@ -669,13 +940,16 @@ fn svg_preview_density(path: &Path) -> &'static str {
 }
 
 fn svg_preview_size(path: &Path) -> &'static str {
-    if is_small_svg(path) { "768x768" } else { "512x512" }
+    if is_small_svg(path) {
+        "768x768"
+    } else {
+        "512x512"
+    }
 }
 
 fn svg_filter_blur(path: &Path) -> &'static str {
     if is_small_svg(path) { "0.85" } else { "0.92" }
 }
-
 
 fn device_to_json(d: &Device) -> String {
     let mount = primary_mount(d).unwrap_or("");
@@ -742,9 +1016,9 @@ fn file_media_type(path: &Path) -> Option<&'static str> {
         "jpg" | "jpeg" | "png" | "gif" | "bmp" | "webp" | "svg" | "avif" | "heic" | "heif"
         | "tiff" | "tif" | "tga" | "ico" | "psd" | "jxl" | "exr" | "dds" | "ppm" | "pbm"
         | "pgm" => Some("image"),
-        "mp4" | "mkv" | "avi" | "mov" | "webm" | "flv" | "wmv" | "m4v" | "ts" | "3gp"
-        | "ogv" | "rm" | "rmvb" | "vob" | "divx" | "f4v" | "m2ts" | "mts" | "mpg" | "mpeg"
-        | "asf" | "m2v" | "h264" | "h265" | "hevc" => Some("video"),
+        "mp4" | "mkv" | "avi" | "mov" | "webm" | "flv" | "wmv" | "m4v" | "ts" | "3gp" | "ogv"
+        | "rm" | "rmvb" | "vob" | "divx" | "f4v" | "m2ts" | "mts" | "mpg" | "mpeg" | "asf"
+        | "m2v" | "h264" | "h265" | "hevc" => Some("video"),
         _ => None,
     }
 }
@@ -754,7 +1028,8 @@ fn is_previewable(path: &Path) -> bool {
 }
 
 fn cache_dir() -> Result<PathBuf, String> {
-    Ok(PathBuf::from(env::var("HOME").map_err(|_| "HOME not set")?).join(".cache/explorer/thumbnails"))
+    Ok(PathBuf::from(env::var("HOME").map_err(|_| "HOME not set")?)
+        .join(".cache/explorer/thumbnails"))
 }
 
 fn cache_key(path: &Path, modified_ms: i64) -> String {
@@ -794,18 +1069,47 @@ fn gen_thumbnail(input: &Path, out: &Path) -> Result<(), String> {
         Some("video") => Command::new("ffmpeg")
             .args(["-y", "-ss", "00:00:01", "-i"])
             .arg(input)
-            .args(["-vframes", "1", "-vf", "scale=256:256:force_original_aspect_ratio=decrease"])
+            .args([
+                "-vframes",
+                "1",
+                "-vf",
+                "scale=256:256:force_original_aspect_ratio=decrease",
+            ])
             .arg(&tmp)
             .status(),
         Some("image") if ext == "svg" => Command::new("magick")
-            .args(["-background", "none", "-density", svg_preview_density(input)])
+            .args([
+                "-background",
+                "none",
+                "-density",
+                svg_preview_density(input),
+            ])
             .arg(input)
-            .args(["-filter", "Lanczos", "-define", &format!("filter:blur={}", svg_filter_blur(input)), "-resize", svg_preview_size(input), "-alpha", "Set", "-strip"])
+            .args([
+                "-filter",
+                "Lanczos",
+                "-define",
+                &format!("filter:blur={}", svg_filter_blur(input)),
+                "-resize",
+                svg_preview_size(input),
+                "-alpha",
+                "Set",
+                "-strip",
+            ])
             .arg(&tmp)
             .status(),
         _ => Command::new("magick")
             .arg(input)
-            .args(["-auto-orient", "-strip", "-filter", "Lanczos", "-define", "filter:blur=0.92", "-thumbnail", "512x512>"])
+            .args([
+                "-auto-orient",
+                "-strip",
+                "-filter",
+                "Lanczos",
+                "-define",
+                "filter:blur=0.92",
+                "-thumbnail",
+                "512x512>",
+            ])
             .arg(&tmp)
             .status(),
     }
