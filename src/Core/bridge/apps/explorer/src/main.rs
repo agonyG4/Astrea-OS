@@ -373,6 +373,7 @@ fn emit_file_op_progress(done: usize, total: usize, source: &Path) {
     let name = source
         .file_name()
         .and_then(|v| v.to_str())
+        .map(sanitize_progress_field)
         .unwrap_or_default();
     println!("PROGRESS|{}|{}|{}|{}", done, total, percent, name);
     flush_stdout();
@@ -380,6 +381,16 @@ fn emit_file_op_progress(done: usize, total: usize, source: &Path) {
 
 fn flush_stdout() {
     let _ = io::stdout().flush();
+}
+
+fn sanitize_progress_field(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| match c {
+            '|' | '\n' | '\r' => ' ',
+            c => c,
+        })
+        .collect()
 }
 
 fn resolve_conflict_target(target: &Path, policy: &str) -> Result<Option<PathBuf>, String> {
@@ -393,7 +404,11 @@ fn resolve_conflict_target(target: &Path, policy: &str) -> Result<Option<PathBuf
             remove_existing(target)?;
             Ok(Some(target.to_path_buf()))
         }
-        "rename" | "keep-both" => Ok(Some(unique_path(target))),
+        "rename" => Err(format!(
+            "renamed target already exists: {}",
+            target.display()
+        )),
+        "keep-both" => Ok(Some(unique_path(target))),
         other => Err(format!("unsupported conflict policy: {other}")),
     }
 }
@@ -456,7 +471,21 @@ fn move_path(source: &Path, target: &Path) -> Result<(), String> {
     match fs::rename(source, target) {
         Ok(()) => Ok(()),
         Err(rename_err) => {
-            copy_path(source, target)?;
+            if let Err(copy_err) = copy_path(source, target) {
+                let cleanup = if target.exists() {
+                    remove_existing(target)
+                        .err()
+                        .map(|err| format!("; cleanup failed ({err})"))
+                        .unwrap_or_else(|| "; partial target removed".to_string())
+                } else {
+                    String::new()
+                };
+                return Err(format!(
+                    "move {} to {}: rename failed ({rename_err}); copy fallback failed ({copy_err}){cleanup}",
+                    source.display(),
+                    target.display()
+                ));
+            }
             remove_existing(source).map_err(|remove_err| {
                 format!(
                     "move {} to {}: rename failed ({rename_err}); cleanup failed ({remove_err})",
@@ -504,7 +533,7 @@ fn copy_symlink(source: &Path, target: &Path) -> Result<(), String> {
 }
 
 fn copy_dir_recursive(source: &Path, target: &Path) -> Result<(), String> {
-    if target.starts_with(source) {
+    if is_self_or_descendant_target(source, target) {
         return Err(format!(
             "refusing to copy directory into itself: {} -> {}",
             source.display(),
@@ -526,6 +555,33 @@ fn copy_dir_recursive(source: &Path, target: &Path) -> Result<(), String> {
         copy_path(&child_source, &child_target)?;
     }
     Ok(())
+}
+
+fn is_self_or_descendant_target(source: &Path, target: &Path) -> bool {
+    if target.starts_with(source) {
+        return true;
+    }
+
+    let Ok(source_canon) = fs::canonicalize(source) else {
+        return false;
+    };
+
+    if let Ok(target_canon) = fs::canonicalize(target) {
+        return target_canon == source_canon || target_canon.starts_with(&source_canon);
+    }
+
+    let Some(parent) = target.parent() else {
+        return false;
+    };
+    let Ok(parent_canon) = fs::canonicalize(parent) else {
+        return false;
+    };
+    let target_canon = match target.file_name() {
+        Some(name) => parent_canon.join(name),
+        None => parent_canon,
+    };
+
+    target_canon == source_canon || target_canon.starts_with(&source_canon)
 }
 
 fn parse_list_args(args: &[String]) -> Result<(&Path, bool, &str, bool, bool), String> {
