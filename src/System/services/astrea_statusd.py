@@ -202,7 +202,7 @@ def main():
             next_bluetooth = 0.0
 
         next_due = min(next_audio, next_network, next_bluetooth, next_autoconnect)
-        sleep_for = max(0.2, min(10.0, next_due - time.monotonic()))
+        sleep_for = max(0.2, min(5.0, next_due - time.monotonic()))
         time.sleep(sleep_for)
 
 

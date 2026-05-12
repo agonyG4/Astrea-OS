@@ -9,6 +9,7 @@ Item {
     property var weatherData: null
     property bool loading: true
     property string errorMsg: ""
+    property bool backendMissing: false
     readonly property string astreaRoot: Quickshell.env("HOME") + "/.local/share/Astrea"
     property string weatherCli: astreaRoot + "/bin/weather-cli"
     property bool alertNotificationsEnabled: true
@@ -19,16 +20,22 @@ Item {
     Timer {
         interval: 1800000
         repeat: true
-        running: root.settingsLoaded && root.errorMsg.indexOf("Backend do clima nao encontrado") !== 0
+        running: root.settingsLoaded && !root.backendMissing
         onTriggered: root.refresh()
     }
 
     function refresh() {
-        if (weatherProc.running)
+        if (root.backendMissing || weatherProc.running)
             return
         loading = true
         errorMsg = ""
         weatherProc.running = true
+    }
+
+    function markBackendMissing() {
+        root.backendMissing = true
+        root.errorMsg = root.missingBackendMessage()
+        root.loading = false
     }
 
     function missingBackendMessage() {
@@ -37,7 +44,7 @@ Item {
 
     function setAlertNotificationsEnabled(enabled) {
         alertNotificationsEnabled = enabled
-        if (root.errorMsg.indexOf("Backend do clima nao encontrado") === 0)
+        if (root.backendMissing)
             return
         settingsSaveProc.command = [
             "/usr/bin/env",
@@ -55,6 +62,7 @@ Item {
             onStreamFinished: {
                 try {
                     root.weatherData = JSON.parse(this.text)
+                    root.backendMissing = false
                     root.errorMsg = ""
                 } catch(e) {
                     root.weatherData = null
@@ -65,13 +73,15 @@ Item {
         }
         stderr: StdioCollector {
             onStreamFinished: {
-                if (this.text.trim().length > 0)
+                if (this.text.indexOf(root.weatherCli) !== -1)
+                    root.markBackendMissing()
+                else if (this.text.trim().length > 0)
                     root.errorMsg = this.text.trim()
             }
         }
         onExited: exitCode => {
             if (exitCode === 126 || exitCode === 127)
-                root.errorMsg = root.missingBackendMessage()
+                root.markBackendMissing()
             else if (exitCode !== 0 && root.errorMsg === "")
                 root.errorMsg = "Falha ao atualizar o clima"
             root.loading = false
@@ -87,6 +97,7 @@ Item {
                     return
                 try {
                     var data = JSON.parse(this.text)
+                    root.backendMissing = false
                     root.alertNotificationsEnabled = data.notifications_enabled !== false
                 } catch(e) {
                     root.alertNotificationsEnabled = true
@@ -98,15 +109,15 @@ Item {
         stderr: StdioCollector {
             onStreamFinished: {
                 if (this.text.indexOf(root.weatherCli) !== -1)
-                    root.errorMsg = root.missingBackendMessage()
+                    root.markBackendMissing()
             }
         }
         onExited: exitCode => {
             if (exitCode === 126 || exitCode === 127)
-                root.errorMsg = root.missingBackendMessage()
+                root.markBackendMissing()
             if (!root.settingsLoaded) {
                 root.settingsLoaded = true
-                if (root.errorMsg.indexOf("Backend do clima nao encontrado") !== 0)
+                if (!root.backendMissing)
                     root.refresh()
                 else
                     root.loading = false
