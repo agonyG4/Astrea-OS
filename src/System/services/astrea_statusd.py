@@ -20,6 +20,7 @@ REFRESH_AUDIO_SEC = 10
 REFRESH_NETWORK_SEC = 30
 REFRESH_BLUETOOTH_SEC = 45
 AUTOCONNECT_SEC = 120
+MAX_SLEEP_SEC = 5.0
 
 refresh_requested = False
 running = True
@@ -202,7 +203,7 @@ def main():
             next_bluetooth = 0.0
 
         next_due = min(next_audio, next_network, next_bluetooth, next_autoconnect)
-        sleep_for = max(0.2, min(5.0, next_due - time.monotonic()))
+        sleep_for = max(0.2, min(MAX_SLEEP_SEC, next_due - time.monotonic()))
         time.sleep(sleep_for)
 
 

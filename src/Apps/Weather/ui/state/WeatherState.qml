@@ -24,12 +24,23 @@ Item {
         onTriggered: root.refresh()
     }
 
-    function refresh() {
-        if (root.backendMissing || weatherProc.running)
+    function refresh(force) {
+        if ((root.backendMissing && force !== true) || weatherProc.running)
             return
+        if (force === true)
+            root.backendMissing = false
         loading = true
         errorMsg = ""
         weatherProc.running = true
+    }
+
+    function retryBackend() {
+        root.backendMissing = false
+        root.errorMsg = ""
+        if (!root.settingsLoaded && !settingsLoadProc.running)
+            settingsLoadProc.running = true
+        else
+            root.refresh(true)
     }
 
     function markBackendMissing() {

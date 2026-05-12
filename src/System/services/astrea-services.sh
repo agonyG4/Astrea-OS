@@ -13,6 +13,9 @@ xdg_portal_conf_dir="${home}/.config/xdg-desktop-portal"
 weather_bin_dir="${astrea_root}/bin"
 weather_backend_dir="${astrea_root}/Apps/Weather/backend"
 
+info() { printf '[astrea-services] %s\n' "$*"; }
+warn() { printf '[astrea-services][warn] %s\n' "$*" >&2; }
+
 write_file_if_changed() {
     local path="$1"
     local mode="$2"
@@ -108,21 +111,21 @@ EOF
 
 install_weather_binaries() {
     if [[ ! -f "${weather_backend_dir}/Cargo.toml" ]]; then
-        printf 'weather backend manifest not found; leaving existing weather binaries in place: %s\n' "${weather_backend_dir}/Cargo.toml" >&2
+        warn "weather backend manifest not found; leaving existing weather binaries in place: ${weather_backend_dir}/Cargo.toml"
         return 1
     fi
     if ! command -v cargo >/dev/null 2>&1; then
-        printf 'cargo not found; leaving existing Astrea weather binaries in place\n' >&2
+        warn 'cargo not found; leaving existing Astrea weather binaries in place'
         return 1
     fi
 
     if ! cargo build --manifest-path "${weather_backend_dir}/Cargo.toml" --workspace --release; then
-        printf 'failed to build Astrea weather binaries; leaving existing binaries in place\n' >&2
+        warn 'failed to build Astrea weather binaries; leaving existing binaries in place'
         return 1
     fi
 
     if [[ ! -x "${weather_backend_dir}/target/release/weather-cli" || ! -x "${weather_backend_dir}/target/release/astrea-weatherd" ]]; then
-        printf 'weather build completed but expected binaries are missing\n' >&2
+        warn 'weather build completed but expected binaries are missing'
         return 1
     fi
 
@@ -167,12 +170,12 @@ install_services() {
     write_portal_files
     write_status_unit
     if ! install_weather_binaries; then
-        printf 'Astrea weather binaries were not rebuilt during install.\n' >&2
+        warn 'Astrea weather binaries were not rebuilt during install.'
     fi
     if weather_binaries_available; then
         write_weather_unit
     else
-        printf 'Astrea weather service not installed/enabled because weather binaries are missing.\n' >&2
+        warn 'Astrea weather service not installed/enabled because weather binaries are missing.'
     fi
     write_night_shift_units
     reload_user_systemd
@@ -232,11 +235,11 @@ verify_services() {
         if command -v cargo >/dev/null 2>&1; then
             cargo check --manifest-path "${weather_backend_dir}/Cargo.toml" --workspace --offline || failed=1
         else
-            printf 'missing dependency for weather backend verification: cargo\n' >&2
+            warn 'missing dependency for weather backend verification: cargo'
             failed=1
         fi
     else
-        printf 'missing weather backend manifest: %s\n' "${weather_backend_dir}/Cargo.toml" >&2
+        warn "missing weather backend manifest: ${weather_backend_dir}/Cargo.toml"
         failed=1
     fi
 
@@ -250,7 +253,7 @@ verify_services() {
     fi
 
     if [[ "${failed}" -eq 0 ]]; then
-        printf 'Astrea services verified\n'
+        info 'Astrea services verified'
     fi
     return "${failed}"
 }

@@ -91,7 +91,7 @@ if [[ -x "$ASTREA_SERVICES" ]]; then
         bash "$ASTREA_SERVICES" install; then
         ok "Serviços de usuário do Astrea instalados."
     else
-        warn "Falha ao instalar serviços de usuário do Astrea; continuando update. Rode astrea-services.sh doctor para detalhes."
+        warn "Falha ao instalar serviços de usuário do Astrea; continuando update. Rode ${ASTREA_SERVICES} doctor como ${REAL_USER} para detalhes."
     fi
 else
     warn "astrea-services.sh não encontrado em $ASTREA_SERVICES; pulando serviços de usuário."
