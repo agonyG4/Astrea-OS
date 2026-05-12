@@ -63,12 +63,12 @@ check_root() {
 # ─── Verificar dependências ──────────────────────────────────
 check_deps() {
     local missing=()
-    for cmd in git curl; do
+    for cmd in git curl cargo; do
         command -v "$cmd" &>/dev/null || missing+=("$cmd")
     done
     if [[ ${#missing[@]} -gt 0 ]]; then
         error "Dependências faltando: ${missing[*]}"
-        error "Instale com: sudo pacman -S ${missing[*]}"
+        error "Instale com: sudo pacman -S ${missing[*]/cargo/rust}"
         exit 1
     fi
 }

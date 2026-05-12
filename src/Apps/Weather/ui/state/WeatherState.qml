@@ -1,3 +1,4 @@
+import Quickshell
 import Quickshell.Io
 import QtQuick 2.15
 
@@ -8,13 +9,23 @@ Item {
     property var weatherData: null
     property bool loading: true
     property string errorMsg: ""
-    property string weatherCli: "/home/agony/.local/share/Astrea/Apps/Weather/backend/target/release/weather-cli"
+    readonly property string astreaRoot: Quickshell.env("HOME") + "/.local/share/Astrea"
+    property string weatherCli: astreaRoot + "/bin/weather-cli"
     property bool alertNotificationsEnabled: true
     property bool settingsLoaded: false
 
     Component.onCompleted: settingsLoadProc.running = true
 
+    Timer {
+        interval: 1800000
+        repeat: true
+        running: root.settingsLoaded
+        onTriggered: root.refresh()
+    }
+
     function refresh() {
+        if (weatherProc.running)
+            return
         loading = true
         errorMsg = ""
         weatherProc.running = true

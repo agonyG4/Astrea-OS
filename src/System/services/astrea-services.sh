@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-home="${HOME:-/home/agony}"
+home="${HOME:-}"
+if [[ -z "${home}" ]]; then
+    home="$(getent passwd "$(id -un)" | cut -d: -f6)"
+fi
 astrea_root="${home}/.local/share/Astrea"
 unit_dir="${home}/.config/systemd/user"
 dbus_dir="${home}/.local/share/dbus-1/services"
 portal_dir="${home}/.local/share/xdg-desktop-portal/portals"
 xdg_portal_conf_dir="${home}/.config/xdg-desktop-portal"
+weather_bin_dir="${astrea_root}/bin"
+weather_backend_dir="${astrea_root}/Apps/Weather/backend"
 
 write_file_if_changed() {
     local path="$1"
@@ -101,6 +106,21 @@ WantedBy=default.target
 EOF
 }
 
+install_weather_binaries() {
+    if [[ ! -f "${weather_backend_dir}/Cargo.toml" ]]; then
+        printf 'missing weather backend manifest: %s\n' "${weather_backend_dir}/Cargo.toml" >&2
+        return 1
+    fi
+    if ! command -v cargo >/dev/null 2>&1; then
+        printf 'cargo is required to build Astrea weather binaries\n' >&2
+        return 1
+    fi
+
+    cargo build --manifest-path "${weather_backend_dir}/Cargo.toml" --workspace --release
+    install -Dm755 "${weather_backend_dir}/target/release/weather-cli" "${weather_bin_dir}/weather-cli"
+    install -Dm755 "${weather_backend_dir}/target/release/astrea-weatherd" "${weather_bin_dir}/astrea-weatherd"
+}
+
 write_weather_unit() {
     mkdir -p "${unit_dir}"
     write_file_if_changed "${unit_dir}/astrea-weatherd.service" 0644 <<EOF
@@ -113,7 +133,7 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart=${astrea_root}/Apps/Weather/backend/target/release/astrea-weatherd
+ExecStart=${weather_bin_dir}/astrea-weatherd
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=3
@@ -133,6 +153,7 @@ reload_user_systemd() {
 install_services() {
     write_portal_files
     write_status_unit
+    install_weather_binaries
     write_weather_unit
     write_night_shift_units
     reload_user_systemd
@@ -184,8 +205,17 @@ verify_services() {
     python3 -m py_compile "${astrea_root}/System/services/astrea_statusd.py" || failed=1
     python3 -m py_compile "${astrea_root}/System/services/astrea_notify.py" || failed=1
     python3 -m py_compile "${astrea_root}/System/portal/astrea_filechooser_portal.py" || failed=1
-    if [[ -f "${astrea_root}/Apps/Weather/backend/Cargo.toml" ]]; then
-        cargo check --manifest-path "${astrea_root}/Apps/Weather/backend/Cargo.toml" --workspace --offline || failed=1
+    if [[ -f "${weather_backend_dir}/Cargo.toml" ]]; then
+        cargo check --manifest-path "${weather_backend_dir}/Cargo.toml" --workspace --offline || failed=1
+    fi
+
+    if [[ ! -x "${weather_bin_dir}/weather-cli" ]]; then
+        printf 'missing executable: %s\n' "${weather_bin_dir}/weather-cli" >&2
+        failed=1
+    fi
+    if [[ ! -x "${weather_bin_dir}/astrea-weatherd" ]]; then
+        printf 'missing executable: %s\n' "${weather_bin_dir}/astrea-weatherd" >&2
+        failed=1
     fi
 
     if [[ "${failed}" -eq 0 ]]; then

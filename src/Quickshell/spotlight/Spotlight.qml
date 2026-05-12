@@ -234,7 +234,8 @@ ShellRoot {
         property var usageCounts: ({})
         readonly property string usageFilePath: Quickshell.env("HOME") + "/.local/state/Astrea/spotlight-usage.json"
         readonly property string configFilePath: Quickshell.env("HOME") + "/.config/AstreaOS/spotlight.json"
-        readonly property string weatherCli: Quickshell.env("HOME") + "/.local/share/Astrea/Apps/Weather/backend/target/release/weather-cli"
+        readonly property string astreaRoot: Quickshell.env("HOME") + "/.local/share/Astrea"
+        readonly property string weatherCli: astreaRoot + "/bin/weather-cli"
         property string usageLoadBuffer: ""
         property string configLoadBuffer: ""
         property string weatherBuffer: ""
@@ -339,7 +340,7 @@ ShellRoot {
 
         function weatherAssetForCondition(condition) {
             const text = (condition || "").toLowerCase()
-            const assetRoot = "file://" + Quickshell.env("HOME") + "/.local/share/Astrea/Apps/Weather/assets/icons/weather/"
+            const assetRoot = "file://" + spotlight.astreaRoot + "/Apps/Weather/assets/icons/weather/"
 
             if (text.indexOf("trovoada") >= 0) return assetRoot + "thunderstorm.png"
             if (text.indexOf("chuva gelada") >= 0 || text.indexOf("garoa gelada") >= 0) return assetRoot + "freezing_rain.png"
