@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-home="${HOME:-/home/agony}"
+home="${HOME:-}"
+if [[ -z "${home}" ]]; then
+    home="$(getent passwd "$(id -un)" | cut -d: -f6)"
+fi
 astrea_root="${home}/.local/share/Astrea"
 unit_dir="${home}/.config/systemd/user"
 dbus_dir="${home}/.local/share/dbus-1/services"
 portal_dir="${home}/.local/share/xdg-desktop-portal/portals"
 xdg_portal_conf_dir="${home}/.config/xdg-desktop-portal"
+weather_bin_dir="${astrea_root}/bin"
+weather_backend_dir="${astrea_root}/Apps/Weather/backend"
 
 write_file_if_changed() {
     local path="$1"
@@ -101,6 +106,44 @@ WantedBy=default.target
 EOF
 }
 
+install_weather_binaries() {
+    if [[ ! -f "${weather_backend_dir}/Cargo.toml" ]]; then
+        printf 'missing weather backend manifest: %s\n' "${weather_backend_dir}/Cargo.toml" >&2
+        return 1
+    fi
+    if ! command -v cargo >/dev/null 2>&1; then
+        printf 'cargo is required to build Astrea weather binaries\n' >&2
+        return 1
+    fi
+
+    cargo build --manifest-path "${weather_backend_dir}/Cargo.toml" --workspace --release
+    install -Dm755 "${weather_backend_dir}/target/release/weather-cli" "${weather_bin_dir}/weather-cli"
+    install -Dm755 "${weather_backend_dir}/target/release/astrea-weatherd" "${weather_bin_dir}/astrea-weatherd"
+}
+
+write_weather_unit() {
+    mkdir -p "${unit_dir}"
+    write_file_if_changed "${unit_dir}/astrea-weatherd.service" 0644 <<EOF
+[Unit]
+Description=Astrea weather monitor service
+After=graphical-session.target
+PartOf=graphical-session.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=${weather_bin_dir}/astrea-weatherd
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=3
+KillMode=mixed
+
+[Install]
+WantedBy=default.target
+EOF
+}
+
 reload_user_systemd() {
     if command -v systemctl >/dev/null 2>&1; then
         systemctl --user daemon-reload >/dev/null 2>&1 || true
@@ -110,8 +153,13 @@ reload_user_systemd() {
 install_services() {
     write_portal_files
     write_status_unit
+    install_weather_binaries
+    write_weather_unit
     write_night_shift_units
     reload_user_systemd
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl --user enable --now astrea-weatherd.service >/dev/null 2>&1 || true
+    fi
 }
 
 verify_services() {
@@ -119,6 +167,7 @@ verify_services() {
     local paths=(
         "${unit_dir}/astrea-filechooser-portal.service"
         "${unit_dir}/astrea-status.service"
+        "${unit_dir}/astrea-weatherd.service"
         "${unit_dir}/astrea-night-shift.service"
         "${unit_dir}/astrea-night-shift.timer"
         "${dbus_dir}/org.freedesktop.impl.portal.desktop.astrea.service"
@@ -138,6 +187,7 @@ verify_services() {
         if ! verify_output="$(systemd-analyze --user verify \
             "${unit_dir}/astrea-filechooser-portal.service" \
             "${unit_dir}/astrea-status.service" \
+            "${unit_dir}/astrea-weatherd.service" \
             "${unit_dir}/astrea-night-shift.service" \
             "${unit_dir}/astrea-night-shift.timer" 2>&1)"; then
             if grep -Eq 'Operation not permitted|Failed to connect to (user|system) scope bus|SO_PASS' <<<"${verify_output}"; then
@@ -153,7 +203,20 @@ verify_services() {
     bash -n "${astrea_root}/System/services/display_night_shift_color.sh" || failed=1
     bash -n "${astrea_root}/System/services/display_night_shift_schedule.sh" || failed=1
     python3 -m py_compile "${astrea_root}/System/services/astrea_statusd.py" || failed=1
+    python3 -m py_compile "${astrea_root}/System/services/astrea_notify.py" || failed=1
     python3 -m py_compile "${astrea_root}/System/portal/astrea_filechooser_portal.py" || failed=1
+    if [[ -f "${weather_backend_dir}/Cargo.toml" ]]; then
+        cargo check --manifest-path "${weather_backend_dir}/Cargo.toml" --workspace --offline || failed=1
+    fi
+
+    if [[ ! -x "${weather_bin_dir}/weather-cli" ]]; then
+        printf 'missing executable: %s\n' "${weather_bin_dir}/weather-cli" >&2
+        failed=1
+    fi
+    if [[ ! -x "${weather_bin_dir}/astrea-weatherd" ]]; then
+        printf 'missing executable: %s\n' "${weather_bin_dir}/astrea-weatherd" >&2
+        failed=1
+    fi
 
     if [[ "${failed}" -eq 0 ]]; then
         printf 'Astrea services verified\n'

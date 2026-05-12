@@ -81,6 +81,7 @@ paru -S --needed --noconfirm \
     less \
     wget \
     git \
+    rust \
     rsync \
     unzip \
     7zip \

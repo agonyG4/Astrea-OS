@@ -1,0 +1,12 @@
+[package]
+name = "weatherd"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "astrea-weatherd"
+path = "src/main.rs"
+
+[dependencies]
+weather-core = { path = "../weather-core" }
+serde_json.workspace = true

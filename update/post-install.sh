@@ -9,6 +9,11 @@ set -euo pipefail
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RESET='\033[0m'
 ok()   { echo -e "${GREEN}[POST]${RESET} $*"; }
 info() { echo -e "${YELLOW}[POST]${RESET} $*"; }
+warn() { echo -e "${YELLOW}[POST][WARN]${RESET} $*"; }
+
+REAL_USER="${SUDO_USER:-$USER}"
+REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6)"
+REAL_UID="$(id -u "$REAL_USER")"
 
 # ─── 1. Recarregar serviços systemd ──────────────────────────
 # Descomente se você instalou/atualizou um .service
@@ -76,6 +81,18 @@ info() { echo -e "${YELLOW}[POST]${RESET} $*"; }
 info "Recarregando units do systemd..."
 sudo systemctl daemon-reload
 ok "systemd recarregado."
+
+info "Compilando e instalando serviços de usuário do Astrea..."
+ASTREA_SERVICES="${REAL_HOME}/.local/share/Astrea/System/services/astrea-services.sh"
+if [[ -x "$ASTREA_SERVICES" ]]; then
+    runuser -u "$REAL_USER" -- env \
+        HOME="$REAL_HOME" \
+        XDG_RUNTIME_DIR="/run/user/${REAL_UID}" \
+        bash "$ASTREA_SERVICES" install
+    ok "Serviços de usuário do Astrea instalados."
+else
+    warn "astrea-services.sh não encontrado em $ASTREA_SERVICES; pulando serviços de usuário."
+fi
 
 info "Ajustando permissões dos scripts..."
 sudo chmod 755 /usr/local/bin/monitor_apply.sh 2>/dev/null || true

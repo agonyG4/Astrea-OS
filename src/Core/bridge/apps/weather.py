@@ -7,7 +7,6 @@ import datetime
 import argparse
 import hashlib
 import re
-import shutil
 import subprocess
 import time
 import unicodedata
@@ -30,11 +29,15 @@ HTTP_TIMEOUT = 10
 USER_AGENT = "AstreaWeather/1.0 (+https://open-meteo.com/)"
 NOTIFY_STATE_PATH = os.environ.get(
     "ASTREA_WEATHER_NOTIFY_STATE",
-    os.path.expanduser("~/.local/state/Astrea/weather/inmet-notified.json"),
+    os.path.expanduser("~/.local/state/Astrea/weather/alerts-seen.json"),
 )
 SETTINGS_PATH = os.environ.get(
     "ASTREA_WEATHER_SETTINGS_STATE",
     os.path.expanduser("~/.local/state/Astrea/weather/settings.json"),
+)
+ASTREA_NOTIFY_PATH = os.environ.get(
+    "ASTREA_NOTIFY",
+    os.path.expanduser("~/.local/share/Astrea/System/services/astrea_notify.py"),
 )
 NOTIFY_STATE_TTL = 14 * 24 * 60 * 60
 STATE_TO_UF = {
@@ -397,7 +400,7 @@ def notify_inmet_alerts(alerts: list[dict], city: str = "") -> dict:
             "failed": 0,
             "disabled": True,
             "dry_run": os.environ.get("ASTREA_WEATHER_NOTIFY_DRY_RUN") == "1",
-            "notify_send": bool(shutil.which("notify-send")),
+            "notifier_available": os.path.isfile(ASTREA_NOTIFY_PATH),
         }
 
     now = int(time.time())
@@ -405,14 +408,14 @@ def notify_inmet_alerts(alerts: list[dict], city: str = "") -> dict:
     seen = state.setdefault("seen", {})
     active_ids: set[str] = set()
     dry_run = os.environ.get("ASTREA_WEATHER_NOTIFY_DRY_RUN") == "1"
-    notify_bin = shutil.which("notify-send")
+    notifier_available = os.path.isfile(ASTREA_NOTIFY_PATH)
 
     result = {
         "notified": 0,
         "skipped": 0,
         "failed": 0,
         "dry_run": dry_run,
-        "notify_send": bool(notify_bin),
+        "notifier_available": notifier_available,
     }
 
     for alert in alerts:
@@ -431,17 +434,20 @@ def notify_inmet_alerts(alerts: list[dict], city: str = "") -> dict:
             result["notified"] += 1
             continue
 
-        if not notify_bin:
+        if not notifier_available:
             result["failed"] += 1
             continue
 
         try:
             completed = subprocess.run(
                 [
-                    notify_bin,
-                    "-a", "Astrea Weather",
-                    "-u", alert_urgency(alert),
-                    "-i", "weather-severe-alert",
+                    "python3",
+                    ASTREA_NOTIFY_PATH,
+                    "--app", "Astrea Weather",
+                    "--urgency", alert_urgency(alert),
+                    "--icon", "weather-severe-alert",
+                    "--category", "weather.alert",
+                    "--desktop-entry", "astrea-weather",
                     alert_notification_title(alert),
                     alert_notification_body(alert, city),
                 ],

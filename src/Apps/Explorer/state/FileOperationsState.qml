@@ -26,9 +26,21 @@ QtObject {
     property string archiveExtractionError: ""
     property string archiveExtractionOutputBuffer: ""
     property string archiveExtractionDestination: ""
+    property string archiveExtractionRevealName: ""
     property string archiveOperationMode: ""
     property int archiveExtractionDoneCount: 0
     property int archiveExtractionTotalCount: 0
+    property bool fileOperationRunning: false
+    property real fileOperationProgress: 0
+    property int fileOperationPercent: 0
+    property string fileOperationFileName: ""
+    property string fileOperationStatus: ""
+    property string fileOperationError: ""
+    property string fileOperationOutputBuffer: ""
+    property string fileOperationDestination: ""
+    property string fileOperationMode: ""
+    property int fileOperationDoneCount: 0
+    property int fileOperationTotalCount: 0
     property bool appImageInstallRunning: false
     property string appImageInstallError: ""
 
@@ -109,6 +121,66 @@ QtObject {
         return parts.length > 0 ? parts[parts.length - 1] : ""
     }
 
+    function resetFileOperation(mode, destinationPath, totalCount) {
+        fileOperationRunning = true
+        fileOperationProgress = 0
+        fileOperationPercent = 0
+        fileOperationFileName = ""
+        fileOperationStatus = mode === "move" ? "Movendo..." : "Copiando..."
+        fileOperationError = ""
+        fileOperationOutputBuffer = ""
+        fileOperationDestination = destinationPath || ""
+        fileOperationMode = mode || "copy"
+        fileOperationDoneCount = 0
+        fileOperationTotalCount = totalCount || 0
+        fileOperationHideTimer.stop()
+    }
+
+    function handleFileOperationLine(rawLine) {
+        var line = String(rawLine || "").trim()
+        if (line === "")
+            return
+        var parts = line.split("|")
+        if (parts[0] === "START") {
+            fileOperationMode = parts[1] || fileOperationMode
+            fileOperationDestination = parts[2] || fileOperationDestination
+            fileOperationTotalCount = Number(parts[3] || fileOperationTotalCount)
+            fileOperationDoneCount = 0
+            fileOperationStatus = fileOperationMode === "move" ? "Movendo..." : "Copiando..."
+            fileOperationPercent = 0
+            fileOperationProgress = 0
+        } else if (parts[0] === "PROGRESS") {
+            fileOperationDoneCount = Number(parts[1] || 0)
+            fileOperationTotalCount = Number(parts[2] || fileOperationTotalCount)
+            var percent = Number(parts[3] || 0)
+            if (!isFinite(percent))
+                percent = 0
+            fileOperationPercent = Math.max(0, Math.min(99, Math.round(percent)))
+            fileOperationProgress = fileOperationPercent / 100
+            fileOperationFileName = parts.slice(4).join("|")
+            fileOperationStatus = (fileOperationMode === "move" ? "Movendo" : "Copiando") + "... " + fileOperationPercent + "%"
+        } else if (parts[0] === "DONE") {
+            fileOperationDestination = parts[1] || fileOperationDestination
+            fileOperationDoneCount = Number(parts[2] || fileOperationDoneCount)
+            fileOperationTotalCount = Number(parts[3] || fileOperationTotalCount)
+            fileOperationPercent = 100
+            fileOperationProgress = 1
+            fileOperationStatus = fileOperationMode === "move" ? "Movido" : "Copiado"
+            fileOperationError = ""
+        } else if (parts[0] === "ERROR") {
+            fileOperationError = parts.slice(1).join("|") || "Falha na operacao"
+            fileOperationStatus = fileOperationError
+        }
+    }
+
+    function handleFileOperationOutput(data) {
+        fileOperationOutputBuffer += data
+        var lines = fileOperationOutputBuffer.split("\n")
+        fileOperationOutputBuffer = lines.pop()
+        for (var i = 0; i < lines.length; i++)
+            handleFileOperationLine(lines[i])
+    }
+
     function startArchiveExtraction(archivePath, folderName) {
         if (!archivePath)
             return
@@ -121,6 +193,7 @@ QtObject {
         archiveExtractionError = ""
         archiveExtractionOutputBuffer = ""
         archiveExtractionDestination = ""
+        archiveExtractionRevealName = ""
         archiveOperationMode = "extract"
         archiveExtractionDoneCount = 0
         archiveExtractionTotalCount = 0
@@ -180,6 +253,7 @@ QtObject {
         archiveExtractionError = ""
         archiveExtractionOutputBuffer = ""
         archiveExtractionDestination = ""
+        archiveExtractionRevealName = ""
         archiveOperationMode = "compress"
         archiveExtractionDoneCount = 0
         archiveExtractionTotalCount = 0
@@ -254,6 +328,7 @@ QtObject {
                 : (verb + "...")
         } else if (parts[0] === "DONE") {
             archiveExtractionDestination = parts[1] || archiveExtractionDestination
+            archiveExtractionRevealName = basename(archiveExtractionDestination)
             archiveExtractionDoneCount = Number(parts[2] || archiveExtractionDoneCount)
             archiveExtractionTotalCount = Number(parts[3] || archiveExtractionTotalCount)
             archiveExtractionPercent = 100
@@ -386,65 +461,14 @@ QtObject {
         if (files.length === 0)
             return
 
+        resetFileOperation(mode, destinationPath, files.length)
         pasteProcess.command = [
-            "bash", "-lc",
-            "set -e; " +
-            "mode=\"$1\"; policy=\"$2\"; dest=\"$3\"; rename_to=\"$4\"; shift 4; " +
-            "unique_target() { " +
-            "  dir=\"$1\"; name=\"$2\"; base=\"$name\"; ext=\"\"; " +
-            "  case \"$name\" in .*|*.) ;; *.*) base=\"${name%.*}\"; ext=\".${name##*.}\" ;; esac; " +
-            "  candidate=\"$dir/$name\"; n=2; " +
-            "  while [ -e \"$candidate\" ]; do candidate=\"$dir/$base $n$ext\"; n=$((n + 1)); done; " +
-            "  printf '%s\\n' \"$candidate\"; " +
-            "}; " +
-            "copy_item() { cp -aT --reflink=auto -- \"$1\" \"$2\"; }; " +
-            "move_item() { mv -T -- \"$1\" \"$2\"; }; " +
-            "same_item() { [ \"$(realpath -m -- \"$1\" 2>/dev/null || printf '%s' \"$1\")\" = \"$(realpath -m -- \"$2\" 2>/dev/null || printf '%s' \"$2\")\" ]; }; " +
-            "publish_item() { " +
-            "  src=\"$1\"; target=\"$2\"; " +
-            "  if [ \"$mode\" != \"copy\" ]; then move_item \"$src\" \"$target\"; return $?; fi; " +
-            "  dir=$(dirname -- \"$target\"); name=$(basename -- \"$target\"); tmp=\"$dir/.$name.bench-paste.$$\"; n=2; " +
-            "  while [ -e \"$tmp\" ]; do tmp=\"$dir/.$name.bench-paste.$$.$n\"; n=$((n + 1)); done; " +
-            "  if ! copy_item \"$src\" \"$tmp\"; then code=$?; rm -rf -- \"$tmp\"; return \"$code\"; fi; " +
-            "  if move_item \"$tmp\" \"$target\"; then return 0; fi; " +
-            "  code=$?; rm -rf -- \"$tmp\"; return \"$code\"; " +
-            "}; " +
-            "replace_item() { " +
-            "  src=\"$1\"; target=\"$2\"; dir=$(dirname -- \"$target\"); name=$(basename -- \"$target\"); " +
-            "  same_item \"$src\" \"$target\" && return 0; " +
-            "  tmp=\"$dir/.$name.bench-paste.$$\"; backup=\"$dir/.$name.bench-replace.$$\"; n=2; " +
-            "  while [ -e \"$tmp\" ]; do tmp=\"$dir/.$name.bench-paste.$$.$n\"; n=$((n + 1)); done; " +
-            "  n=2; while [ -e \"$backup\" ]; do backup=\"$dir/.$name.bench-replace.$$.$n\"; n=$((n + 1)); done; " +
-            "  if [ \"$mode\" = \"copy\" ]; then copy_item \"$src\" \"$tmp\"; else move_item \"$src\" \"$tmp\"; fi; " +
-            "  had_backup=0; " +
-            "  if [ -e \"$target\" ]; then move_item \"$target\" \"$backup\"; had_backup=1; fi; " +
-            "  if move_item \"$tmp\" \"$target\"; then " +
-            "    [ \"$had_backup\" -eq 0 ] || rm -rf -- \"$backup\"; " +
-            "    return 0; " +
-            "  fi; " +
-            "  code=$?; " +
-            "  if [ \"$had_backup\" -eq 1 ] && [ ! -e \"$target\" ] && [ -e \"$backup\" ]; then move_item \"$backup\" \"$target\" || true; fi; " +
-            "  if [ \"$mode\" != \"copy\" ] && [ ! -e \"$src\" ] && [ -e \"$tmp\" ]; then move_item \"$tmp\" \"$src\" || true; fi; " +
-            "  return \"$code\"; " +
-            "}; " +
-            "for f in \"$@\"; do " +
-            "[ -e \"$f\" ] || continue; " +
-            "name=$(basename -- \"$f\"); target=\"$dest/$name\"; " +
-            "same_item \"$f\" \"$target\" && continue; " +
-            "src_abs=$(realpath -m -- \"$f\" 2>/dev/null || printf '%s' \"$f\"); " +
-            "dest_abs=$(realpath -m -- \"$dest\" 2>/dev/null || printf '%s' \"$dest\"); " +
-            "if [ -d \"$f\" ]; then case \"$dest_abs/\" in \"$src_abs/\"*) continue ;; esac; fi; " +
-            "if [ -e \"$target\" ]; then " +
-            "  case \"$policy\" in " +
-            "    overwrite) replace_item \"$f\" \"$target\"; continue ;; " +
-            "    skip) continue ;; " +
-            "    rename) [ -n \"$rename_to\" ] || continue; target=\"$dest/$rename_to\"; if [ -e \"$target\" ]; then continue; fi ;; " +
-            "    keep-both) target=$(unique_target \"$dest\" \"$name\") ;; " +
-            "  esac; " +
-            "fi; " +
-            "publish_item \"$f\" \"$target\"; " +
-            "done",
-            "_", mode, policy, destinationPath, pendingPasteRename
+            app.backendPath,
+            "file-op",
+            mode,
+            destinationPath,
+            policy,
+            pendingPasteRename
         ].concat(files)
         pasteProcess.running = false
         pasteProcess.running = true
@@ -480,6 +504,7 @@ QtObject {
         pendingPostPasteThumbnailWarm = false
         pendingPasteClearsClipboard = false
         postPasteThumbnailWarmTimer.stop()
+        fileOperationHideTimer.stop()
     }
 
     function deleteSelected() {
@@ -567,13 +592,53 @@ QtObject {
     property Process pasteProcess: Process {
         command: []
         running: false
+        stdout: SplitParser {
+            onRead: data => ops.handleFileOperationOutput(data)
+        }
+        stderr: StdioCollector {
+            id: pasteStderr
+        }
         onExited: function(exitCode) {
-            if (exitCode === 0 && ops.pendingPasteClearsClipboard)
-                ops.clipboardFiles = []
+            if (ops.fileOperationOutputBuffer !== "") {
+                ops.handleFileOperationLine(ops.fileOperationOutputBuffer)
+                ops.fileOperationOutputBuffer = ""
+            }
+            if (exitCode === 0) {
+                if (ops.pendingPasteClearsClipboard)
+                    ops.clipboardFiles = []
+                ops.fileOperationPercent = 100
+                ops.fileOperationProgress = 1
+                if (ops.fileOperationStatus.indexOf("Copiad") !== 0 && ops.fileOperationStatus.indexOf("Movid") !== 0)
+                    ops.fileOperationStatus = ops.fileOperationMode === "move" ? "Movido" : "Copiado"
+                ops.fileOperationError = ""
+            } else {
+                var err = pasteStderr.text.trim()
+                ops.fileOperationError = ops.fileOperationError || err || "Falha na operacao"
+                ops.fileOperationStatus = ops.fileOperationError
+            }
             ops.pendingPasteClearsClipboard = false
             ops.pendingPostPasteThumbnailWarm = true
             app.refreshCurrentFolder()
             postPasteThumbnailWarmTimer.restart()
+            fileOperationHideTimer.restart()
+        }
+    }
+
+    property Timer fileOperationHideTimer: Timer {
+        interval: ops.fileOperationError !== "" ? 3600 : 1600
+        repeat: false
+        onTriggered: {
+            ops.fileOperationRunning = false
+            ops.fileOperationProgress = 0
+            ops.fileOperationPercent = 0
+            ops.fileOperationFileName = ""
+            ops.fileOperationStatus = ""
+            ops.fileOperationError = ""
+            ops.fileOperationOutputBuffer = ""
+            ops.fileOperationDestination = ""
+            ops.fileOperationMode = ""
+            ops.fileOperationDoneCount = 0
+            ops.fileOperationTotalCount = 0
         }
     }
 
@@ -595,10 +660,9 @@ QtObject {
                     ? "Compactacao concluida"
                     : "Extracao concluida"
                 ops.archiveExtractionError = ""
-            if (ops.archiveOperationMode === "extract" && ops.archiveExtractionDestination !== "")
-                app.navigateTo(ops.archiveExtractionDestination)
-            else
                 app.refreshCurrentFolder()
+                if (ops.archiveOperationMode === "extract" && ops.archiveExtractionRevealName !== "")
+                    archiveRevealTimer.restart()
             } else {
                 ops.archiveExtractionError = ops.archiveOperationMode === "compress"
                     ? "Falha ao compactar"
@@ -621,6 +685,7 @@ QtObject {
             ops.archiveExtractionStatus = ""
             ops.archiveExtractionError = ""
             ops.archiveExtractionDestination = ""
+            ops.archiveExtractionRevealName = ""
             ops.archiveOperationMode = ""
             ops.archiveExtractionDoneCount = 0
             ops.archiveExtractionTotalCount = 0
@@ -719,6 +784,19 @@ QtObject {
             }
             ops.pendingPostPasteThumbnailWarm = false
             app.warmCurrentDirectoryThumbnails()
+        }
+    }
+
+    property Timer archiveRevealTimer: Timer {
+        interval: 120
+        repeat: false
+        onTriggered: {
+            if (app.loadingDir) {
+                restart()
+                return
+            }
+            if (ops.archiveExtractionRevealName !== "")
+                app.selectByName(ops.archiveExtractionRevealName)
         }
     }
 
