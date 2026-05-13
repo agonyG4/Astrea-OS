@@ -9,7 +9,7 @@ QtObject {
     property string currentPath: ""
     property var history: []
     property int historyIdx: -1
-    property var tabs: [{ id: 0, path: "/home/agony", history: ["/home/agony"], historyIdx: 0 }]
+    property var tabs: []
     property int activeTabIndex: 0
     property int nextTabId: 1
     property var breadcrumbParts: [{ label: "/", path: "/" }]
@@ -50,7 +50,7 @@ QtObject {
 
     function initialize() {
         var requestedPath = Quickshell.env("ASTREA_EXPLORER_START_PATH") || ""
-        var homePath = requestedPath || "/home/agony"
+        var homePath = requestedPath || app.homePath
         tabs = [{ id: 0, path: homePath, history: [homePath], historyIdx: 0 }]
         activeTabIndex = 0
         nextTabId = 1
@@ -72,7 +72,7 @@ QtObject {
     }
 
     function createTab(initialPath) {
-        var path = initialPath || currentPath || "/home/agony"
+        var path = initialPath || currentPath || app.homePath
         var t = tabs.slice()
         t.push({ id: nextTabId++, path: path, history: [path], historyIdx: 0 })
         tabs = t
@@ -150,10 +150,11 @@ QtObject {
         var acc = ""
         var startIndex = 0
 
-        if (parts.length >= 2 && parts[0] === "home" && parts[1] === "agony") {
-            result.push({ label: "Pasta pessoal", path: "/home/agony" })
-            acc = "/home/agony"
-            startIndex = 2
+        if (app.homePath && currentPath.indexOf(app.homePath) === 0) {
+            result.push({ label: "Pasta pessoal", path: app.homePath })
+            acc = app.homePath
+            var homeParts = app.homePath.split("/").filter(Boolean)
+            startIndex = homeParts.length
         } else {
             result.push({ label: "/", path: "/" })
         }
@@ -422,6 +423,7 @@ QtObject {
         var lowerName = (fileName || "").toLowerCase()
         for (var i = 0; i < dialogFilePatterns.length; i++) {
             var pattern = (dialogFilePatterns[i] || "").toLowerCase()
+            pattern = pattern.replace(/\[([a-z0-9])\1\]/g, "$1")
             if (!pattern || pattern === "*")
                 return true
             if (pattern.indexOf("*.") === 0 && lowerName.lastIndexOf(pattern.slice(1)) === lowerName.length - (pattern.length - 1))

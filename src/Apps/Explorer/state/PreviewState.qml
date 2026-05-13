@@ -122,7 +122,7 @@ QtObject {
             "else " +
             "  printf '%s' \"$selected\" > \"$pathfile\"; " +
             "  rm -f \"$pidfile\"; " +
-            "  qs -p /home/agony/GitHub/Bench/Look/quicklook.qml >/dev/null 2>&1 & echo $! > \"$pidfile\"; " +
+            "  quicklook=\"${ASTREA_QUICKLOOK_QML:-$HOME/GitHub/Bench/Look/quicklook.qml}\"; qs -p \"$quicklook\" >/dev/null 2>&1 & echo $! > \"$pidfile\"; " +
             "fi",
             "--", item.filePath, app.quickLookPathFile, app.quickLookPidFile
         ]
@@ -573,10 +573,10 @@ QtObject {
 
     function scheduleHomeThumbnailWarmup() {
         startupWarmQueue = []
-        enqueueStartupWarm("/home/agony", 8)
-        enqueueStartupWarm("/home/agony/Downloads", 10)
-        enqueueStartupWarm("/home/agony/Imagens", 10)
-        enqueueStartupWarm("/home/agony/Documentos", 6)
+        enqueueStartupWarm(app.homePath, 8)
+        enqueueStartupWarm(app.homePath + "/Downloads", 10)
+        enqueueStartupWarm(app.homePath + "/Imagens", 10)
+        enqueueStartupWarm(app.homePath + "/Documentos", 6)
     }
 
     function formatSize(bytes) {
@@ -652,31 +652,7 @@ QtObject {
     function openShellScript(path) {
         if (!path)
             return
-        shellScriptProcess.command = [
-            "bash", "-lc",
-            "script=\"$1\"; dir=$(dirname -- \"$script\"); " +
-            "cmd='cd -- \"$1\" && bash \"$2\"'; " +
-            "if command -v xdg-terminal-exec >/dev/null 2>&1; then " +
-            "  xdg-terminal-exec bash -lc \"$cmd\" _ \"$dir\" \"$script\" && exit 0; " +
-            "fi; " +
-            "if command -v x-terminal-emulator >/dev/null 2>&1; then " +
-            "  x-terminal-emulator -e bash -lc \"$cmd\" _ \"$dir\" \"$script\" && exit 0; " +
-            "fi; " +
-            "if command -v kitty >/dev/null 2>&1; then " +
-            "  kitty bash -lc \"$cmd\" _ \"$dir\" \"$script\" && exit 0; " +
-            "fi; " +
-            "if command -v foot >/dev/null 2>&1; then " +
-            "  foot -e bash -lc \"$cmd\" _ \"$dir\" \"$script\" && exit 0; " +
-            "fi; " +
-            "if command -v ghostty >/dev/null 2>&1; then " +
-            "  ghostty -e bash -lc \"$cmd\" _ \"$dir\" \"$script\" && exit 0; " +
-            "fi; " +
-            "if command -v alacritty >/dev/null 2>&1; then " +
-            "  alacritty -e bash -lc \"$cmd\" _ \"$dir\" \"$script\" && exit 0; " +
-            "fi; " +
-            "exit 1",
-            "_", path
-        ]
+        shellScriptProcess.command = [app.astreaLaunch, "--file", path]
         shellScriptProcess.running = false
         shellScriptProcess.running = true
     }
@@ -684,26 +660,15 @@ QtObject {
     function openDirectExecutable(path) {
         if (!path)
             return
-        directExecutableProcess.command = [
-            "bash", "-lc",
-            "file=\"$1\"; [ -f \"$file\" ] || exit 1; " +
-            "dir=$(dirname -- \"$file\"); " +
-            "name=$(basename -- \"$file\"); " +
-            "case \"$name\" in *.*) case \"$file\" in *.AppImage|*.appimage|*.run|*.RUN|*.bin|*.BIN|*.elf|*.ELF|*.x86_64|*.bundle) chmod u+x -- \"$file\" 2>/dev/null || true ;; esac ;; *) chmod u+x -- \"$file\" 2>/dev/null || true ;; esac; " +
-            "if [ ! -x \"$file\" ]; then exit 1; fi; " +
-            "magic=$(head -c 4 -- \"$file\" | od -An -tx1 | tr -d ' \\n'); " +
-            "prefix=$(head -c 2 -- \"$file\"); " +
-            "if [ \"$magic\" != \"7f454c46\" ] && [ \"$prefix\" != \"#!\" ]; then exit 1; fi; " +
-            "cd -- \"$dir\" || exit 1; " +
-            "if command -v setsid >/dev/null 2>&1; then " +
-            "  setsid -- \"$file\" >/dev/null 2>&1 < /dev/null & " +
-            "else " +
-            "  \"$file\" >/dev/null 2>&1 < /dev/null & " +
-            "fi",
-            "_", path
-        ]
+        directExecutableProcess.command = [app.astreaLaunch, "--file", path]
         directExecutableProcess.running = false
         directExecutableProcess.running = true
+    }
+
+    function openExternalFile(path, fileUrl) {
+        externalOpenProcess.command = [app.astreaLaunch, "--file", path || fileUrl]
+        externalOpenProcess.running = false
+        externalOpenProcess.running = true
     }
 
     function openItem(path, isDir, fileUrl) {
@@ -724,7 +689,7 @@ QtObject {
             openDirectExecutable(path)
             return
         }
-        Qt.openUrlExternally(fileUrl)
+        openExternalFile(path, fileUrl)
     }
 
     property Process previewRefreshProcess: Process {
@@ -825,6 +790,15 @@ QtObject {
     }
 
     property Process directExecutableProcess: Process {
+        command: []
+        running: false
+        onExited: function(exitCode) {
+            if (exitCode !== 0)
+                Qt.openUrlExternally("file://" + command[command.length - 1])
+        }
+    }
+
+    property Process externalOpenProcess: Process {
         command: []
         running: false
         onExited: function(exitCode) {

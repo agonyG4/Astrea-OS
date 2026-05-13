@@ -268,10 +268,10 @@ Item {
                             spacing: 6
                             Repeater {
                                 model: [
-                                    "file:///home/agony/.local/share/Astrea/Assets/icons/settings/display.svg",
-                                    "file:///home/agony/.local/share/Astrea/Assets/icons/settings/network.svg",
-                                    "file:///home/agony/.local/share/Astrea/Assets/icons/settings/bluetooth.svg",
-                                    "file:///home/agony/.local/share/Astrea/Assets/icons/settings/audio.svg"
+                                    "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/icons/settings/display.svg",
+                                    "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/icons/settings/network.svg",
+                                    "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/icons/settings/bluetooth.svg",
+                                    "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/icons/settings/audio.svg"
                                 ]
                                 delegate: Image {
                                     required property string modelData
@@ -352,10 +352,10 @@ Item {
                             spacing: 6
                             Repeater {
                                 model: [
-                                    { key: "display",   src: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/themes/dark/display.svg"   },
-                                    { key: "network",   src: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/themes/dark/network.svg"   },
-                                    { key: "bluetooth", src: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/themes/dark/bluetooth.svg" },
-                                    { key: "audio",     src: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/themes/dark/audio.svg"     }
+                                    { key: "display",   src: "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/icons/settings/themes/dark/display.svg"   },
+                                    { key: "network",   src: "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/icons/settings/themes/dark/network.svg"   },
+                                    { key: "bluetooth", src: "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/icons/settings/themes/dark/bluetooth.svg" },
+                                    { key: "audio",     src: "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/icons/settings/themes/dark/audio.svg"     }
                                 ]
                                 delegate: Image {
                                     required property var modelData

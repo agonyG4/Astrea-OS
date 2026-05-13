@@ -18,7 +18,7 @@ ScrollPage {
     readonly property color errorColor: Theme.errorColor
     readonly property color successColor: Theme.successColor
     readonly property color warningColor: Theme.warningColor
-    readonly property string heroArtPath: (Quickshell.env("HOME") || "") + "/.local/share/Astrea/Assets/images/brand/astrea-logo.png"
+    readonly property string heroArtPath: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + "/Assets/images/brand/astrea-logo.png"
     readonly property string installedVersion: "Astrea 1"
     readonly property string updateSize: root.selectedChannel === 0 ? "2.4 GB" : "2.6 GB"
     readonly property string updateName: root.selectedChannel === 0 ? "Astrea 1" : "Astrea 1 Beta"

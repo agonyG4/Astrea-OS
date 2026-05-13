@@ -21,8 +21,8 @@ ScrollPage {
     readonly property int fontSizeMeta: Theme.fontSizeSmall
     readonly property int fontSizeLabel: Theme.fontSizeTiny
 
-    readonly property string scriptPath: (Quickshell.env("HOME") || "") + "/.local/share/Astrea/Core/bridge/system/info.py"
-    readonly property string logoPath: (Quickshell.env("HOME") || "") + "/.local/share/Astrea/Assets/images/brand/astrea-logo.png"
+    readonly property string scriptPath: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + "/Core/bridge/system/info.py"
+    readonly property string logoPath: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + "/Assets/images/brand/astrea-logo.png"
 
     property bool loading: true
     property string errorMessage: ""

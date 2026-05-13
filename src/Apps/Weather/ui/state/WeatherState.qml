@@ -10,7 +10,7 @@ Item {
     property bool loading: true
     property string errorMsg: ""
     property bool backendMissing: false
-    readonly property string astreaRoot: Quickshell.env("HOME") + "/.local/share/Astrea"
+    readonly property string astreaRoot: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + ""
     property string weatherCli: astreaRoot + "/bin/weather-cli"
     property bool alertNotificationsEnabled: true
     property bool settingsLoaded: false
@@ -59,6 +59,7 @@ Item {
             return
         settingsSaveProc.command = [
             "/usr/bin/env",
+            "ASTREA_ROOT=" + root.astreaRoot,
             root.weatherCli,
             "settings",
             enabled ? "true" : "false"
@@ -68,7 +69,7 @@ Item {
 
     Process {
         id: weatherProc
-        command: ["/usr/bin/env", root.weatherCli, "get", "--json"]
+        command: ["/usr/bin/env", "ASTREA_ROOT=" + root.astreaRoot, root.weatherCli, "get", "--json"]
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -101,7 +102,7 @@ Item {
 
     Process {
         id: settingsLoadProc
-        command: ["/usr/bin/env", root.weatherCli, "settings"]
+        command: ["/usr/bin/env", "ASTREA_ROOT=" + root.astreaRoot, root.weatherCli, "settings"]
         stdout: StdioCollector {
             onStreamFinished: {
                 if (this.text.trim().length === 0)

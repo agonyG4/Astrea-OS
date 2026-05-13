@@ -15,6 +15,10 @@ from typing import Any
 FALLBACK_ICON = "application-x-executable"
 
 
+def astrea_root() -> Path:
+    return Path(os.environ.get("ASTREA_ROOT", Path.home() / ".local/share/Astrea")).expanduser()
+
+
 def atomic_write_text(path: Path, text: str, *, encoding: str = "utf-8") -> None:
     """Write text via a same-directory temporary file and atomic replace."""
     path = Path(path).expanduser()

@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 HOME = Path.home()
-ASTREA_ROOT = HOME / ".local/share/Astrea"
+ASTREA_ROOT = Path(os.environ.get("ASTREA_ROOT", HOME / ".local/share/Astrea")).expanduser()
 STATE_DIR = HOME / ".local/state/Astrea/status"
 BLUETOOTH_HELPER = ASTREA_ROOT / "System/scripts/bluetooth_manager.py"
 

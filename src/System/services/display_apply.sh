@@ -3,7 +3,8 @@ set -euo pipefail
 
 apply_mode="${1:-full}"
 
-conf_path="${HOME}/.local/share/Astrea/System/config/display/monitor-settings.conf"
+ASTREA_ROOT="${ASTREA_ROOT:-$HOME/.local/share/Astrea}"
+conf_path="${ASTREA_ROOT}/System/config/display/monitor-settings.conf"
 [ -f "${conf_path}" ] || exit 0
 
 source "${conf_path}"
@@ -36,7 +37,7 @@ else
     saturation_raw=$(( (saturation * 1023 + 50) / 100 ))
 fi
 monitor_rule="monitor=${monitor},${resolution}@${refreshrate},0x0,${scale},bitdepth,${bitdepth},vrr,${vrr}"
-night_shift_color="${HOME}/.local/share/Astrea/System/services/display_night_shift_color.sh"
+night_shift_color="${ASTREA_ROOT}/System/services/display_night_shift_color.sh"
 
 mkdir -p "${HOME}/.config/hypr/core"
 monitors_conf="${HOME}/.config/hypr/core/monitors.conf"
@@ -53,9 +54,9 @@ fi
 
 if [ "${apply_mode}" = "full" ] || [ "${apply_mode}" = "colors-only" ] || [ "${apply_mode}" = "night-shift-only" ]; then
     if [ "${night_shift_schedule}" = "1" ]; then
-        "${HOME}/.local/share/Astrea/System/services/display_night_shift_schedule.sh" install >/dev/null 2>&1 || true
+        "${ASTREA_ROOT}/System/services/display_night_shift_schedule.sh" install >/dev/null 2>&1 || true
     else
-        "${HOME}/.local/share/Astrea/System/services/display_night_shift_schedule.sh" disable-timer >/dev/null 2>&1 || true
+        "${ASTREA_ROOT}/System/services/display_night_shift_schedule.sh" disable-timer >/dev/null 2>&1 || true
     fi
 
     if [ "${night_shift_schedule}" = "1" ]; then

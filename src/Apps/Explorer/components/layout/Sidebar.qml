@@ -118,7 +118,7 @@ Item {
 
         // ── Pessoal ───────────────────────────────────────────────────
         SidebarSection { label: "PESSOAL" }
-        SidebarItem { icon: "inode-directory";      label: "Pasta Pessoal"; path: "/home/agony" }
+        SidebarItem { icon: "inode-directory";      label: "Pasta Pessoal"; path: AppState.homePath }
         SidebarItem { icon: "document-open-recent"; label: "Recentes";      path: AppState.recentVirtualPath }
 
         Item { width: 1; height: 4 }
@@ -127,14 +127,14 @@ Item {
         SidebarSection { label: "FAVORITOS" }
         Repeater {
             model: [
-                { label: "Desktop",    icon: "user-desktop",      path: "/home/agony/Área de trabalho" },
-                { label: "Documentos", icon: "folder-documents",  path: "/home/agony/Documentos" },
-                { label: "Downloads",  icon: "folder-downloads",  path: "/home/agony/Downloads" },
-                { label: "Imagens",    icon: "folder-pictures",   path: "/home/agony/Imagens" },
-                { label: "Músicas",    icon: "folder-music",      path: "/home/agony/Músicas" },
-                { label: "Vídeos",     icon: "folder-videos",     path: "/home/agony/Vídeos" },
-                { label: "Público",    icon: "folder-publicshare",path: "/home/agony/Público" },
-                { label: "Modelos",    icon: "folder-templates",  path: "/home/agony/Modelos" }
+                { label: "Desktop",    icon: "user-desktop",      path: AppState.homePath + "/Área de trabalho" },
+                { label: "Documentos", icon: "folder-documents",  path: AppState.homePath + "/Documentos" },
+                { label: "Downloads",  icon: "folder-downloads",  path: AppState.homePath + "/Downloads" },
+                { label: "Imagens",    icon: "folder-pictures",   path: AppState.homePath + "/Imagens" },
+                { label: "Músicas",    icon: "folder-music",      path: AppState.homePath + "/Músicas" },
+                { label: "Vídeos",     icon: "folder-videos",     path: AppState.homePath + "/Vídeos" },
+                { label: "Público",    icon: "folder-publicshare",path: AppState.homePath + "/Público" },
+                { label: "Modelos",    icon: "folder-templates",  path: AppState.homePath + "/Modelos" }
             ]
             SidebarItem { icon: modelData.icon; label: modelData.label; path: modelData.path }
         }
@@ -184,7 +184,7 @@ Item {
         SidebarItem {
             icon:  "user-trash"
             label: "Lixeira"
-            path:  "/home/agony/.local/share/Trash/files"
+            path:  AppState.trashFilesPath
         }
 
         Item { width: 1; height: 6 }

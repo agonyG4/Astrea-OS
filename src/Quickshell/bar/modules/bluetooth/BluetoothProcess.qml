@@ -5,7 +5,7 @@ import QtQuick
 QtObject {
     id: root
 
-    readonly property string scriptPath: Quickshell.env("HOME") + "/.local/share/Astrea/System/scripts/bluetooth_manager.py"
+    readonly property string scriptPath: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/System/scripts/bluetooth_manager.py"
 
     property bool powered: false
     property string deviceName: ""

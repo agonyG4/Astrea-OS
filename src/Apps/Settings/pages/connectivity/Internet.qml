@@ -9,7 +9,7 @@ Item {
     id: root
 
     // ── Constants ────────────────────────────────────────────────────────────
-    readonly property string _script: Quickshell.env("HOME") + "/.local/share/Astrea/Core/bridge/network/manager.py"
+    readonly property string _script: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/network/manager.py"
     readonly property var dnsPresets: [
         { label: "Auto",       value: "",                             color: "#888888" },
         { label: "Cloudflare", value: "1.1.1.1, 1.0.0.1",           color: "#f38020" },

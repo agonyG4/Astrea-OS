@@ -52,9 +52,9 @@ SystemComponents.TopbarPopup {
 
     // ─── Processos ────────────────────────────────────────────────
     Process { id: shellLauncher;  command: ["rofi", "-show", "drun"] }
-    Process { id: shellAbout;    command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/Apps/About/main.qml"] }
-    Process { id: shellSettings; command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/Apps/Settings/main.qml"] }
+    Process { id: shellAbout;    command: ["quickshell", "-p", (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Apps/About/main.qml"] }
+    Process { id: shellSettings; command: ["quickshell", "-p", (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Apps/Settings/main.qml"] }
     Process { id: shellForceQuit; command: ["bash", "-c", "hyprctl kill"] }
-    Process { id: shellLock; command: ["quickshell", "-p", Quickshell.env("HOME") + "/.local/share/Astrea/Features/Paper/lockscreen/lockscreen.qml"] }
+    Process { id: shellLock; command: ["quickshell", "-p", (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Features/Paper/lockscreen/lockscreen.qml"] }
     Process { id: shellPower;     command: ["bash", "-c", "shutdown now"] }
 }

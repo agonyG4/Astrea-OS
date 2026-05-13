@@ -1,4 +1,5 @@
 import QtQuick
+import Quickshell
 import "components/system"
 import "components/bluetooth"
 import "components/controlcenter"
@@ -22,7 +23,7 @@ Item {
     property var volPopupRef: null
     property var ccPopupRef: null
 
-    readonly property string quickshellAssetRoot: "file:///home/agony/.local/share/Astrea/Assets/ui/quickshell/bar/"
+    readonly property string quickshellAssetRoot: "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/ui/quickshell/bar/"
     readonly property int pillHeight: 36
     readonly property int sidePadding: 10
     readonly property int rightWidth: Math.min(Math.max(0, root.width - leftSection.width - 28), rightRow.implicitWidth + 20)

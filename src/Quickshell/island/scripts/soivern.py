@@ -122,9 +122,12 @@ def parse_result(data: Optional[Dict]) -> Optional[Dict]:
 # ── Spotify ────────────────────────────────────────────────────────────────────
 
 def open_spotify(url: str) -> None:
-    """Opens Spotify at the given URI via xdg-open."""
+    """Opens Spotify at the given URI through Astrea's launch wrapper."""
     logger.info(f"Opening Spotify: {url}")
-    subprocess.run(["xdg-open", url], check=False)
+    astrea_root = os.environ.get("ASTREA_ROOT") or os.path.expanduser("~/.local/share/Astrea")
+    launcher = os.path.join(astrea_root, "bin", "astrea-launch")
+    command = [launcher, "--url", url] if os.path.isfile(launcher) else ["xdg-open", url]
+    subprocess.run(command, check=False)
 
 
 # ── Notifications ──────────────────────────────────────────────────────────────

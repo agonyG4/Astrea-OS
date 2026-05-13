@@ -10,8 +10,8 @@ Item {
     height: 0
 
     readonly property string configPath: (Quickshell.env("HOME") || "") + "/.config/AstreaOS/ui/theme.json"
-    readonly property string colorSchemeApplyPath: (Quickshell.env("HOME") || "") + "/.local/share/Astrea/System/services/theme/apply_color_scheme.sh"
-    readonly property string decorationApplyPath: (Quickshell.env("HOME") || "") + "/.local/share/Astrea/System/services/theme/apply_decoration_style.sh"
+    readonly property string colorSchemeApplyPath: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + "/System/services/theme/apply_color_scheme.sh"
+    readonly property string decorationApplyPath: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + "/System/services/theme/apply_decoration_style.sh"
     property bool loaded: false
 
     // ── Persisted UI state ───────────────────────────────────────────────

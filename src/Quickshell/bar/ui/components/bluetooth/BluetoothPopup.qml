@@ -12,7 +12,7 @@ SystemComponents.TopbarPopup {
     property string scannedJson: "[]"
     property bool   scanning:    false
     property var    btProcess:   null
-    readonly property string scriptPath: Quickshell.env("HOME") + "/.local/share/Astrea/System/scripts/bluetooth_manager.py"
+    readonly property string scriptPath: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/System/scripts/bluetooth_manager.py"
     readonly property bool powerPending: root.btProcess ? root.btProcess.powerPending : false
     readonly property string powerError: root.btProcess ? root.btProcess.powerError : ""
 

@@ -1,12 +1,13 @@
 import QtQuick
 import Qt5Compat.GraphicalEffects
+import Quickshell
 import "../system" as SystemComponents
 import "../../.."
 
 SystemComponents.IndicatorButton {
     id: root
 
-    readonly property string quickshellAssetRoot: "file:///home/agony/.local/share/Astrea/Assets/ui/quickshell/bar/"
+    readonly property string quickshellAssetRoot: "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/ui/quickshell/bar/"
     property var ccPopupRef: null
 
     popupRef: root.ccPopupRef

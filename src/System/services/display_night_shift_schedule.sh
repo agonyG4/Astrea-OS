@@ -2,11 +2,12 @@
 set -euo pipefail
 
 action="${1:-apply}"
-conf_path="${HOME}/.local/share/Astrea/System/config/display/monitor-settings.conf"
+ASTREA_ROOT="${ASTREA_ROOT:-$HOME/.local/share/Astrea}"
+conf_path="${ASTREA_ROOT}/System/config/display/monitor-settings.conf"
 unit_dir="${HOME}/.config/systemd/user"
 service_path="${unit_dir}/astrea-night-shift.service"
 timer_path="${unit_dir}/astrea-night-shift.timer"
-night_shift_color="${HOME}/.local/share/Astrea/System/services/display_night_shift_color.sh"
+night_shift_color="${ASTREA_ROOT}/System/services/display_night_shift_color.sh"
 state_dir="${HOME}/.local/state/Astrea/display"
 state_path="${state_dir}/night-shift-state"
 lock_path="${state_dir}/night-shift.lock"
@@ -33,12 +34,12 @@ write_units() {
     cat > "${tmp_service}" <<EOF
 [Unit]
 Description=Apply Astrea Night Shift schedule
-Documentation=file://${HOME}/.local/share/Astrea/System/services/display_night_shift_schedule.sh
-ConditionPathExists=${HOME}/.local/share/Astrea/System/config/display/monitor-settings.conf
+Documentation=file://${ASTREA_ROOT}/System/services/display_night_shift_schedule.sh
+ConditionPathExists=${ASTREA_ROOT}/System/config/display/monitor-settings.conf
 
 [Service]
 Type=oneshot
-ExecStart=${HOME}/.local/share/Astrea/System/services/display_night_shift_schedule.sh apply
+ExecStart=${ASTREA_ROOT}/System/services/display_night_shift_schedule.sh apply
 TimeoutStartSec=8s
 Nice=5
 EOF

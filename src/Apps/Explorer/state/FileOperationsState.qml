@@ -558,7 +558,7 @@ QtObject {
             "dest=$(unique_target \"$dest_dir\" \"$dest_name\"); " +
             "mv -- \"$trashed\" \"$dest\" && rm -f -- \"$info\"; " +
             "done",
-            "_", app.trashInfoPath, "/home/agony"
+            "_", app.trashInfoPath, app.homePath
         ].concat(targets)
         restoreProcess.running = false
         restoreProcess.running = true

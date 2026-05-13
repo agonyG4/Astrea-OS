@@ -234,7 +234,8 @@ ShellRoot {
         property var usageCounts: ({})
         readonly property string usageFilePath: Quickshell.env("HOME") + "/.local/state/Astrea/spotlight-usage.json"
         readonly property string configFilePath: Quickshell.env("HOME") + "/.config/AstreaOS/spotlight.json"
-        readonly property string astreaRoot: Quickshell.env("HOME") + "/.local/share/Astrea"
+        readonly property string astreaRoot: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + ""
+        readonly property string astreaLaunch: astreaRoot + "/bin/astrea-launch"
         readonly property string weatherCli: astreaRoot + "/bin/weather-cli"
         property string usageLoadBuffer: ""
         property string configLoadBuffer: ""
@@ -275,6 +276,11 @@ ShellRoot {
 
         function entryKey(entry) {
             return entry.desktopId || entry.id || entry.fileName || [entry.name || "", entry.exec || entry.execString || ""].join("|")
+        }
+
+        function desktopIdForEntry(entry) {
+            if (!entry) return ""
+            return entry.desktopId || entry.id || entry.fileName || ""
         }
 
         function usageCountFor(entry) {
@@ -438,12 +444,20 @@ ShellRoot {
             hadFocusGrab = false
             results = []
 
-            // entry.execute() é a forma correta — o Quickshell lança o app
-            // completamente desacoplado, como um processo independente,
-            // sem herdar nada do Quickshell
             Qt.callLater(() => {
-                entry.execute()
-                if (standalone && !usageSaveProc.running) Qt.quit()
+                var desktopId = desktopIdForEntry(entry)
+                if (desktopId) {
+                    launchProc.command = [astreaLaunch, "--desktop", desktopId]
+                } else {
+                    var commandText = entry.exec || entry.execString || ""
+                    launchProc.command = commandText ? [astreaLaunch, "--command", commandText] : []
+                }
+                if (launchProc.command.length > 0) {
+                    launchProc.running = false
+                    launchProc.running = true
+                } else if (standalone && !usageSaveProc.running) {
+                    Qt.quit()
+                }
             })
         }
 
@@ -504,6 +518,16 @@ ShellRoot {
             }
         }
 
+        property var launchProc: Process {
+            id: launchProc
+            command: []
+            running: false
+            onExited: {
+                if (spotlight.standalone && !spotlight.usageSaveProc.running)
+                    Qt.quit()
+            }
+        }
+
         property var configLoadProc: Process {
             id: configLoadProc
             command: [
@@ -531,7 +555,11 @@ ShellRoot {
 
         property var weatherProc: Process {
             id: weatherProc
-            command: ["/usr/bin/env", spotlight.weatherCli, "summary"]
+            command: [
+                "bash", "-lc",
+                "cli=\"$1\"; root=\"$2\"; if [ ! -x \"$cli\" ]; then exit 127; fi; ASTREA_ROOT=\"$root\" exec \"$cli\" summary",
+                "--", spotlight.weatherCli, spotlight.astreaRoot
+            ]
             running: false
             stdout: SplitParser {
                 onRead: data => spotlight.weatherBuffer += data

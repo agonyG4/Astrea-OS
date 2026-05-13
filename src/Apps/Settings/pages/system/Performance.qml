@@ -42,7 +42,7 @@ ScrollPage {
         profile: "balanced",
         auto_apply: true,
         prefer_gamemode: true,
-        launch_boost: false,
+        launch_boost: true,
         reduce_effects: false,
         limit_background_tasks: false,
         show_status_badges: true
@@ -137,7 +137,7 @@ ScrollPage {
             "    '  \"profile\": \"balanced\",' " +
             "    '  \"auto_apply\": true,' " +
             "    '  \"prefer_gamemode\": true,' " +
-            "    '  \"launch_boost\": false,' " +
+            "    '  \"launch_boost\": true,' " +
             "    '  \"reduce_effects\": false,' " +
             "    '  \"limit_background_tasks\": false,' " +
             "    '  \"show_status_badges\": true' " +

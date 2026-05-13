@@ -16,7 +16,7 @@ ScrollPage {
     readonly property color popupBg: Theme.popupBg
     readonly property color errorColor: Theme.errorColor
 
-    readonly property string scriptPath: (Quickshell.env("HOME") || "") + "/.local/share/Astrea/Core/bridge/apps/manager.py"
+    readonly property string scriptPath: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + "/Core/bridge/apps/manager.py"
 
     property bool loading: true
     property string errorMessage: ""

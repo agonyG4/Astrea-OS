@@ -8,7 +8,7 @@ import "../../AstreaComponents"
 Item {
     id: root
 
-    readonly property string _script: Quickshell.env("HOME") + "/.local/share/Astrea/Core/bridge/system/storage.py"
+    readonly property string _script: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/system/storage.py"
     property bool   loading:          true
     property var    storageData:      []
     property real   totalSize:        0
