@@ -1,0 +1,77 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import tempfile
+from pathlib import Path
+
+
+def state_home() -> Path:
+    return Path(
+        os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")
+    ).expanduser()
+
+
+def config_home() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser()
+
+
+def usage_path() -> Path:
+    return state_home() / "Astrea/spotlight-usage.json"
+
+
+def config_path() -> Path:
+    return config_home() / "AstreaOS/spotlight.json"
+
+
+def atomic_write(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+    ) as handle:
+        json.dump(payload, handle, ensure_ascii=False)
+        handle.write("\n")
+        tmp = Path(handle.name)
+    tmp.replace(path)
+
+
+def read_json(path: Path, fallback: object) -> object:
+    if not path.exists():
+        return fallback
+    try:
+        return json.loads(path.read_text(encoding="utf-8") or "null")
+    except (OSError, json.JSONDecodeError):
+        return fallback
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Astrea Spotlight state helper")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("usage-load")
+    save = sub.add_parser("usage-save")
+    save.add_argument("json_data")
+    sub.add_parser("config")
+    args = parser.parse_args()
+
+    if args.command == "usage-load":
+        print(json.dumps(read_json(usage_path(), {}), ensure_ascii=False))
+        return 0
+    if args.command == "usage-save":
+        atomic_write(usage_path(), json.loads(args.json_data))
+        return 0
+    if args.command == "config":
+        default = {"weather": True}
+        path = config_path()
+        if not path.exists():
+            atomic_write(path, default)
+            print(json.dumps(default, ensure_ascii=False))
+        else:
+            print(json.dumps(read_json(path, default), ensure_ascii=False))
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

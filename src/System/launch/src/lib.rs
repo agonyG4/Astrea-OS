@@ -14,11 +14,25 @@ const DEFAULT_BOOST_MS: u64 = 3000;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum LaunchRequest {
-    Desktop { id: String },
-    Command { command: String },
-    File { path: String },
-    Url { url: String },
-    Steam { uri: String },
+    Desktop {
+        id: String,
+    },
+    Command {
+        command: String,
+    },
+    Argv {
+        argv: Vec<String>,
+        working_dir: Option<String>,
+    },
+    File {
+        path: String,
+    },
+    Url {
+        url: String,
+    },
+    Steam {
+        uri: String,
+    },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -261,6 +275,20 @@ pub fn resolve_request(request: &LaunchRequest) -> Result<CommandSpec, String> {
             working_dir: None,
             desktop_file: None,
         }),
+        LaunchRequest::Argv { argv, working_dir } => {
+            if argv.is_empty() || argv.first().is_some_and(|arg| arg.is_empty()) {
+                return Err("argv launch request requires a program".into());
+            }
+            Ok(CommandSpec {
+                argv: argv.clone(),
+                working_dir: working_dir
+                    .as_deref()
+                    .filter(|value| !value.is_empty())
+                    .map(expand_home)
+                    .map(PathBuf::from),
+                desktop_file: None,
+            })
+        }
         LaunchRequest::File { path } => Ok(CommandSpec {
             argv: command_for_file_path(&expand_home(path))?,
             working_dir: working_dir_for_file(path),
@@ -339,7 +367,7 @@ pub fn parse_exec_line(line: &str) -> Result<Vec<String>, String> {
             }
             '%' => match chars.next() {
                 Some('%') => current.push('%'),
-                Some(code) if "fFuUick".contains(code) => current.clear(),
+                Some(code) if "fFuUick".contains(code) => {}
                 Some(_) | None => {}
             },
             ch if ch.is_whitespace() && quote.is_none() => {
@@ -378,6 +406,7 @@ pub fn matching_rule<'a>(
     let steam_appid = match request {
         LaunchRequest::Steam { uri } => extract_steam_appid(uri),
         LaunchRequest::Url { url } => extract_steam_appid(url),
+        LaunchRequest::Argv { .. } => None,
         _ => None,
     };
 
@@ -972,6 +1001,7 @@ fn request_kind(request: &LaunchRequest) -> &'static str {
     match request {
         LaunchRequest::Desktop { .. } => "desktop",
         LaunchRequest::Command { .. } => "command",
+        LaunchRequest::Argv { .. } => "argv",
         LaunchRequest::File { .. } => "file",
         LaunchRequest::Url { .. } => "url",
         LaunchRequest::Steam { .. } => "steam",
@@ -982,6 +1012,7 @@ fn request_target(request: &LaunchRequest) -> &str {
     match request {
         LaunchRequest::Desktop { id } => id,
         LaunchRequest::Command { command } => command,
+        LaunchRequest::Argv { argv, .. } => argv.first().map(String::as_str).unwrap_or(""),
         LaunchRequest::File { path } => path,
         LaunchRequest::Url { url } => url,
         LaunchRequest::Steam { uri } => uri,

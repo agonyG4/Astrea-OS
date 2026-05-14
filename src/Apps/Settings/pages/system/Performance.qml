@@ -18,7 +18,8 @@ ScrollPage {
     readonly property color warningColor: Theme.warningColor
     readonly property color successColor: Theme.successColor
 
-    readonly property string configPath: (Quickshell.env("HOME") || "") + "/.config/AstreaOS/system/performance.json"
+    readonly property string astreaRoot: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + ""
+    readonly property string performanceCli: astreaRoot + "/System/scripts/astrea-performance"
     readonly property var profileOptions: ["Economy", "Balanced", "Performance"]
     readonly property var profileValues: ["power-saver", "balanced", "performance"]
 
@@ -73,10 +74,8 @@ ScrollPage {
     }
 
     function saveConfig(showMessage) {
-        saveConfigProc.jsonData = JSON.stringify(root.perfConfig, null, 4)
-        saveConfigProc.command = ["bash", "-c",
-            "mkdir -p \"$(dirname \"$1\")\"; cat <<'EOF' > \"$1\"\n" + saveConfigProc.jsonData + "\nEOF\n",
-            "--", root.configPath]
+        saveConfigProc.jsonData = JSON.stringify(root.perfConfig)
+        saveConfigProc.command = [root.performanceCli, "save", saveConfigProc.jsonData]
         saveConfigProc.showMessage = showMessage
         saveConfigProc.running = false
         saveConfigProc.running = true
@@ -101,7 +100,7 @@ ScrollPage {
         if (!root.runtimeStatus.powerprofilesctl || applyProfileProc.running)
             return
         root.errorMessage = ""
-        applyProfileProc.command = ["powerprofilesctl", "set", root.profileValues[root.selectedProfile]]
+        applyProfileProc.command = [root.performanceCli, "set", root.profileValues[root.selectedProfile]]
         root.applyingProfile = true
         applyProfileProc.running = false
         applyProfileProc.running = true
@@ -129,22 +128,7 @@ ScrollPage {
 
     Process {
         id: loadConfigProc
-        command: ["bash", "-c",
-            "FILE=\"$1\";" +
-            "mkdir -p \"$(dirname \"$FILE\")\";" +
-            "if [ ! -f \"$FILE\" ]; then " +
-            "  printf '%s\n' '{' " +
-            "    '  \"profile\": \"balanced\",' " +
-            "    '  \"auto_apply\": true,' " +
-            "    '  \"prefer_gamemode\": true,' " +
-            "    '  \"launch_boost\": true,' " +
-            "    '  \"reduce_effects\": false,' " +
-            "    '  \"limit_background_tasks\": false,' " +
-            "    '  \"show_status_badges\": true' " +
-            "  '}' > \"$FILE\"; " +
-            "fi; " +
-            "cat \"$FILE\"",
-            "--", root.configPath]
+        command: [root.performanceCli, "get"]
         stdout: SplitParser {
             onRead: line => root._configBuf += line
         }
@@ -166,16 +150,7 @@ ScrollPage {
 
     Process {
         id: statusProc
-        command: ["bash", "-lc",
-            "PPD=0; GMD=0; GMA=0; PROFILE='unknown'; " +
-            "if command -v powerprofilesctl >/dev/null 2>&1; then " +
-            "  PPD=1; PROFILE=$(powerprofilesctl get 2>/dev/null || printf 'unknown'); " +
-            "fi; " +
-            "if command -v gamemoded >/dev/null 2>&1; then " +
-            "  GMD=1; " +
-            "  gamemoded -s >/dev/null 2>&1 && GMA=1 || true; " +
-            "fi; " +
-            "printf '{\"powerprofilesctl\":%s,\"gamemode\":%s,\"gamemode_active\":%s,\"profile\":\"%s\"}' \"$PPD\" \"$GMD\" \"$GMA\" \"$PROFILE\""]
+        command: [root.performanceCli, "status"]
         stdout: SplitParser {
             onRead: line => root._statusBuf += line
         }
