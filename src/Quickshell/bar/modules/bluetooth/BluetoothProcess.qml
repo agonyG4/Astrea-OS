@@ -120,6 +120,38 @@ QtObject {
         }
     }
 
+    function appendDirectStatus(data) {
+        root._statusBuf += data
+    }
+
+    function appendPowerOutput(data) {
+        root._powerBuf += data
+    }
+
+    function handlePowerExit(exitCode) {
+        root.powerPending = false
+        var ok = exitCode === 0
+        try {
+            if (root._powerBuf.trim()) {
+                var payload = JSON.parse(root._powerBuf)
+                ok = ok && payload.success === true
+                if (typeof payload.powered === "boolean")
+                    root.powered = payload.powered
+                if (!ok)
+                    root.powerError = payload.stderr || payload.stdout || payload.error || "Bluetooth power failed"
+            }
+        } catch (error) {
+            ok = false
+            root.powerError = "Bluetooth power returned invalid data"
+        }
+        if (!ok && root.powerError === "")
+            root.powerError = "Bluetooth power failed"
+        root._powerBuf = ""
+        root.refresh()
+        if (root.powered && Object.keys(root._scanOwners).length > 0)
+            root.startScan()
+    }
+
     property var statusFile: FileView {
         path: root.statusPath
         preload: true
@@ -141,7 +173,7 @@ QtObject {
         command: ["python3", root.scriptPath, "status"]
         running: false
         stdout: SplitParser {
-            onRead: data => root._statusBuf += data
+            onRead: data => root.appendDirectStatus(data)
         }
         onExited: exitCode => {
             if (exitCode === 0 && root._statusBuf.trim())
@@ -155,31 +187,9 @@ QtObject {
         command: []
         running: false
         stdout: SplitParser {
-            onRead: data => root._powerBuf += data
+            onRead: data => root.appendPowerOutput(data)
         }
-        onExited: exitCode => {
-            root.powerPending = false
-            var ok = exitCode === 0
-            try {
-                if (root._powerBuf.trim()) {
-                    var payload = JSON.parse(root._powerBuf)
-                    ok = ok && payload.success === true
-                    if (typeof payload.powered === "boolean")
-                        root.powered = payload.powered
-                    if (!ok)
-                        root.powerError = payload.stderr || payload.stdout || payload.error || "Bluetooth power failed"
-                }
-            } catch (error) {
-                ok = false
-                root.powerError = "Bluetooth power returned invalid data"
-            }
-            if (!ok && root.powerError === "")
-                root.powerError = "Bluetooth power failed"
-            root._powerBuf = ""
-            root.refresh()
-            if (root.powered && Object.keys(root._scanOwners).length > 0)
-                root.startScan()
-        }
+        onExited: exitCode => root.handlePowerExit(exitCode)
     }
 
     property var autoConnectProc: Process {
