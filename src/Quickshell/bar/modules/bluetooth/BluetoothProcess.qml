@@ -204,38 +204,20 @@ QtObject {
 
     property var scanProc: Process {
         id: scanProc
-        command: ["bash", "-c", "
-            (
-                echo 'scan on'
-                sleep 15
-                echo 'scan off'
-                sleep 1
-            ) | bluetoothctl | while IFS= read -r line; do
-                if echo \"$line\" | grep -q '\\[NEW\\] Device'; then
-                    MAC=$(echo \"$line\" | grep -oE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}')
-                    NAME=$(echo \"$line\" | sed 's/.*Device [0-9A-Fa-f:]*[[:space:]]*//')
-                    NAME=$(echo \"$NAME\" | tr -d '\"\\\\' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-                    if [ -n \"$MAC\" ] && [ -n \"$NAME\" ] && [ \"$NAME\" != \"$MAC\" ] && ! echo \"$NAME\" | grep -qE '^([0-9A-Fa-f]{2}[-]){5}[0-9A-Fa-f]{2}$'; then
-                        echo \"found|$MAC|$NAME\"
-                    fi
-                fi
-                if echo \"$line\" | grep -q 'Discovery stopped\\|Discovering: no'; then
-                    echo 'scan_done'
-                fi
-            done
-        "]
+        command: ["python3", root.scriptPath, "scan-stream"]
         running: false
         stdout: SplitParser {
             onRead: data => {
-                var line = data.trim()
-                if (line === "scan_done") {
-                    root.scanning = false
-                    root.refresh()
-                    root._scanOwners = ({})
-                } else if (line.indexOf("found|") === 0) {
-                    var p = line.split("|")
-                    if (p.length >= 3)
-                        root._addScanned(p[1], p[2])
+                try {
+                    var payload = JSON.parse(data.trim())
+                    if (payload.event === "done") {
+                        root.scanning = false
+                        root.refresh()
+                        root._scanOwners = ({})
+                    } else if (payload.event === "found") {
+                        root._addScanned(payload.mac || "", payload.name || "")
+                    }
+                } catch (error) {
                 }
             }
         }

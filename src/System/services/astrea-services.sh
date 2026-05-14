@@ -266,46 +266,47 @@ install_services() {
 	fi
 }
 
-verify_services() {
+verify_paths() {
 	local failed=0
-	local paths=(
-		"${unit_dir}/astrea-filechooser-portal.service"
-		"${unit_dir}/astrea-status.service"
-		"${unit_dir}/astrea-latencyd.service"
-		"${unit_dir}/astrea-launchd.service"
-		"${unit_dir}/astrea-weatherd.service"
-		"${unit_dir}/astrea-night-shift.service"
-		"${unit_dir}/astrea-night-shift.timer"
-		"${dbus_dir}/org.freedesktop.impl.portal.desktop.astrea.service"
-		"${portal_dir}/astrea.portal"
-		"${xdg_portal_conf_dir}/portals.conf"
-	)
-
-	for path in "${paths[@]}"; do
+	local path
+	for path in "$@"; do
 		if [[ ! -f "${path}" ]]; then
 			printf 'missing: %s\n' "${path}" >&2
 			failed=1
 		fi
 	done
+	return "${failed}"
+}
 
-	if command -v systemd-analyze >/dev/null 2>&1; then
-		local verify_output
-		if ! verify_output="$(systemd-analyze --user verify \
-			"${unit_dir}/astrea-filechooser-portal.service" \
-			"${unit_dir}/astrea-status.service" \
-			"${unit_dir}/astrea-latencyd.service" \
-			"${unit_dir}/astrea-launchd.service" \
-			"${unit_dir}/astrea-weatherd.service" \
-			"${unit_dir}/astrea-night-shift.service" \
-			"${unit_dir}/astrea-night-shift.timer" 2>&1)"; then
-			if grep -Eq 'Operation not permitted|Failed to connect to (user|system) scope bus|SO_PASS' <<<"${verify_output}"; then
-				printf 'systemd unit syntax check skipped: user manager unavailable in this context\n' >&2
-			else
-				printf '%s\n' "${verify_output}" >&2
-				failed=1
-			fi
-		fi
+verify_systemd_units() {
+	if ! command -v systemd-analyze >/dev/null 2>&1; then
+		return 0
 	fi
+
+	local verify_output
+	if ! verify_output="$(systemd-analyze --user verify "$@" 2>&1)"; then
+		if grep -Eq 'Operation not permitted|Failed to connect to (user|system) scope bus|SO_PASS' <<<"${verify_output}"; then
+			printf 'systemd unit syntax check skipped: user manager unavailable in this context\n' >&2
+			return 0
+		fi
+		printf '%s\n' "${verify_output}" >&2
+		return 1
+	fi
+	return 0
+}
+
+verify_core_services() {
+	local failed=0
+	local units=(
+		"${unit_dir}/astrea-status.service"
+		"${unit_dir}/astrea-latencyd.service"
+		"${unit_dir}/astrea-launchd.service"
+		"${unit_dir}/astrea-night-shift.service"
+		"${unit_dir}/astrea-night-shift.timer"
+	)
+
+	verify_paths "${units[@]}" || failed=1
+	verify_systemd_units "${units[@]}" || failed=1
 
 	bash -n "${astrea_root}/System/services/display_apply.sh" || failed=1
 	bash -n "${astrea_root}/System/services/display_night_shift_color.sh" || failed=1
@@ -313,7 +314,7 @@ verify_services() {
 	python3 -m py_compile "${astrea_root}/System/services/astrea_statusd.py" || failed=1
 	python3 -m py_compile "${astrea_root}/System/services/astrea_notify.py" || failed=1
 	python3 -m py_compile "${astrea_root}/System/services/astrea_latencyd.py" || failed=1
-	python3 -m py_compile "${astrea_root}/System/portal/astrea_filechooser_portal.py" || failed=1
+
 	if [[ -f "${launch_backend_dir}/Cargo.toml" ]]; then
 		if command -v cargo >/dev/null 2>&1; then
 			cargo check --manifest-path "${launch_backend_dir}/Cargo.toml" --offline || failed=1
@@ -325,6 +326,25 @@ verify_services() {
 		warn "missing launch backend manifest: ${launch_backend_dir}/Cargo.toml"
 		failed=1
 	fi
+
+	if [[ ! -x "${astrea_bin_dir}/astrea-launch" ]]; then
+		printf 'missing executable: %s\n' "${astrea_bin_dir}/astrea-launch" >&2
+		failed=1
+	fi
+
+	if [[ "${failed}" -eq 0 ]]; then
+		info 'Astrea core services verified'
+	fi
+	return "${failed}"
+}
+
+verify_weather_services() {
+	local failed=0
+	local units=("${unit_dir}/astrea-weatherd.service")
+
+	verify_paths "${units[@]}" || failed=1
+	verify_systemd_units "${units[@]}" || failed=1
+
 	if [[ -f "${weather_backend_dir}/Cargo.toml" ]]; then
 		if command -v cargo >/dev/null 2>&1; then
 			cargo check --manifest-path "${weather_backend_dir}/Cargo.toml" --workspace --offline || failed=1
@@ -341,19 +361,61 @@ verify_services() {
 		printf 'missing executable: %s\n' "${astrea_bin_dir}/weather-cli" >&2
 		failed=1
 	fi
-	if [[ ! -x "${astrea_bin_dir}/astrea-launch" ]]; then
-		printf 'missing executable: %s\n' "${astrea_bin_dir}/astrea-launch" >&2
-		failed=1
-	fi
 	if [[ ! -x "${astrea_bin_dir}/astrea-weatherd" ]]; then
 		printf 'missing executable: %s\n' "${astrea_bin_dir}/astrea-weatherd" >&2
 		failed=1
 	fi
 
 	if [[ "${failed}" -eq 0 ]]; then
-		info 'Astrea services verified'
+		info 'Astrea weather services verified'
 	fi
 	return "${failed}"
+}
+
+verify_portal_services() {
+	local failed=0
+	local units=("${unit_dir}/astrea-filechooser-portal.service")
+	local files=(
+		"${unit_dir}/astrea-filechooser-portal.service"
+		"${dbus_dir}/org.freedesktop.impl.portal.desktop.astrea.service"
+		"${portal_dir}/astrea.portal"
+		"${xdg_portal_conf_dir}/portals.conf"
+	)
+
+	verify_paths "${files[@]}" || failed=1
+	verify_systemd_units "${units[@]}" || failed=1
+	python3 -m py_compile "${astrea_root}/System/portal/astrea_filechooser_portal.py" || failed=1
+
+	if [[ "${failed}" -eq 0 ]]; then
+		info 'Astrea portal services verified'
+	fi
+	return "${failed}"
+}
+
+verify_services() {
+	local scope="${1:-core}"
+	case "${scope}" in
+	core)
+		verify_core_services
+		;;
+	weather)
+		verify_weather_services
+		;;
+	portal)
+		verify_portal_services
+		;;
+	all)
+		local failed=0
+		verify_core_services || failed=1
+		verify_weather_services || failed=1
+		verify_portal_services || failed=1
+		return "${failed}"
+		;;
+	*)
+		printf 'Usage: %s verify [core|weather|portal|all]\n' "$0" >&2
+		return 2
+		;;
+	esac
 }
 
 case "${1:-verify}" in
@@ -361,13 +423,13 @@ install)
 	install_services
 	;;
 verify | doctor)
-	verify_services
+	verify_services "${2:-core}"
 	;;
 reload)
 	reload_user_systemd
 	;;
 *)
-	printf 'Usage: %s [install|verify|doctor|reload]\n' "$0" >&2
+	printf 'Usage: %s [install|verify [core|weather|portal|all]|doctor [core|weather|portal|all]|reload]\n' "$0" >&2
 	exit 2
 	;;
 esac

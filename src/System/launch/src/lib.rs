@@ -7,6 +7,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const DEFAULT_BOOST_MS: u64 = 3000;
@@ -116,6 +117,12 @@ struct LaunchDaemonResponse {
     error: Option<String>,
 }
 
+#[derive(Debug)]
+enum LaunchdError {
+    Connect,
+    Request(String),
+}
+
 pub fn config_path() -> PathBuf {
     xdg_config_home().join("AstreaOS/system/launch.json")
 }
@@ -170,13 +177,6 @@ pub fn run_launch(request: LaunchRequest) -> Result<LaunchRecord, String> {
         detail_parts.push(warning);
     }
 
-    request_boost(
-        &config,
-        "app-launch",
-        None,
-        config.default_external_boost_ms,
-    );
-
     let mut command = resolve_request(&request)?;
     let raw_command = command.argv.join(" ");
     let executable = command.argv.first().map(String::as_str);
@@ -202,6 +202,8 @@ pub fn run_launch(request: LaunchRequest) -> Result<LaunchRecord, String> {
         .as_ref()
         .and_then(|rule| rule.allow_external_pid_boost)
         .unwrap_or(true);
+
+    request_boost(&config, "app-launch", None, boost_ms);
 
     let spawn = spawn_command(&command);
     let (pid, status, detail) = match spawn {
@@ -235,7 +237,8 @@ pub fn run_launch(request: LaunchRequest) -> Result<LaunchRecord, String> {
 pub fn run_launch_via_daemon(request: LaunchRequest) -> Result<LaunchRecord, String> {
     match send_launch_request(&request) {
         Ok(record) => Ok(record),
-        Err(_) => run_launch(request),
+        Err(LaunchdError::Connect) => run_launch(request),
+        Err(LaunchdError::Request(err)) => Err(err),
     }
 }
 
@@ -252,10 +255,13 @@ pub fn serve_launchd() -> Result<(), String> {
     for stream in listener.incoming() {
         match stream {
             Ok(mut stream) => {
-                let response = handle_launchd_stream(&mut stream);
-                let text = serde_json::to_string(&response)
-                    .unwrap_or_else(|_| "{\"ok\":false,\"error\":\"serialization failed\"}".into());
-                let _ = writeln!(stream, "{text}");
+                thread::spawn(move || {
+                    let response = handle_launchd_stream(&mut stream);
+                    let text = serde_json::to_string(&response).unwrap_or_else(|_| {
+                        "{\"ok\":false,\"error\":\"serialization failed\"}".into()
+                    });
+                    let _ = writeln!(stream, "{text}");
+                });
             }
             Err(err) => eprintln!("[astrea-launchd] accept failed: {err}"),
         }
@@ -350,42 +356,83 @@ pub fn command_from_desktop_file(path: &Path) -> Result<CommandSpec, String> {
     })
 }
 
+/// Parses a Desktop Entry `Exec` string into argv without shell evaluation.
+///
+/// Desktop field codes that need external context (`%f`, `%F`, `%u`, `%U`,
+/// `%i`, `%c`, and `%k`) are intentionally removed instead of expanded.
+/// Literal `%%`, quoting, escaped characters, and explicit quoted empty
+/// arguments are preserved.
 pub fn parse_exec_line(line: &str) -> Result<Vec<String>, String> {
     let mut args = Vec::new();
     let mut current = String::new();
     let mut chars = line.chars().peekable();
     let mut quote: Option<char> = None;
+    let mut arg_started = false;
+    let mut suppress_arg = false;
 
     while let Some(ch) = chars.next() {
         match ch {
-            '\'' | '"' if quote.is_none() => quote = Some(ch),
-            '\'' | '"' if quote == Some(ch) => quote = None,
+            '\'' | '"' if quote.is_none() => {
+                quote = Some(ch);
+                arg_started = true;
+            }
+            '\'' | '"' if quote == Some(ch) => {
+                quote = None;
+                arg_started = true;
+            }
             '\\' => {
                 if let Some(next) = chars.next() {
                     current.push(next);
+                    arg_started = true;
+                    suppress_arg = false;
                 }
             }
-            '%' => match chars.next() {
-                Some('%') => current.push('%'),
-                Some(code) if "fFuUick".contains(code) => {}
-                Some(_) | None => {}
-            },
+            '%' => {
+                arg_started = true;
+                match chars.next() {
+                    Some('%') => {
+                        current.push('%');
+                        suppress_arg = false;
+                    }
+                    Some(code) if "fFuUick".contains(code) => {
+                        if current.is_empty() {
+                            suppress_arg = true;
+                        }
+                    }
+                    Some(_) | None => {}
+                }
+            }
             ch if ch.is_whitespace() && quote.is_none() => {
-                if !current.is_empty() {
-                    args.push(std::mem::take(&mut current));
-                }
+                finish_exec_arg(&mut args, &mut current, &mut arg_started, &mut suppress_arg);
             }
-            _ => current.push(ch),
+            _ => {
+                current.push(ch);
+                arg_started = true;
+                suppress_arg = false;
+            }
         }
     }
 
     if quote.is_some() {
         return Err("unterminated quote in Exec".into());
     }
-    if !current.is_empty() {
-        args.push(current);
-    }
+    finish_exec_arg(&mut args, &mut current, &mut arg_started, &mut suppress_arg);
     Ok(args)
+}
+
+fn finish_exec_arg(
+    args: &mut Vec<String>,
+    current: &mut String,
+    arg_started: &mut bool,
+    suppress_arg: &mut bool,
+) {
+    if *arg_started && !*suppress_arg {
+        args.push(std::mem::take(current));
+    } else {
+        current.clear();
+    }
+    *arg_started = false;
+    *suppress_arg = false;
 }
 
 pub fn matching_rule<'a>(
@@ -477,32 +524,36 @@ pub fn read_history(limit: usize) -> Vec<String> {
     lines
 }
 
-fn send_launch_request(request: &LaunchRequest) -> Result<LaunchRecord, String> {
+fn send_launch_request(request: &LaunchRequest) -> Result<LaunchRecord, LaunchdError> {
     let path = launchd_socket_path();
-    let mut stream = UnixStream::connect(&path).map_err(|err| format!("connect launchd: {err}"))?;
+    let mut stream = UnixStream::connect(&path).map_err(|_err| LaunchdError::Connect)?;
     stream
         .set_read_timeout(Some(Duration::from_secs(3)))
-        .map_err(|err| format!("set launchd read timeout: {err}"))?;
+        .map_err(|err| LaunchdError::Request(format!("set launchd read timeout: {err}")))?;
     stream
         .set_write_timeout(Some(Duration::from_secs(1)))
-        .map_err(|err| format!("set launchd write timeout: {err}"))?;
-    let text = serde_json::to_string(request).map_err(|err| format!("request json: {err}"))?;
-    writeln!(stream, "{text}").map_err(|err| format!("write launchd request: {err}"))?;
+        .map_err(|err| LaunchdError::Request(format!("set launchd write timeout: {err}")))?;
+    let text = serde_json::to_string(request)
+        .map_err(|err| LaunchdError::Request(format!("request json: {err}")))?;
+    writeln!(stream, "{text}")
+        .map_err(|err| LaunchdError::Request(format!("write launchd request: {err}")))?;
     stream
         .shutdown(Shutdown::Write)
-        .map_err(|err| format!("finish launchd request: {err}"))?;
+        .map_err(|err| LaunchdError::Request(format!("finish launchd request: {err}")))?;
     let mut response = String::new();
     stream
         .read_to_string(&mut response)
-        .map_err(|err| format!("read launchd response: {err}"))?;
-    let response: LaunchDaemonResponse =
-        serde_json::from_str(&response).map_err(|err| format!("parse launchd response: {err}"))?;
+        .map_err(|err| LaunchdError::Request(format!("read launchd response: {err}")))?;
+    let response: LaunchDaemonResponse = serde_json::from_str(&response)
+        .map_err(|err| LaunchdError::Request(format!("parse launchd response: {err}")))?;
     if response.ok {
         response
             .record
-            .ok_or_else(|| "launchd returned empty success".into())
+            .ok_or_else(|| LaunchdError::Request("launchd returned empty success".into()))
     } else {
-        Err(response.error.unwrap_or_else(|| "launchd failed".into()))
+        Err(LaunchdError::Request(
+            response.error.unwrap_or_else(|| "launchd failed".into()),
+        ))
     }
 }
 

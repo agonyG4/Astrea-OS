@@ -44,6 +44,25 @@ fn parses_desktop_exec_field_code_edge_cases() {
 }
 
 #[test]
+fn parses_desktop_exec_empty_args_and_metadata_field_codes() {
+    let args =
+        parse_exec_line(r#"app "" "escaped \"quote\"" %i %c %k --icon=%i --name=%c --path=%k"#)
+            .expect("exec line should parse");
+
+    assert_eq!(
+        args,
+        vec![
+            "app",
+            "",
+            "escaped \"quote\"",
+            "--icon=",
+            "--name=",
+            "--path=",
+        ]
+    );
+}
+
+#[test]
 fn resolves_desktop_file_to_command_and_working_dir() {
     let dir = std::env::temp_dir().join(format!("astrea-launch-test-{}", std::process::id()));
     let desktop = dir.join("example.desktop");

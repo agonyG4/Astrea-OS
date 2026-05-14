@@ -36,6 +36,7 @@ DESKTOP
 
 cargo run --quiet --manifest-path "${launch_manifest}" -- doctor >/dev/null
 cargo run --quiet --manifest-path "${launch_manifest}" -- --desktop known.desktop >/dev/null
+cargo run --quiet --manifest-path "${launch_manifest}" -- --argv-json '["/usr/bin/true","--argv-smoke"]' >/dev/null
 
 python3 "${latencyd}" serve &
 latency_pid="$!"

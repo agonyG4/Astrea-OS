@@ -302,27 +302,10 @@ def set_intel_turbo(enabled: bool) -> str:
 
 
 def apply_gpu_burst() -> list[str]:
-    details: list[str] = []
-    if command_available("nvidia-settings"):
-        result = run_command(
-            ["nvidia-settings", "-a", "[gpu:0]/GpuPowerMizerMode=1"],
-            timeout=1.0,
-        )
-        if result.returncode == 0:
-            details.append("nvidia powermizer -> prefer maximum performance")
-        else:
-            details.append(
-                f"nvidia-settings: {(result.stderr or result.stdout or 'failed').strip()}"
-            )
-    if command_available("nvidia-smi"):
-        result = run_command(["nvidia-smi", "-pm", "1"], timeout=1.0)
-        if result.returncode == 0:
-            details.append("nvidia persistence mode on")
-        else:
-            details.append(
-                f"nvidia-smi -pm: {(result.stderr or result.stdout or 'failed').strip()}"
-            )
-    return details or ["no gpu burst helper"]
+    # GPU PowerMizer and persistence settings are intentionally not mutated by
+    # temporary bursts until the daemon can snapshot and restore vendor state
+    # reliably on rollback.
+    return ["gpu burst skipped: rollback snapshot unsupported"]
 
 
 def boost_pid(pid: int) -> list[str]:

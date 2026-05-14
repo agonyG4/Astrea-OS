@@ -11,7 +11,10 @@ HOME = Path.home()
 ASTREA_ROOT = Path(
     os.environ.get("ASTREA_ROOT", HOME / ".local/share/Astrea")
 ).expanduser()
-STATE_DIR = HOME / ".local/state/Astrea/status"
+STATE_DIR = (
+    Path(os.environ.get("XDG_STATE_HOME", HOME / ".local/state")).expanduser()
+    / "Astrea/status"
+)
 BLUETOOTH_HELPER = ASTREA_ROOT / "System/scripts/bluetooth_manager.py"
 
 AUDIO_PATH = STATE_DIR / "audio.json"

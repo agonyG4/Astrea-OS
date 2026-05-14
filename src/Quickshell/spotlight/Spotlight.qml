@@ -426,6 +426,62 @@ ShellRoot {
             results = items.slice(0, 6).map(item => item.entry)
         }
 
+        function parseExecForArgv(commandText) {
+            var args = []
+            var current = ""
+            var quote = ""
+            var argStarted = false
+            var suppressArg = false
+
+            function finishArg() {
+                if (argStarted && !suppressArg)
+                    args.push(current)
+                current = ""
+                argStarted = false
+                suppressArg = false
+            }
+
+            for (var i = 0; i < commandText.length; i++) {
+                var ch = commandText.charAt(i)
+                if ((ch === "'" || ch === '"') && quote === "") {
+                    quote = ch
+                    argStarted = true
+                } else if (ch === quote) {
+                    quote = ""
+                    argStarted = true
+                } else if (ch === "\\") {
+                    i++
+                    if (i < commandText.length) {
+                        current += commandText.charAt(i)
+                        argStarted = true
+                        suppressArg = false
+                    }
+                } else if (ch === "%") {
+                    argStarted = true
+                    i++
+                    var code = i < commandText.length ? commandText.charAt(i) : ""
+                    if (code === "%") {
+                        current += "%"
+                        suppressArg = false
+                    } else if ("fFuUick".indexOf(code) >= 0) {
+                        if (current.length === 0)
+                            suppressArg = true
+                    }
+                } else if (/\s/.test(ch) && quote === "") {
+                    finishArg()
+                } else {
+                    current += ch
+                    argStarted = true
+                    suppressArg = false
+                }
+            }
+
+            if (quote !== "")
+                return []
+            finishArg()
+            return args
+        }
+
         function launch(index) {
             if (index < 0 || index >= results.length) return
             let entry = results[index]
@@ -443,7 +499,8 @@ ShellRoot {
                     launchProc.command = [astreaLaunch, "--desktop", desktopId]
                 } else {
                     var commandText = entry.exec || entry.execString || ""
-                    launchProc.command = commandText ? [astreaLaunch, "--command", commandText] : []
+                    var argv = commandText ? parseExecForArgv(commandText) : []
+                    launchProc.command = argv.length > 0 ? [astreaLaunch, "--argv-json", JSON.stringify(argv)] : []
                 }
                 if (launchProc.command.length > 0) {
                     launchProc.running = false
