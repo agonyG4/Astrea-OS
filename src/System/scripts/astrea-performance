@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+DEFAULT_CONFIG = {
+    "profile": "balanced",
+    "auto_apply": True,
+    "prefer_gamemode": True,
+    "launch_boost": True,
+    "reduce_effects": False,
+    "limit_background_tasks": False,
+    "show_status_badges": True,
+}
+
+
+def config_path() -> Path:
+    base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser()
+    return base / "AstreaOS/system/performance.json"
+
+
+def atomic_write(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+    ) as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=4)
+        handle.write("\n")
+        tmp = Path(handle.name)
+    tmp.replace(path)
+
+
+def load_config() -> dict:
+    path = config_path()
+    if not path.exists():
+        atomic_write(path, DEFAULT_CONFIG)
+        return dict(DEFAULT_CONFIG)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8") or "{}")
+    except (OSError, json.JSONDecodeError):
+        data = {}
+    return {**DEFAULT_CONFIG, **data, "auto_apply": True}
+
+
+def command_available(name: str) -> bool:
+    return shutil.which(name) is not None
+
+
+def run(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
+    )
+
+
+def status() -> dict:
+    profile = "unknown"
+    has_ppd = command_available("powerprofilesctl")
+    if has_ppd:
+        proc = run(["powerprofilesctl", "get"])
+        if proc.returncode == 0 and proc.stdout.strip():
+            profile = proc.stdout.strip()
+    has_gamemode = command_available("gamemoded")
+    gamemode_active = False
+    if has_gamemode:
+        gamemode_active = run(["gamemoded", "-s"]).returncode == 0
+    return {
+        "powerprofilesctl": has_ppd,
+        "gamemode": has_gamemode,
+        "gamemode_active": gamemode_active,
+        "profile": profile,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Astrea performance settings helper")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("get")
+    sub.add_parser("status")
+    set_parser = sub.add_parser("set")
+    set_parser.add_argument(
+        "profile", choices=["power-saver", "balanced", "performance"]
+    )
+    save_parser = sub.add_parser("save")
+    save_parser.add_argument("json_data")
+    args = parser.parse_args()
+
+    if args.command == "get":
+        print(json.dumps(load_config(), ensure_ascii=False))
+        return 0
+    if args.command == "status":
+        print(json.dumps(status(), ensure_ascii=False))
+        return 0
+    if args.command == "set":
+        config = load_config()
+        config["profile"] = args.profile
+        atomic_write(config_path(), config)
+        if command_available("powerprofilesctl"):
+            proc = run(["powerprofilesctl", "set", args.profile])
+            if proc.returncode != 0:
+                print(
+                    (proc.stderr or proc.stdout or "powerprofilesctl failed").strip(),
+                    file=__import__("sys").stderr,
+                )
+                return proc.returncode
+        print(json.dumps({"ok": True, "profile": args.profile}, ensure_ascii=False))
+        return 0
+    if args.command == "save":
+        config = {**DEFAULT_CONFIG, **json.loads(args.json_data), "auto_apply": True}
+        atomic_write(config_path(), config)
+        print(json.dumps({"ok": True}, ensure_ascii=False))
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

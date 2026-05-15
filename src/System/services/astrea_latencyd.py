@@ -21,7 +21,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-
 DEFAULT_DURATION_MS = 3000
 MAX_BURST_MS = 3000
 APP_NAME = "Astrea"
@@ -31,11 +30,15 @@ BURST_HELPER = Path("/usr/local/libexec/astrea-latency-burst-helper")
 
 
 def xdg_state_home() -> Path:
-    return Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")).expanduser()
+    return Path(
+        os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")
+    ).expanduser()
 
 
 def xdg_runtime_dir() -> Path:
-    return Path(os.environ.get("XDG_RUNTIME_DIR", xdg_state_home() / APP_NAME / "runtime")).expanduser()
+    return Path(
+        os.environ.get("XDG_RUNTIME_DIR", xdg_state_home() / APP_NAME / "runtime")
+    ).expanduser()
 
 
 def socket_path() -> Path:
@@ -58,7 +61,9 @@ def command_available(name: str) -> bool:
     return shutil.which(name) is not None
 
 
-def run_command(args: list[str], timeout: float = 1.5) -> subprocess.CompletedProcess[str]:
+def run_command(
+    args: list[str], timeout: float = 1.5
+) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             args,
@@ -72,8 +77,16 @@ def run_command(args: list[str], timeout: float = 1.5) -> subprocess.CompletedPr
         return subprocess.CompletedProcess(
             args,
             124,
-            exc.stdout.decode("utf-8", "replace") if isinstance(exc.stdout, bytes) else (exc.stdout or ""),
-            exc.stderr.decode("utf-8", "replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "timeout"),
+            (
+                exc.stdout.decode("utf-8", "replace")
+                if isinstance(exc.stdout, bytes)
+                else (exc.stdout or "")
+            ),
+            (
+                exc.stderr.decode("utf-8", "replace")
+                if isinstance(exc.stderr, bytes)
+                else (exc.stderr or "timeout")
+            ),
         )
 
 
@@ -87,7 +100,10 @@ def run_burst_helper(args: list[str], timeout: float = 1.5) -> dict[str, Any] | 
     result = run_command(["sudo", "-n", str(BURST_HELPER), *args], timeout=timeout)
     text = (result.stdout or "").strip()
     if result.returncode != 0:
-        return {"ok": False, "details": [(result.stderr or result.stdout or "helper failed").strip()]}
+        return {
+            "ok": False,
+            "details": [(result.stderr or result.stdout or "helper failed").strip()],
+        }
     try:
         payload = json.loads(text or "{}")
     except json.JSONDecodeError:
@@ -138,7 +154,9 @@ def sudo_shell(command: str, timeout: float = 1.5) -> str:
         detail = (result.stderr or result.stdout or "sudo failed").strip()
         if detail:
             details.append(f"sudo: {detail}")
-    if os.environ.get("ASTREA_LATENCYD_ALLOW_PKEXEC") == "1" and command_available("pkexec"):
+    if os.environ.get("ASTREA_LATENCYD_ALLOW_PKEXEC") == "1" and command_available(
+        "pkexec"
+    ):
         result = run_command(["pkexec", "sh", "-c", command], timeout=timeout)
         if result.returncode == 0:
             return "pkexec ok"
@@ -149,7 +167,9 @@ def sudo_shell(command: str, timeout: float = 1.5) -> str:
 
 
 def cpu_governor_paths() -> list[Path]:
-    return sorted(Path("/sys/devices/system/cpu/cpufreq").glob("policy*/scaling_governor"))
+    return sorted(
+        Path("/sys/devices/system/cpu/cpufreq").glob("policy*/scaling_governor")
+    )
 
 
 def snapshot_cpu_governors() -> dict[str, str]:
@@ -175,16 +195,22 @@ def set_cpu_governor(governor: str) -> list[str]:
     if changed_direct == len(paths) and paths:
         return [f"cpu governors -> {governor} direct ({changed_direct})"]
     if changed_direct > 0:
-        details.append(f"cpu governors -> {governor} direct partial ({changed_direct}/{len(paths)})")
+        details.append(
+            f"cpu governors -> {governor} direct partial ({changed_direct}/{len(paths)})"
+        )
 
     if command_available("cpupower"):
         result = run_command(["cpupower", "frequency-set", "-g", governor], timeout=1.5)
         if result.returncode == 0:
             details.append(f"cpupower governor -> {governor}")
             return details
-        details.append(f"cpupower: {(result.stderr or result.stdout or 'failed').strip()}")
+        details.append(
+            f"cpupower: {(result.stderr or result.stdout or 'failed').strip()}"
+        )
 
-    details.append(sudo_shell(f"for f in {CPU_GOVERNOR_GLOB}; do echo {governor} > \"$f\"; done"))
+    details.append(
+        sudo_shell(f'for f in {CPU_GOVERNOR_GLOB}; do echo {governor} > "$f"; done')
+    )
     return details
 
 
@@ -194,7 +220,11 @@ def privileged_burst() -> tuple[dict[str, Any] | None, list[str]]:
         return None, ["burst helper unavailable"]
     details = [str(item) for item in payload.get("details", [])]
     if payload.get("ok"):
-        return payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else None, [
+        return (
+            payload.get("snapshot")
+            if isinstance(payload.get("snapshot"), dict)
+            else None
+        ), [
             "burst helper ok",
             *details,
         ]
@@ -208,7 +238,14 @@ def privileged_restore(snapshot: dict[str, Any] | None) -> list[str]:
     if payload is None:
         return ["burst helper unavailable for restore"]
     details = [str(item) for item in payload.get("details", [])]
-    return ["burst helper restore ok" if payload.get("ok") else "burst helper restore failed", *details]
+    return [
+        (
+            "burst helper restore ok"
+            if payload.get("ok")
+            else "burst helper restore failed"
+        ),
+        *details,
+    ]
 
 
 def privileged_pid_boost(pid: int) -> list[str]:
@@ -216,7 +253,10 @@ def privileged_pid_boost(pid: int) -> list[str]:
     if payload is None:
         return ["burst helper unavailable for pid"]
     details = [str(item) for item in payload.get("details", [])]
-    return ["burst helper pid ok" if payload.get("ok") else "burst helper pid failed", *details]
+    return [
+        "burst helper pid ok" if payload.get("ok") else "burst helper pid failed",
+        *details,
+    ]
 
 
 def restore_cpu_governors(snapshot: dict[str, str]) -> list[str]:
@@ -240,8 +280,12 @@ def restore_cpu_governors(snapshot: dict[str, str]) -> list[str]:
         if result.returncode == 0:
             details.append(f"cpupower governor restored -> {governor}")
             return details
-        details.append(f"cpupower restore: {(result.stderr or result.stdout or 'failed').strip()}")
-    commands = "; ".join(f"echo {governor} > {path}" for path, governor in failed.items())
+        details.append(
+            f"cpupower restore: {(result.stderr or result.stdout or 'failed').strip()}"
+        )
+    commands = "; ".join(
+        f"echo {governor} > {path}" for path, governor in failed.items()
+    )
     details.append(sudo_shell(commands))
     return details
 
@@ -258,23 +302,10 @@ def set_intel_turbo(enabled: bool) -> str:
 
 
 def apply_gpu_burst() -> list[str]:
-    details: list[str] = []
-    if command_available("nvidia-settings"):
-        result = run_command(
-            ["nvidia-settings", "-a", "[gpu:0]/GpuPowerMizerMode=1"],
-            timeout=1.0,
-        )
-        if result.returncode == 0:
-            details.append("nvidia powermizer -> prefer maximum performance")
-        else:
-            details.append(f"nvidia-settings: {(result.stderr or result.stdout or 'failed').strip()}")
-    if command_available("nvidia-smi"):
-        result = run_command(["nvidia-smi", "-pm", "1"], timeout=1.0)
-        if result.returncode == 0:
-            details.append("nvidia persistence mode on")
-        else:
-            details.append(f"nvidia-smi -pm: {(result.stderr or result.stdout or 'failed').strip()}")
-    return details or ["no gpu burst helper"]
+    # GPU PowerMizer and persistence settings are intentionally not mutated by
+    # temporary bursts until the daemon can snapshot and restore vendor state
+    # reliably on rollback.
+    return ["gpu burst skipped: rollback snapshot unsupported"]
 
 
 def boost_pid(pid: int) -> list[str]:
@@ -284,17 +315,29 @@ def boost_pid(pid: int) -> list[str]:
 
     if command_available("gamemoded"):
         result = run_command(["gamemoded", f"-r{pid}"])
-        details.append("gamemode pid toggle ok" if result.returncode == 0 else f"gamemode: {(result.stderr or result.stdout).strip()}")
+        details.append(
+            "gamemode pid toggle ok"
+            if result.returncode == 0
+            else f"gamemode: {(result.stderr or result.stdout).strip()}"
+        )
 
     helper_details = privileged_pid_boost(pid)
     if not helper_details[0].endswith("ok"):
         if command_available("renice"):
             result = run_command(["renice", "-n", "-15", "-p", str(pid)])
-            details.append("renice ok" if result.returncode == 0 else f"renice: {(result.stderr or result.stdout).strip()}")
+            details.append(
+                "renice ok"
+                if result.returncode == 0
+                else f"renice: {(result.stderr or result.stdout).strip()}"
+            )
 
         if command_available("ionice"):
             result = run_command(["ionice", "-c", "2", "-n", "0", "-p", str(pid)])
-            details.append("ionice ok" if result.returncode == 0 else f"ionice: {(result.stderr or result.stdout).strip()}")
+            details.append(
+                "ionice ok"
+                if result.returncode == 0
+                else f"ionice: {(result.stderr or result.stdout).strip()}"
+            )
     details.extend(helper_details)
 
     return details or ["no pid boost helpers available"]
@@ -307,7 +350,9 @@ def now_ms() -> int:
 def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     tmp.replace(path)
 
 
@@ -342,7 +387,9 @@ class LatencyDaemon:
             return
 
         reason = str(payload.get("reason") or "unspecified")
-        duration_ms = min(int(payload.get("duration_ms") or DEFAULT_DURATION_MS), MAX_BURST_MS)
+        duration_ms = min(
+            int(payload.get("duration_ms") or DEFAULT_DURATION_MS), MAX_BURST_MS
+        )
         duration_ms = max(250, duration_ms)
         pid = parse_pid(payload.get("pid"))
         deadline = now_ms() + duration_ms
@@ -383,7 +430,11 @@ class LatencyDaemon:
             details.extend(restore_cpu_governors(self.previous_governors))
             if self.previous_no_turbo is not None:
                 ok, detail = write_text(INTEL_NO_TURBO, self.previous_no_turbo + "\n")
-                details.append("intel turbo restored" if ok else f"{detail}; {sudo_shell(f'echo {self.previous_no_turbo} > {INTEL_NO_TURBO}')}")
+                details.append(
+                    "intel turbo restored"
+                    if ok
+                    else f"{detail}; {sudo_shell(f'echo {self.previous_no_turbo} > {INTEL_NO_TURBO}')}"
+                )
         self.active = False
         self.previous_profile = None
         self.previous_governors = {}
@@ -473,7 +524,11 @@ def serve() -> int:
                             payload = json.loads(line.decode("utf-8"))
                             daemon.handle_payload(payload)
                         except Exception as exc:
-                            daemon.record("error", {"raw": line.decode("utf-8", "replace")}, [str(exc)])
+                            daemon.record(
+                                "error",
+                                {"raw": line.decode("utf-8", "replace")},
+                                [str(exc)],
+                            )
             daemon.prune_expired()
             daemon.write_state()
     finally:
@@ -517,7 +572,12 @@ def self_test() -> int:
     if not path.exists():
         print(f"socket missing: {path}", file=sys.stderr)
         return 1
-    payload = {"op": "boost", "reason": "self-test", "duration_ms": 750, "source": "astrea-latencyd"}
+    payload = {
+        "op": "boost",
+        "reason": "self-test",
+        "duration_ms": 750,
+        "source": "astrea-latencyd",
+    }
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.connect(str(path))
         client.sendall((json.dumps(payload) + "\n").encode("utf-8"))
@@ -526,7 +586,12 @@ def self_test() -> int:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Astrea latency boost daemon")
-    parser.add_argument("command", nargs="?", default="serve", choices=["serve", "doctor", "status", "self-test"])
+    parser.add_argument(
+        "command",
+        nargs="?",
+        default="serve",
+        choices=["serve", "doctor", "status", "self-test"],
+    )
     return parser.parse_args()
 
 

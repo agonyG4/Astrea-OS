@@ -23,18 +23,18 @@ night_shift_start=${night_shift_start:-20:00}
 night_shift_end=${night_shift_end:-07:00}
 monitor_id=${monitor_id:-0}
 if [ -z "${monitor}" ]; then
-    monitor="$(hyprctl monitors -j 2>/dev/null | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data[0].get("name","")) if data else None' 2>/dev/null || true)"
+	monitor="$(hyprctl monitors -j 2>/dev/null | python3 -c 'import json,sys; data=json.load(sys.stdin); print(data[0].get("name","")) if data else None' 2>/dev/null || true)"
 fi
 [ -n "${monitor}" ] || exit 0
 
 if ! [[ "${saturation}" =~ ^[0-9]+$ ]]; then
-    saturation=93
+	saturation=93
 fi
 if [ "${saturation}" -gt 100 ]; then
-    saturation_raw=$(( saturation > 1023 ? 1023 : saturation ))
+	saturation_raw=$((saturation > 1023 ? 1023 : saturation))
 else
-    saturation=$(( saturation < 0 ? 0 : saturation ))
-    saturation_raw=$(( (saturation * 1023 + 50) / 100 ))
+	saturation=$((saturation < 0 ? 0 : saturation))
+	saturation_raw=$(((saturation * 1023 + 50) / 100))
 fi
 monitor_rule="monitor=${monitor},${resolution}@${refreshrate},0x0,${scale},bitdepth,${bitdepth},vrr,${vrr}"
 night_shift_color="${ASTREA_ROOT}/System/services/display_night_shift_color.sh"
@@ -42,32 +42,32 @@ night_shift_color="${ASTREA_ROOT}/System/services/display_night_shift_color.sh"
 mkdir -p "${HOME}/.config/hypr/core"
 monitors_conf="${HOME}/.config/hypr/core/monitors.conf"
 tmp_monitors="$(mktemp "${monitors_conf}.XXXXXX")"
-printf '%s\n' "${monitor_rule}" > "${tmp_monitors}"
+printf '%s\n' "${monitor_rule}" >"${tmp_monitors}"
 mv -f "${tmp_monitors}" "${monitors_conf}"
 
 if [ "${apply_mode}" = "full" ]; then
-    # Apply immediately for the current session, then reload so the persisted
-    # file is re-read consistently by the active Hyprland config.
-    hyprctl keyword monitor "${monitor},${resolution}@${refreshrate},0x0,${scale},bitdepth,${bitdepth},vrr,${vrr}" >/dev/null 2>&1 || true
-    hyprctl reload >/dev/null 2>&1 || true
+	# Apply immediately for the current session, then reload so the persisted
+	# file is re-read consistently by the active Hyprland config.
+	hyprctl keyword monitor "${monitor},${resolution}@${refreshrate},0x0,${scale},bitdepth,${bitdepth},vrr,${vrr}" >/dev/null 2>&1 || true
+	hyprctl reload >/dev/null 2>&1 || true
 fi
 
 if [ "${apply_mode}" = "full" ] || [ "${apply_mode}" = "colors-only" ] || [ "${apply_mode}" = "night-shift-only" ]; then
-    if [ "${night_shift_schedule}" = "1" ]; then
-        "${ASTREA_ROOT}/System/services/display_night_shift_schedule.sh" install >/dev/null 2>&1 || true
-    else
-        "${ASTREA_ROOT}/System/services/display_night_shift_schedule.sh" disable-timer >/dev/null 2>&1 || true
-    fi
+	if [ "${night_shift_schedule}" = "1" ]; then
+		"${ASTREA_ROOT}/System/services/display_night_shift_schedule.sh" install >/dev/null 2>&1 || true
+	else
+		"${ASTREA_ROOT}/System/services/display_night_shift_schedule.sh" disable-timer >/dev/null 2>&1 || true
+	fi
 
-    if [ "${night_shift_schedule}" = "1" ]; then
-        :
-    elif [ "${night_shift}" = "1" ] && [ "${night_shift_strength}" -gt 0 ]; then
-        "${night_shift_color}" on "${night_shift_strength}" >/dev/null 2>&1 || true
-    else
-        "${night_shift_color}" off >/dev/null 2>&1 || true
-    fi
+	if [ "${night_shift_schedule}" = "1" ]; then
+		:
+	elif [ "${night_shift}" = "1" ] && [ "${night_shift_strength}" -gt 0 ]; then
+		"${night_shift_color}" on "${night_shift_strength}" >/dev/null 2>&1 || true
+	else
+		"${night_shift_color}" off >/dev/null 2>&1 || true
+	fi
 fi
 
 if [ "${apply_mode}" = "full" ] || [ "${apply_mode}" = "colors-only" ] || [ "${apply_mode}" = "saturation-only" ]; then
-    nvibrant "${monitor}" "${saturation_raw}" >/dev/null 2>&1 || true
+	nvibrant "${monitor}" "${saturation_raw}" >/dev/null 2>&1 || true
 fi

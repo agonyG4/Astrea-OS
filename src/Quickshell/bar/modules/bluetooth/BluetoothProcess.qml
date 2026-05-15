@@ -6,6 +6,7 @@ QtObject {
     id: root
 
     readonly property string scriptPath: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/System/scripts/bluetooth_manager.py"
+    readonly property string statusPath: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/Astrea/status/bluetooth.json"
 
     property bool powered: false
     property string deviceName: ""
@@ -15,12 +16,34 @@ QtObject {
     property var _scannedList: []
     property var _scanOwners: ({})
     property string _statusBuf: ""
+    property string _powerBuf: ""
+    property bool powerPending: false
+    property string powerError: ""
     property bool _started: false
 
     function refresh() {
-        if (statusProc.running)
-            statusProc.running = false
-        statusProc.running = true
+        statusRefreshProc.running = false
+        statusRefreshProc.running = true
+        if (directStatusProc.running)
+            directStatusProc.running = false
+        root._statusBuf = ""
+        directStatusProc.running = true
+    }
+
+    function setPower(target) {
+        if (root.powerPending || target === root.powered)
+            return
+
+        root.powerPending = true
+        root.powerError = ""
+        root._powerBuf = ""
+
+        if (!target)
+            root.stopScan()
+
+        powerProc.command = ["python3", root.scriptPath, "power", target ? "on" : "off"]
+        powerProc.running = false
+        powerProc.running = true
     }
 
     function autoConnect(force) {
@@ -86,30 +109,87 @@ QtObject {
         root.scannedJson = JSON.stringify(updated)
     }
 
-    property var statusProc: Process {
-        id: statusProc
+    function applyStatus(text) {
+        try {
+            var payload = JSON.parse(text || "{}")
+            root.powered = payload.powered === true
+            root.deviceName = payload.connected_name || ""
+            root.devicesJson = JSON.stringify(payload.paired_devices || [])
+            root.powerError = ""
+        } catch (error) {
+        }
+    }
+
+    function appendDirectStatus(data) {
+        root._statusBuf += data
+    }
+
+    function appendPowerOutput(data) {
+        root._powerBuf += data
+    }
+
+    function handlePowerExit(exitCode) {
+        root.powerPending = false
+        var ok = exitCode === 0
+        try {
+            if (root._powerBuf.trim()) {
+                var payload = JSON.parse(root._powerBuf)
+                ok = ok && payload.success === true
+                if (typeof payload.powered === "boolean")
+                    root.powered = payload.powered
+                if (!ok)
+                    root.powerError = payload.stderr || payload.stdout || payload.error || "Bluetooth power failed"
+            }
+        } catch (error) {
+            ok = false
+            root.powerError = "Bluetooth power returned invalid data"
+        }
+        if (!ok && root.powerError === "")
+            root.powerError = "Bluetooth power failed"
+        root._powerBuf = ""
+        root.refresh()
+        if (root.powered && Object.keys(root._scanOwners).length > 0)
+            root.startScan()
+    }
+
+    property var statusFile: FileView {
+        path: root.statusPath
+        preload: true
+        blockLoading: true
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: root.applyStatus(text())
+    }
+
+    property var statusRefreshProc: Process {
+        command: ["bash", "-c", "systemctl --user is-active --quiet astrea-status.service && systemctl --user kill -s SIGUSR1 astrea-status.service || systemctl --user start astrea-status.service"]
+        running: false
+        onExited: statusFile.reload()
+    }
+
+    property var directStatusProc: Process {
+        id: directStatusProc
         command: ["python3", root.scriptPath, "status"]
         running: false
         stdout: SplitParser {
-            onRead: data => {
-                root._statusBuf += data
-            }
+            onRead: data => root.appendDirectStatus(data)
         }
         onExited: exitCode => {
-            if (exitCode !== 0 || !root._statusBuf.trim()) {
-                root._statusBuf = ""
-                return
-            }
-            try {
-                const payload = JSON.parse(root._statusBuf)
-                root.powered = !!payload.powered
-                root.deviceName = payload.connected_name || ""
-                root.devicesJson = JSON.stringify(payload.paired_devices || [])
-            } catch (e) {
-                console.log("Bluetooth status parse error:", e)
-            }
+            if (exitCode === 0 && root._statusBuf.trim())
+                root.applyStatus(root._statusBuf)
             root._statusBuf = ""
         }
+    }
+
+    property var powerProc: Process {
+        id: powerProc
+        command: []
+        running: false
+        stdout: SplitParser {
+            onRead: data => root.appendPowerOutput(data)
+        }
+        onExited: exitCode => root.handlePowerExit(exitCode)
     }
 
     property var autoConnectProc: Process {
@@ -124,38 +204,20 @@ QtObject {
 
     property var scanProc: Process {
         id: scanProc
-        command: ["bash", "-c", "
-            (
-                echo 'scan on'
-                sleep 15
-                echo 'scan off'
-                sleep 1
-            ) | bluetoothctl | while IFS= read -r line; do
-                if echo \"$line\" | grep -q '\\[NEW\\] Device'; then
-                    MAC=$(echo \"$line\" | grep -oE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}')
-                    NAME=$(echo \"$line\" | sed 's/.*Device [0-9A-Fa-f:]*[[:space:]]*//')
-                    NAME=$(echo \"$NAME\" | tr -d '\"\\\\' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-                    if [ -n \"$MAC\" ] && [ -n \"$NAME\" ] && [ \"$NAME\" != \"$MAC\" ] && ! echo \"$NAME\" | grep -qE '^([0-9A-Fa-f]{2}[-]){5}[0-9A-Fa-f]{2}$'; then
-                        echo \"found|$MAC|$NAME\"
-                    fi
-                fi
-                if echo \"$line\" | grep -q 'Discovery stopped\\|Discovering: no'; then
-                    echo 'scan_done'
-                fi
-            done
-        "]
+        command: ["python3", root.scriptPath, "scan-stream"]
         running: false
         stdout: SplitParser {
             onRead: data => {
-                var line = data.trim()
-                if (line === "scan_done") {
-                    root.scanning = false
-                    root.refresh()
-                    root._scanOwners = ({})
-                } else if (line.indexOf("found|") === 0) {
-                    var p = line.split("|")
-                    if (p.length >= 3)
-                        root._addScanned(p[1], p[2])
+                try {
+                    var payload = JSON.parse(data.trim())
+                    if (payload.event === "done") {
+                        root.scanning = false
+                        root.refresh()
+                        root._scanOwners = ({})
+                    } else if (payload.event === "found") {
+                        root._addScanned(payload.mac || "", payload.name || "")
+                    }
+                } catch (error) {
                 }
             }
         }
@@ -187,22 +249,8 @@ QtObject {
         }
     }
 
-    property var refreshTimer: Timer {
-        interval: 15000
-        running: true
-        repeat: true
-        triggeredOnStart: true
-        onTriggered: {
-            root._started = true
-            root.refresh()
-        }
-    }
-
-    property var autoConnectTimer: Timer {
-        interval: 30000
-        running: true
-        repeat: true
-        triggeredOnStart: true
-        onTriggered: root.autoConnect(false)
+    Component.onCompleted: {
+        root._started = true
+        root.refresh()
     }
 }

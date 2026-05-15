@@ -13,7 +13,52 @@ fn parses_desktop_exec_without_field_codes() {
 
     assert_eq!(
         args,
-        vec!["env", "FOO=bar", "my app", "--open", "--literal", "%"]
+        vec![
+            "env",
+            "FOO=bar",
+            "my app",
+            "--open",
+            "--literal",
+            "%",
+            "--name=",
+        ]
+    );
+}
+
+#[test]
+fn parses_desktop_exec_field_code_edge_cases() {
+    let args = parse_exec_line(r#"app --file=%f "%u" escaped\ space %% "quoted arg" --name=%c"#)
+        .expect("exec line should parse");
+
+    assert_eq!(
+        args,
+        vec![
+            "app",
+            "--file=",
+            "escaped space",
+            "%",
+            "quoted arg",
+            "--name=",
+        ]
+    );
+}
+
+#[test]
+fn parses_desktop_exec_empty_args_and_metadata_field_codes() {
+    let args =
+        parse_exec_line(r#"app "" "escaped \"quote\"" %i %c %k --icon=%i --name=%c --path=%k"#)
+            .expect("exec line should parse");
+
+    assert_eq!(
+        args,
+        vec![
+            "app",
+            "",
+            "escaped \"quote\"",
+            "--icon=",
+            "--name=",
+            "--path=",
+        ]
     );
 }
 
@@ -131,5 +176,19 @@ fn serializes_launch_requests_for_daemon_protocol() {
     assert_eq!(
         serde_json::from_str::<LaunchRequest>(&text).expect("request parse"),
         request
+    );
+
+    let argv_request = LaunchRequest::Argv {
+        argv: vec!["/usr/bin/true".into(), "--flag".into()],
+        working_dir: Some("/tmp".into()),
+    };
+    let argv_text = serde_json::to_string(&argv_request).expect("argv request json");
+    assert_eq!(
+        argv_text,
+        r#"{"kind":"argv","argv":["/usr/bin/true","--flag"],"working_dir":"/tmp"}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<LaunchRequest>(&argv_text).expect("argv request parse"),
+        argv_request
     );
 }

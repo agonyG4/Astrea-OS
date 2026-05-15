@@ -14,6 +14,16 @@ fn main() {
             .next()
             .map(|command| run_launch_via_daemon(LaunchRequest::Command { command }))
             .unwrap_or_else(|| Err("--command requires a command string".into())),
+        Some("--argv-json") => args
+            .next()
+            .map(|json| match serde_json::from_str::<Vec<String>>(&json) {
+                Ok(argv) => run_launch_via_daemon(LaunchRequest::Argv {
+                    argv,
+                    working_dir: None,
+                }),
+                Err(err) => Err(format!("--argv-json expects a JSON string array: {err}")),
+            })
+            .unwrap_or_else(|| Err("--argv-json requires a JSON array".into())),
         Some("--file") => args
             .next()
             .map(|path| run_launch_via_daemon(LaunchRequest::File { path }))
@@ -102,6 +112,7 @@ fn usage() {
     eprintln!("Usage:");
     eprintln!("  astrea-launch --desktop <desktop-id>");
     eprintln!("  astrea-launch --command <cmd>");
+    eprintln!("  astrea-launch --argv-json '[\"program\",\"arg\"]'");
     eprintln!("  astrea-launch --file <path>");
     eprintln!("  astrea-launch --url <url>");
     eprintln!("  astrea-launch --steam <steam-uri>");

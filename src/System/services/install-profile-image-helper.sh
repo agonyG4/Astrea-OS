@@ -10,14 +10,14 @@ trap 'rm -f "$tmp_helper" "$tmp_sudoers"' EXIT
 
 target_user="${SUDO_USER:-${USER:-}}"
 if [[ -z "$target_user" || "$target_user" == "root" ]]; then
-    target_user="$(logname 2>/dev/null || true)"
+	target_user="$(logname 2>/dev/null || true)"
 fi
 if [[ -z "$target_user" || "$target_user" == "root" ]]; then
-    printf 'Could not determine the desktop user for the sudoers rule.\n' >&2
-    exit 1
+	printf 'Could not determine the desktop user for the sudoers rule.\n' >&2
+	exit 1
 fi
 
-cat > "$tmp_helper" <<'EOF'
+cat >"$tmp_helper" <<'EOF'
 #!/usr/bin/env bash
 
 set -euo pipefail
@@ -42,7 +42,7 @@ if command -v dbus-send >/dev/null 2>&1; then
 fi
 EOF
 
-cat > "$tmp_sudoers" <<EOF
+cat >"$tmp_sudoers" <<EOF
 $target_user ALL=(root) NOPASSWD: $helper_path
 EOF
 

@@ -232,11 +232,10 @@ ShellRoot {
         property bool usageSavePending: false
         property var results: []
         property var usageCounts: ({})
-        readonly property string usageFilePath: Quickshell.env("HOME") + "/.local/state/Astrea/spotlight-usage.json"
-        readonly property string configFilePath: Quickshell.env("HOME") + "/.config/AstreaOS/spotlight.json"
         readonly property string astreaRoot: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + ""
         readonly property string astreaLaunch: astreaRoot + "/bin/astrea-launch"
         readonly property string weatherCli: astreaRoot + "/bin/weather-cli"
+        readonly property string spotlightCli: astreaRoot + "/System/scripts/astrea-spotlight"
         property string usageLoadBuffer: ""
         property string configLoadBuffer: ""
         property string weatherBuffer: ""
@@ -369,13 +368,7 @@ ShellRoot {
         }
 
         function persistUsage() {
-            usageSaveProc.command = [
-                "python3",
-                "-c",
-                "import json, os, sys, tempfile; path = sys.argv[1]; data = json.loads(sys.argv[2]); os.makedirs(os.path.dirname(path), exist_ok=True); fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix='.spotlight-', suffix='.json'); os.close(fd); open(tmp, 'w', encoding='utf-8').write(json.dumps(data)); os.replace(tmp, path)",
-                usageFilePath,
-                JSON.stringify(usageCounts)
-            ]
+            usageSaveProc.command = [spotlightCli, "usage-save", JSON.stringify(usageCounts)]
             if (usageSaveProc.running) {
                 usageSavePending = true
                 return
@@ -433,6 +426,62 @@ ShellRoot {
             results = items.slice(0, 6).map(item => item.entry)
         }
 
+        function parseExecForArgv(commandText) {
+            var args = []
+            var current = ""
+            var quote = ""
+            var argStarted = false
+            var suppressArg = false
+
+            function finishArg() {
+                if (argStarted && !suppressArg)
+                    args.push(current)
+                current = ""
+                argStarted = false
+                suppressArg = false
+            }
+
+            for (var i = 0; i < commandText.length; i++) {
+                var ch = commandText.charAt(i)
+                if ((ch === "'" || ch === '"') && quote === "") {
+                    quote = ch
+                    argStarted = true
+                } else if (ch === quote) {
+                    quote = ""
+                    argStarted = true
+                } else if (ch === "\\") {
+                    i++
+                    if (i < commandText.length) {
+                        current += commandText.charAt(i)
+                        argStarted = true
+                        suppressArg = false
+                    }
+                } else if (ch === "%") {
+                    argStarted = true
+                    i++
+                    var code = i < commandText.length ? commandText.charAt(i) : ""
+                    if (code === "%") {
+                        current += "%"
+                        suppressArg = false
+                    } else if ("fFuUick".indexOf(code) >= 0) {
+                        if (current.length === 0)
+                            suppressArg = true
+                    }
+                } else if (/\s/.test(ch) && quote === "") {
+                    finishArg()
+                } else {
+                    current += ch
+                    argStarted = true
+                    suppressArg = false
+                }
+            }
+
+            if (quote !== "")
+                return []
+            finishArg()
+            return args
+        }
+
         function launch(index) {
             if (index < 0 || index >= results.length) return
             let entry = results[index]
@@ -450,7 +499,8 @@ ShellRoot {
                     launchProc.command = [astreaLaunch, "--desktop", desktopId]
                 } else {
                     var commandText = entry.exec || entry.execString || ""
-                    launchProc.command = commandText ? [astreaLaunch, "--command", commandText] : []
+                    var argv = commandText ? parseExecForArgv(commandText) : []
+                    launchProc.command = argv.length > 0 ? [astreaLaunch, "--argv-json", JSON.stringify(argv)] : []
                 }
                 if (launchProc.command.length > 0) {
                     launchProc.running = false
@@ -482,12 +532,7 @@ ShellRoot {
 
         property var usageLoadProc: Process {
             id: usageLoadProc
-            command: [
-                "python3",
-                "-c",
-                "import json, os, sys; path = sys.argv[1]; print(json.dumps(json.load(open(path, encoding='utf-8'))) if os.path.exists(path) else '{}')",
-                spotlight.usageFilePath
-            ]
+            command: [spotlight.spotlightCli, "usage-load"]
             running: false
             stdout: SplitParser {
                 onRead: data => spotlight.usageLoadBuffer += data
@@ -530,12 +575,7 @@ ShellRoot {
 
         property var configLoadProc: Process {
             id: configLoadProc
-            command: [
-                "python3",
-                "-c",
-                "import json, os, sys; path=sys.argv[1]; default={'weather': True}; os.makedirs(os.path.dirname(path), exist_ok=True); open(path, 'w', encoding='utf-8').write(json.dumps(default, indent=2)) if not os.path.exists(path) else None; print(open(path, encoding='utf-8').read())",
-                spotlight.configFilePath
-            ]
+            command: [spotlight.spotlightCli, "config"]
             running: false
             stdout: SplitParser {
                 onRead: data => spotlight.configLoadBuffer += data
@@ -555,11 +595,7 @@ ShellRoot {
 
         property var weatherProc: Process {
             id: weatherProc
-            command: [
-                "bash", "-lc",
-                "cli=\"$1\"; root=\"$2\"; if [ ! -x \"$cli\" ]; then exit 127; fi; ASTREA_ROOT=\"$root\" exec \"$cli\" summary",
-                "--", spotlight.weatherCli, spotlight.astreaRoot
-            ]
+            command: [spotlight.weatherCli, "summary"]
             running: false
             stdout: SplitParser {
                 onRead: data => spotlight.weatherBuffer += data

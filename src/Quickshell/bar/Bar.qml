@@ -4,6 +4,7 @@ import Quickshell.Io
 import QtQuick
 import "ui"
 import "modules/network"
+import "modules/bluetooth"
 import "ui/components/astrea"
 import "ui/components/bluetooth"
 import "ui/components/controlcenter"
