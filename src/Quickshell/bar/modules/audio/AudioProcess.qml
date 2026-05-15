@@ -14,9 +14,17 @@ QtObject {
         statusRefreshProc.running = true
     }
 
+    function clampLevel(value) {
+        var parsed = Math.round(Number(value))
+        if (!isFinite(parsed))
+            parsed = root.level
+        return Math.max(0, Math.min(150, parsed))
+    }
+
     function setVolume(value) {
-        root.level = value
-        volSetProc.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", value + "%"]
+        var nextLevel = clampLevel(value)
+        root.level = nextLevel
+        volSetProc.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", nextLevel + "%"]
         volSetProc.running = false
         volSetProc.running = true
     }
@@ -24,7 +32,7 @@ QtObject {
     function applyStatus(text) {
         try {
             var payload = JSON.parse(text || "{}")
-            root.level = payload.level !== undefined ? payload.level : root.level
+            root.level = payload.level !== undefined ? clampLevel(payload.level) : root.level
             root.muted = payload.muted === true
         } catch (error) {
         }

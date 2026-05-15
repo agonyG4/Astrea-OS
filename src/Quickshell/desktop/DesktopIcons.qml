@@ -430,6 +430,16 @@ Item {
         onTriggered: root.refreshApps()
     }
 
+    Timer {
+        id: desktopSignatureRestartTimer
+        interval: 2000
+        repeat: false
+        onTriggered: {
+            if (root.stateLoaded && !desktopSignatureWatcher.running)
+                desktopSignatureWatcher.running = true
+        }
+    }
+
     Process {
         id: desktopSignatureWatcher
         command: ["python3", root.scriptPath, "--watch-signature"]
@@ -440,7 +450,7 @@ Item {
         }
         onExited: function() {
             if (root.stateLoaded)
-                Qt.callLater(() => { desktopSignatureWatcher.running = true })
+                desktopSignatureRestartTimer.restart()
         }
     }
 
