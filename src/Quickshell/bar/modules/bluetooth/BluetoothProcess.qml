@@ -10,10 +10,11 @@ QtObject {
 
     property bool powered: false
     property string deviceName: ""
-    property string devicesJson: "[]"
-    property string scannedJson: "[]"
+    property var devices: []
+    property var scannedDevices: []
+    readonly property string devicesJson: JSON.stringify(devices)
+    readonly property string scannedJson: JSON.stringify(scannedDevices)
     property bool scanning: false
-    property var _scannedList: []
     property var _scanOwners: ({})
     property string _statusBuf: ""
     property string _powerBuf: ""
@@ -60,8 +61,7 @@ QtObject {
         if (root.scanning)
             return
         root.scanning = true
-        root._scannedList = []
-        root.scannedJson = "[]"
+        root.scannedDevices = []
         scanProc.running = false
         scanProc.running = true
     }
@@ -93,20 +93,17 @@ QtObject {
     }
 
     function _addScanned(mac, name) {
-        var paired = []
-        try { paired = JSON.parse(root.devicesJson) } catch (e) {}
-        for (var i = 0; i < paired.length; i++) {
-            if (paired[i].mac === mac)
+        for (var i = 0; i < root.devices.length; i++) {
+            if (root.devices[i].mac === mac)
                 return
         }
-        for (var j = 0; j < root._scannedList.length; j++) {
-            if (root._scannedList[j].mac === mac)
+        for (var j = 0; j < root.scannedDevices.length; j++) {
+            if (root.scannedDevices[j].mac === mac)
                 return
         }
-        var updated = root._scannedList.slice()
+        var updated = root.scannedDevices.slice()
         updated.push({ mac: mac, name: name, connected: false, trusted: false, auto_connect: true })
-        root._scannedList = updated
-        root.scannedJson = JSON.stringify(updated)
+        root.scannedDevices = updated
     }
 
     function applyStatus(text) {
@@ -114,7 +111,7 @@ QtObject {
             var payload = JSON.parse(text || "{}")
             root.powered = payload.powered === true
             root.deviceName = payload.connected_name || ""
-            root.devicesJson = JSON.stringify(payload.paired_devices || [])
+            root.devices = payload.paired_devices || []
             root.powerError = ""
         } catch (error) {
         }
@@ -242,8 +239,7 @@ QtObject {
         running: false
         onExited: () => {
             root.refresh()
-            root._scannedList = []
-            root.scannedJson = "[]"
+            root.scannedDevices = []
             root.autoConnect(true)
             root.requestScan("pair-refresh")
         }

@@ -251,9 +251,19 @@ Item {
         appLoadProcess.running = true
     }
 
-    function checkDesktopSignature() {
-        if (!desktopSignatureProcess.running)
-            desktopSignatureProcess.running = true
+    function applyDesktopSignature(next) {
+        if (!next)
+            return
+
+        if (root.desktopSignature === "") {
+            root.desktopSignature = next
+            return
+        }
+
+        if (next !== root.desktopSignature) {
+            root.desktopSignature = next
+            refreshDebounce.restart()
+        }
     }
 
     Timer {
@@ -353,7 +363,7 @@ Item {
     Component.onCompleted: {
         stateLoadProcess.running = true
         refreshApps()
-        checkDesktopSignature()
+        desktopSignatureWatcher.running = true
     }
 
     function launchDesktop(path) {
@@ -414,14 +424,6 @@ Item {
     }
 
     Timer {
-        id: desktopSignatureTimer
-        interval: 5000
-        repeat: true
-        running: true
-        onTriggered: root.checkDesktopSignature()
-    }
-
-    Timer {
         id: refreshDebounce
         interval: 120
         repeat: false
@@ -429,28 +431,16 @@ Item {
     }
 
     Process {
-        id: desktopSignatureProcess
-        command: [
-            "python3",
-            "-c",
-            "import os,json\nfrom pathlib import Path\ncfg=Path(os.environ.get('XDG_CONFIG_HOME', Path.home()/'.config'))/'user-dirs.dirs'\nd=Path.home()/'Desktop'\ntry:\n    for line in cfg.read_text(encoding='utf-8', errors='ignore').splitlines():\n        line=line.strip()\n        if line.startswith('XDG_DESKTOP_DIR='):\n            d=Path(os.path.expandvars(line.split('=',1)[1].strip().strip('\"').replace('$HOME', str(Path.home()))))\n            break\nexcept Exception:\n    pass\nitems=[]\nif d.exists():\n    for p in sorted(d.glob('*.desktop')):\n        try: items.append([p.name, p.stat().st_mtime_ns, p.stat().st_size])\n        except OSError: pass\nprint(json.dumps(items, ensure_ascii=False))"
-        ]
+        id: desktopSignatureWatcher
+        command: ["python3", root.scriptPath, "--watch-signature"]
         running: false
-        stdout: StdioCollector { id: desktopSignatureStdout }
-        onExited: function(exitCode) {
-            if (exitCode !== 0)
-                return
-
-            var next = desktopSignatureStdout.text || ""
-            if (root.desktopSignature === "") {
-                root.desktopSignature = next
-                return
-            }
-
-            if (next !== root.desktopSignature) {
-                root.desktopSignature = next
-                refreshDebounce.restart()
-            }
+        stdout: SplitParser {
+            splitMarker: "\n"
+            onRead: data => root.applyDesktopSignature(data.trim())
+        }
+        onExited: function() {
+            if (root.stateLoaded)
+                Qt.callLater(() => { desktopSignatureWatcher.running = true })
         }
     }
 

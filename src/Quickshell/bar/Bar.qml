@@ -1,10 +1,7 @@
 import Quickshell
 import Quickshell.Wayland
-import Quickshell.Io
 import QtQuick
 import "ui"
-import "modules/network"
-import "modules/bluetooth"
 import "ui/components/astrea"
 import "ui/components/bluetooth"
 import "ui/components/controlcenter"
@@ -22,32 +19,22 @@ PanelWindow {
     WlrLayershell.layer:         WlrLayer.Top
     WlrLayershell.exclusiveZone: 45
 
-    property bool   netConnected:  false
-    property string netType:       "none"
-    property string netSsid:       ""
-    property string netDownload:   "0 B/s"
-    property string netUpload:     "0 B/s"
-    property bool   btOn:          false
-    property string btDevicesJson: "[]"
-    property string btScannedJson: "[]"
-    property bool   btScanning:    false
-    property int    volLevel:      50
-    property bool   volMuted:      false
     property QtObject sharedMusicState: null
-    readonly property string audioStatusPath: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/Astrea/status/audio.json"
+    property QtObject sharedNetworkState: null
+    property QtObject sharedBluetoothState: null
+    property QtObject sharedAudioState: null
 
-    function refreshVolume() {
-        audioStatusFile.reload()
-    }
-
-    function applyAudioStatus(text) {
-        try {
-            var payload = JSON.parse(text || "{}")
-            bar.volLevel = payload.level !== undefined ? payload.level : bar.volLevel
-            bar.volMuted = payload.muted === true
-        } catch (error) {
-        }
-    }
+    readonly property bool   netConnected:  sharedNetworkState ? sharedNetworkState.connected : false
+    readonly property string netType:       sharedNetworkState ? sharedNetworkState.type : "none"
+    readonly property string netSsid:       sharedNetworkState ? sharedNetworkState.ssid : ""
+    readonly property string netDownload:   sharedNetworkState ? sharedNetworkState.download : "0 B/s"
+    readonly property string netUpload:     sharedNetworkState ? sharedNetworkState.upload : "0 B/s"
+    readonly property bool   btOn:          sharedBluetoothState ? sharedBluetoothState.powered : false
+    readonly property string btDevicesJson: sharedBluetoothState ? sharedBluetoothState.devicesJson : "[]"
+    readonly property string btScannedJson: sharedBluetoothState ? sharedBluetoothState.scannedJson : "[]"
+    readonly property bool   btScanning:    sharedBluetoothState ? sharedBluetoothState.scanning : false
+    readonly property int    volLevel:      sharedAudioState ? sharedAudioState.level : 50
+    readonly property bool   volMuted:      sharedAudioState ? sharedAudioState.muted : false
 
     BarContent {
         anchors {
@@ -76,10 +63,8 @@ PanelWindow {
         onVolPopupRequested: anchorX => bar.toggleVolPopup(anchorX)
         onCcPopupRequested: anchorX => bar.toggleCcPopup(anchorX)
         onVolChangeRequested: function(v) {
-            bar.volLevel       = v
-            volSetProc.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", v + "%"]
-            volSetProc.running = false
-            volSetProc.running = true
+            if (bar.sharedAudioState)
+                bar.sharedAudioState.setVolume(v)
         }
     }
 
@@ -126,58 +111,13 @@ PanelWindow {
     Item { id: volPopupButtonProbe; x: Math.max(0, bar.width - 118); y: 0; width: 36; height: 36; visible: false }
     Item { id: ccPopupButtonProbe; x: Math.max(0, bar.width - 82); y: 0; width: 36; height: 36; visible: false }
 
-    Process {
-        id:      volSetProc
-        command: []
-        running: false
-        onExited: {
-            statusRefreshProc.running = false
-            statusRefreshProc.running = true
-        }
-    }
-
-    Process {
-        id: statusRefreshProc
-        command: ["systemctl", "--user", "kill", "-s", "USR1", "astrea-status.service"]
-        running: false
-        onExited: bar.refreshVolume()
-    }
-
-    FileView {
-        id: audioStatusFile
-        path: bar.audioStatusPath
-        preload: true
-        blockLoading: true
-        watchChanges: true
-        printErrors: false
-        onFileChanged: reload()
-        onLoaded: bar.applyAudioStatus(text())
-    }
-
-    NetworkProcess {
-        id: netData
-        onConnectedChanged: bar.netConnected = netData.connected
-        onSsidChanged:      bar.netSsid      = netData.ssid
-        onTypeChanged:      bar.netType      = netData.type
-        onDownloadChanged:  bar.netDownload  = netData.download
-        onUploadChanged:    bar.netUpload    = netData.upload
-    }
-
-    BluetoothProcess {
-        id: btData
-        onPoweredChanged:     bar.btOn          = btData.powered
-        onDevicesJsonChanged: bar.btDevicesJson  = btData.devicesJson
-        onScannedJsonChanged: bar.btScannedJson  = btData.scannedJson
-        onScanningChanged:    bar.btScanning     = btData.scanning
-    }
-
     Loader {
         id: volPopupLoader
         active: false
         sourceComponent: VolumePopup {
             masterVol:   bar.volLevel
             masterMuted: bar.volMuted
-            onVolumeChangeHandled: (v) => bar.volLevel = v
+            onVolumeChangeHandled: (v) => { if (bar.sharedAudioState) bar.sharedAudioState.level = v }
         }
     }
 
@@ -200,7 +140,7 @@ PanelWindow {
             devicesJson: bar.btDevicesJson
             scannedJson: bar.btScannedJson
             scanning:    bar.btScanning
-            btProcess:   btData
+            btProcess:   bar.sharedBluetoothState
         }
     }
 
@@ -212,15 +152,15 @@ PanelWindow {
             netConnected: bar.netConnected
             netType: bar.netType
             ssid: bar.netSsid
-            netProcess: netData
+            netProcess: bar.sharedNetworkState
             btOn: bar.btOn
             btDevicesJson: bar.btDevicesJson
-            btProcess: btData
+            btProcess: bar.sharedBluetoothState
             masterVol: bar.volLevel
             masterMuted: bar.volMuted
             musicState: bar.sharedMusicState
-            onVolumeChangeHandled: (v) => bar.volLevel = v
-            onMuteChangeHandled: (muted) => bar.volMuted = muted
+            onVolumeChangeHandled: (v) => { if (bar.sharedAudioState) bar.sharedAudioState.level = v }
+            onMuteChangeHandled: (muted) => { if (bar.sharedAudioState) bar.sharedAudioState.muted = muted }
         }
     }
 

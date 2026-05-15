@@ -4,6 +4,9 @@ import Quickshell
 import Quickshell.Io
 import QtQuick
 import "./bar"
+import "./bar/modules/audio"
+import "./bar/modules/network"
+import "./bar/modules/bluetooth"
 import "./island"
 import "./notifications"
 import "./spotlight"
@@ -17,6 +20,18 @@ ShellRoot {
 
     MusicMonitor {
         id: musicMonitor
+    }
+
+    NetworkProcess {
+        id: networkStatus
+    }
+
+    BluetoothProcess {
+        id: bluetoothStatus
+    }
+
+    AudioProcess {
+        id: audioStatus
     }
 
     Process {
@@ -56,6 +71,9 @@ ShellRoot {
             required property var modelData
             screen: modelData
             sharedMusicState: musicMonitor
+            sharedNetworkState: networkStatus
+            sharedBluetoothState: bluetoothStatus
+            sharedAudioState: audioStatus
         }
     }
 

@@ -27,8 +27,23 @@ Item {
 
     property bool _playerMonitorStarting: false
     property bool _playerAvailabilityResetting: false
+    property var _dominantColorCache: ({})
+    property var _remoteArtCache: ({})
 
     function setDominantColor(path) {
+        if (!path) {
+            dominantCol = "#ffffff"
+            return
+        }
+
+        if (_dominantColorCache[path]) {
+            dominantCol = _dominantColorCache[path]
+            return
+        }
+
+        if (dominantColor.running && dominantColor.imagePath === path)
+            return
+
         dominantColor.imagePath = path
         dominantColor.running = false
         Qt.callLater(() => { dominantColor.running = true })
@@ -130,10 +145,13 @@ Item {
     }
 
     function ensureMusicBars() {
-        if (!musicBarsProcess.running) {
+        if (!root.isPlaying || !root.shouldDisplayMusic) {
             musicBarsProcess.running = false
-            Qt.callLater(() => { musicBarsProcess.running = true })
+            return
         }
+
+        if (!musicBarsProcess.running)
+            Qt.callLater(() => { if (root.isPlaying && root.shouldDisplayMusic) musicBarsProcess.running = true })
     }
 
     Process {
@@ -147,7 +165,11 @@ Item {
                 if (p.length !== 3) return
                 var r = parseInt(p[0]), g = parseInt(p[1]), b = parseInt(p[2])
                 if (isNaN(r) || isNaN(g) || isNaN(b)) return
-                root.dominantCol = Qt.rgba(r / 255, g / 255, b / 255, 1).toString()
+                var color = Qt.rgba(r / 255, g / 255, b / 255, 1).toString()
+                root.dominantCol = color
+                var cache = Object.assign({}, root._dominantColorCache)
+                cache[dominantColor.imagePath] = color
+                root._dominantColorCache = cache
             }
         }
     }
@@ -234,11 +256,18 @@ Item {
                     root.artPath = ""
                     root.dominantCol = "#ffffff"
                 } else if (artUrl.startsWith("http")) {
-                    fetchArt.running = false
-                    Qt.callLater(() => {
-                        fetchArt.url = artUrl
-                        fetchArt.running = true
-                    })
+                    if (root._remoteArtCache[artUrl]) {
+                        var cached = root._remoteArtCache[artUrl]
+                        root.artSource = "file://" + cached + "?" + Date.now()
+                        root.artPath = cached
+                        root.setDominantColor(cached)
+                    } else if (!(fetchArt.running && fetchArt.url === artUrl)) {
+                        fetchArt.running = false
+                        Qt.callLater(() => {
+                            fetchArt.url = artUrl
+                            fetchArt.running = true
+                        })
+                    }
                 } else {
                     root.artSource = artUrl
                     root.artPath = artUrl.replace("file://", "").split("?")[0]
@@ -290,6 +319,9 @@ Item {
                 if (!path) return
                 root.artSource = "file://" + path + "?" + Date.now()
                 root.artPath = path
+                var cache = Object.assign({}, root._remoteArtCache)
+                cache[fetchArt.url] = path
+                root._remoteArtCache = cache
                 root.setDominantColor(path)
             }
         }
