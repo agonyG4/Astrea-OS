@@ -250,6 +250,8 @@ ShellRoot {
         readonly property int weatherStaleMs: 1800000
         property double weatherLastRefreshMs: 0
         property string pendingQuery: ""
+        property var pendingLaunchEntry: null
+        property string execArgvBuffer: ""
 
         function toggle() {
             if (open) {
@@ -426,62 +428,6 @@ ShellRoot {
             results = items.slice(0, 6).map(item => item.entry)
         }
 
-        function parseExecForArgv(commandText) {
-            var args = []
-            var current = ""
-            var quote = ""
-            var argStarted = false
-            var suppressArg = false
-
-            function finishArg() {
-                if (argStarted && !suppressArg)
-                    args.push(current)
-                current = ""
-                argStarted = false
-                suppressArg = false
-            }
-
-            for (var i = 0; i < commandText.length; i++) {
-                var ch = commandText.charAt(i)
-                if ((ch === "'" || ch === '"') && quote === "") {
-                    quote = ch
-                    argStarted = true
-                } else if (ch === quote) {
-                    quote = ""
-                    argStarted = true
-                } else if (ch === "\\") {
-                    i++
-                    if (i < commandText.length) {
-                        current += commandText.charAt(i)
-                        argStarted = true
-                        suppressArg = false
-                    }
-                } else if (ch === "%") {
-                    argStarted = true
-                    i++
-                    var code = i < commandText.length ? commandText.charAt(i) : ""
-                    if (code === "%") {
-                        current += "%"
-                        suppressArg = false
-                    } else if ("fFuUick".indexOf(code) >= 0) {
-                        if (current.length === 0)
-                            suppressArg = true
-                    }
-                } else if (/\s/.test(ch) && quote === "") {
-                    finishArg()
-                } else {
-                    current += ch
-                    argStarted = true
-                    suppressArg = false
-                }
-            }
-
-            if (quote !== "")
-                return []
-            finishArg()
-            return args
-        }
-
         function launch(index) {
             if (index < 0 || index >= results.length) return
             let entry = results[index]
@@ -497,16 +443,20 @@ ShellRoot {
                 var desktopId = desktopIdForEntry(entry)
                 if (desktopId) {
                     launchProc.command = [astreaLaunch, "--desktop", desktopId]
-                } else {
-                    var commandText = entry.exec || entry.execString || ""
-                    var argv = commandText ? parseExecForArgv(commandText) : []
-                    launchProc.command = argv.length > 0 ? [astreaLaunch, "--argv-json", JSON.stringify(argv)] : []
-                }
-                if (launchProc.command.length > 0) {
                     launchProc.running = false
                     launchProc.running = true
-                } else if (standalone && !usageSaveProc.running) {
-                    Qt.quit()
+                } else {
+                    var commandText = entry.exec || entry.execString || ""
+                    if (!commandText) {
+                        if (standalone && !usageSaveProc.running)
+                            Qt.quit()
+                        return
+                    }
+                    pendingLaunchEntry = entry
+                    execArgvBuffer = ""
+                    execArgvProc.command = [spotlightCli, "exec-argv", commandText]
+                    execArgvProc.running = false
+                    execArgvProc.running = true
                 }
             })
         }
@@ -560,6 +510,36 @@ ShellRoot {
                 if (!spotlight.quitAfterUsageSave) return
                 spotlight.quitAfterUsageSave = false
                 Qt.quit()
+            }
+        }
+
+        property var execArgvProc: Process {
+            id: execArgvProc
+            command: []
+            running: false
+            stdout: SplitParser {
+                onRead: data => spotlight.execArgvBuffer += data
+            }
+            onExited: (code, _) => {
+                if (code !== 0) {
+                    if (spotlight.standalone && !spotlight.usageSaveProc.running)
+                        Qt.quit()
+                    return
+                }
+                try {
+                    var argv = JSON.parse(spotlight.execArgvBuffer || "[]")
+                    launchProc.command = Array.isArray(argv) && argv.length > 0 ? [spotlight.astreaLaunch, "--argv-json", JSON.stringify(argv)] : []
+                } catch (e) {
+                    launchProc.command = []
+                }
+                spotlight.pendingLaunchEntry = null
+                spotlight.execArgvBuffer = ""
+                if (launchProc.command.length > 0) {
+                    launchProc.running = false
+                    launchProc.running = true
+                } else if (spotlight.standalone && !spotlight.usageSaveProc.running) {
+                    Qt.quit()
+                }
             }
         }
 

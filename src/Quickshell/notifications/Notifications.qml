@@ -23,6 +23,7 @@ PanelWindow {
     WlrLayershell.exclusiveZone: -1
 
     property string statePath: Qt.resolvedUrl("state.json").toString().replace("file://", "")
+    readonly property int maxRenderedNotifications: 8
 
     function modelIndexFor(notificationId) {
         for (let index = 0; index < notificationModel.count; index++) {
@@ -46,8 +47,9 @@ PanelWindow {
 
     function syncNotifications(items) {
         const seen = {}
+        const liveItems = (items || []).slice(-root.maxRenderedNotifications)
 
-        for (const item of items) {
+        for (const item of liveItems) {
             const notification = normalizedNotification(item)
             seen[notification.notificationId] = true
 
@@ -63,6 +65,9 @@ PanelWindow {
             if (!seen[currentId])
                 notificationModel.remove(index)
         }
+
+        while (notificationModel.count > root.maxRenderedNotifications)
+            notificationModel.remove(0)
     }
 
     function closeNotification(notificationId) {

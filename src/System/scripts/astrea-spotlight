@@ -46,6 +46,59 @@ def read_json(path: Path, fallback: object) -> object:
         return fallback
 
 
+
+def parse_exec_line(line: str) -> list[str]:
+    args: list[str] = []
+    current = ""
+    quote = ""
+    arg_started = False
+    suppress_arg = False
+
+    def finish_arg() -> None:
+        nonlocal current, arg_started, suppress_arg
+        if arg_started and not suppress_arg:
+            args.append(current)
+        current = ""
+        arg_started = False
+        suppress_arg = False
+
+    index = 0
+    while index < len(line):
+        ch = line[index]
+        if ch in ("'", '"') and not quote:
+            quote = ch
+            arg_started = True
+        elif ch == quote:
+            quote = ""
+            arg_started = True
+        elif ch == "\\":
+            index += 1
+            if index < len(line):
+                current += line[index]
+                arg_started = True
+                suppress_arg = False
+        elif ch == "%":
+            arg_started = True
+            index += 1
+            code = line[index] if index < len(line) else ""
+            if code == "%":
+                current += "%"
+                suppress_arg = False
+            elif code in "fFuUick" and not current:
+                suppress_arg = True
+        elif ch.isspace() and not quote:
+            finish_arg()
+        else:
+            current += ch
+            arg_started = True
+            suppress_arg = False
+        index += 1
+
+    if quote:
+        return []
+    finish_arg()
+    return args
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Astrea Spotlight state helper")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -53,6 +106,8 @@ def main() -> int:
     save = sub.add_parser("usage-save")
     save.add_argument("json_data")
     sub.add_parser("config")
+    exec_argv = sub.add_parser("exec-argv")
+    exec_argv.add_argument("exec_text")
     args = parser.parse_args()
 
     if args.command == "usage-load":
@@ -69,6 +124,9 @@ def main() -> int:
             print(json.dumps(default, ensure_ascii=False))
         else:
             print(json.dumps(read_json(path, default), ensure_ascii=False))
+        return 0
+    if args.command == "exec-argv":
+        print(json.dumps(parse_exec_line(args.exec_text), ensure_ascii=False))
         return 0
     return 2
 
