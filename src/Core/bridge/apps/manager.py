@@ -12,7 +12,7 @@ BRIDGE_DIR = Path(__file__).resolve().parents[1]
 if str(BRIDGE_DIR) not in sys.path:
     sys.path.insert(0, str(BRIDGE_DIR))
 
-from astrea_shared import application_dirs, parse_desktop_file, xdg_desktop_dir
+from astrea_shared import application_dirs, astrea_root, parse_desktop_file, xdg_desktop_dir
 
 def is_protected_app(app: dict) -> bool:
     app_id = (app.get("id") or "").casefold()
@@ -95,7 +95,9 @@ def open_location(path: Path) -> dict:
     if not target.exists():
         raise FileNotFoundError(f"Local não encontrado: {target}")
 
-    subprocess.Popen(["xdg-open", str(target)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    launcher = astrea_root() / "bin" / "astrea-launch"
+    command = [str(launcher), "--file", str(target)] if launcher.is_file() else ["xdg-open", str(target)]
+    subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return {"ok": True, "message": "Local do arquivo aberto", "target": str(target)}
 
 

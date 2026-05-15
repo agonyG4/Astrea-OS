@@ -30,7 +30,7 @@ ApplicationWindow {
     property string sysName:    "..."
     property string sysVersion: "..."
     property string _infoBuf:   ""
-    readonly property string infoScript: Quickshell.env("HOME") + "/.local/share/Astrea/Core/bridge/system/info.py"
+    readonly property string infoScript: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/system/info.py"
 
     Process {
         id: infoProc

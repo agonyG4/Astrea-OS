@@ -34,11 +34,18 @@ def collect_apps() -> list[dict[str, str]]:
             continue
 
         seen.add(key)
+        desktop_file = str(parsed.get("desktop_file") or path)
+        home_prefix = str(Path.home())
+        if desktop_file == home_prefix:
+            desktop_file = "$HOME"
+        elif desktop_file.startswith(home_prefix + "/"):
+            desktop_file = "$HOME/" + desktop_file[len(home_prefix) + 1:]
+
         items.append({
             "name": str(parsed.get("name") or ""),
             "generic": str(parsed.get("generic") or ""),
             "icon": str(parsed.get("icon") or FALLBACK_ICON),
-            "desktop": str(parsed.get("desktop_file") or path),
+            "desktop": desktop_file,
         })
 
     items.sort(key=lambda item: item["name"].casefold())

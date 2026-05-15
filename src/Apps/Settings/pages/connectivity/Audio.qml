@@ -20,7 +20,7 @@ Item {
     readonly property color successColor: Theme.successColor
 
     readonly property string _script:
-        Quickshell.env("HOME") + "/.local/share/Astrea/Core/bridge/system/audio.py"
+        (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/system/audio.py"
 
     // ── State ─────────────────────────────────────────────────────────────
     property bool   loading:      true

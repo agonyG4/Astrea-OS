@@ -11,7 +11,7 @@ ScrollPage {
     contentMargins: 32
     maxWidth: 900
 
-    readonly property string scriptPath: Quickshell.env("HOME") + "/.local/share/Astrea/System/scripts/bluetooth_manager.py"
+    readonly property string scriptPath: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/System/scripts/bluetooth_manager.py"
     
     property bool loading: true
     property bool powered: false
@@ -260,7 +260,7 @@ ScrollPage {
                         Image {
                             anchors.centerIn: parent
                             width: 60; height: 60
-                            source: "file:///home/agony/.local/share/Astrea/Assets/icons/settings/bluetooth.svg"
+                            source: "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/icons/settings/bluetooth.svg"
                             sourceSize: Qt.size(120, 120)
                             mipmap: true
                             smooth: true

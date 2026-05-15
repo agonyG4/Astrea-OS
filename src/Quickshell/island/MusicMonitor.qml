@@ -1,12 +1,13 @@
 import Quickshell.Io
+import Quickshell
 import QtQuick
 
 Item {
     id: root
 
     property string artUrlCache: ""
-    readonly property string musicBarsService: "/home/agony/.local/share/Astrea/System/services/music_bars.sh"
-    readonly property string playerMonitorService: "/home/agony/.local/share/Astrea/System/services/player_monitor.sh"
+    readonly property string musicBarsService: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/System/services/music_bars.sh"
+    readonly property string playerMonitorService: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/System/services/player_monitor.sh"
     property var    musicBars: [0, 0, 0, 0, 0, 0]
     readonly property var cavaBars: musicBars
     property string dominantCol: "#ffffff"

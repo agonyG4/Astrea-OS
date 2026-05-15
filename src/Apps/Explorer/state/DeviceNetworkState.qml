@@ -269,7 +269,7 @@ QtObject {
                     deviceNet.lastUnmountedMountPath = deviceNet.deviceOperationTargetMountPath
                     if (app.currentPath && deviceNet.deviceOperationTargetMountPath
                             && app.currentPath.indexOf(deviceNet.deviceOperationTargetMountPath) === 0)
-                        app.navigateTo("/home/agony")
+                        app.navigateTo(app.homePath)
                 }
 
                 deviceNet.deviceError = ""

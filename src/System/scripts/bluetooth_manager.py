@@ -6,7 +6,9 @@ Outputs JSON on stdout; exits non-zero only on internal errors.
 """
 
 import json
+import os
 import re
+import select
 import subprocess
 import sys
 import time
@@ -21,7 +23,11 @@ from astrea_shared import atomic_write_json, read_json
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
-STATE_DIR   = Path.home() / ".local" / "state" / "Astrea" / "bluetooth"
+STATE_DIR = (
+    Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")).expanduser()
+    / "Astrea"
+    / "bluetooth"
+)
 CONFIG_PATH = STATE_DIR / "autoconnect.json"
 RUNTIME_PATH = STATE_DIR / "runtime.json"
 STATUS_CACHE_PATH = STATE_DIR / "status-cache.json"
@@ -30,18 +36,18 @@ STATUS_CACHE_PATH = STATE_DIR / "status-cache.json"
 
 MAC_RE = re.compile(r"^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
-MAX_DEVICE_ORDER   = 64
-CONNECT_TIMEOUT    = 15
+MAX_DEVICE_ORDER = 64
+CONNECT_TIMEOUT = 15
 DISCONNECT_TIMEOUT = 12
-INFO_TIMEOUT       = 6
-LIST_TIMEOUT       = 6
-SHOW_TIMEOUT       = 4
-STATUS_CACHE_TTL   = 1.2
+INFO_TIMEOUT = 6
+LIST_TIMEOUT = 6
+SHOW_TIMEOUT = 4
+STATUS_CACHE_TTL = 1.2
 POWER_VERIFY_RETRIES = 6
-POWER_VERIFY_SLEEP   = 0.35
+POWER_VERIFY_SLEEP = 0.35
 
 CONNECT_VERIFY_RETRIES = 3
-CONNECT_VERIFY_SLEEP   = 0.8
+CONNECT_VERIFY_SLEEP = 0.8
 
 DEFAULT_CONFIG: dict = {
     "enabled": True,
@@ -61,8 +67,9 @@ DEFAULT_RUNTIME: dict = {
 
 # ─── Output helpers ───────────────────────────────────────────────────────────
 
+
 def _out(data: dict) -> None:
-    print(json.dumps(data))
+    print(json.dumps(data), flush=True)
 
 
 def _err(message: str, *, trace: bool = False, exit_code: int = 1) -> None:
@@ -72,7 +79,9 @@ def _err(message: str, *, trace: bool = False, exit_code: int = 1) -> None:
     _out(payload)
     sys.exit(exit_code)
 
+
 # ─── Filesystem helpers ───────────────────────────────────────────────────────
+
 
 def _ensure_state_dir() -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -98,7 +107,9 @@ def _unlink(path: Path) -> None:
 def invalidate_status_cache() -> None:
     _unlink(STATUS_CACHE_PATH)
 
+
 # ─── Process helper ───────────────────────────────────────────────────────────
+
 
 def _run(*args: str, timeout: int = 8) -> subprocess.CompletedProcess:
     return subprocess.run(
@@ -109,7 +120,9 @@ def _run(*args: str, timeout: int = 8) -> subprocess.CompletedProcess:
         check=False,
     )
 
+
 # ─── MAC validation ───────────────────────────────────────────────────────────
+
 
 def _normalize_mac(value: str) -> str:
     mac = (value or "").strip().upper()
@@ -117,7 +130,9 @@ def _normalize_mac(value: str) -> str:
         raise ValueError(f"invalid MAC address: {value!r}")
     return mac
 
+
 # ─── Config sanitization ──────────────────────────────────────────────────────
+
 
 def _coerce_bool(value: object, default: bool) -> bool:
     """Strict bool coercion — only actual booleans or None are accepted."""
@@ -131,11 +146,11 @@ def _sanitize_config(raw: object) -> dict:
     if not isinstance(raw, dict):
         return cfg
 
-    cfg["enabled"]      = _coerce_bool(raw.get("enabled"),      True)
+    cfg["enabled"] = _coerce_bool(raw.get("enabled"), True)
     cfg["trusted_only"] = _coerce_bool(raw.get("trusted_only"), True)
 
     for key, lo, hi in (
-        ("retry_interval_sec",    5,  300),
+        ("retry_interval_sec", 5, 300),
         ("disconnect_snooze_sec", 30, 3600),
     ):
         try:
@@ -144,7 +159,7 @@ def _sanitize_config(raw: object) -> dict:
             pass  # keep default
 
     order: list[str] = []
-    for item in (raw.get("device_order") or [])[:MAX_DEVICE_ORDER * 2]:
+    for item in (raw.get("device_order") or [])[: MAX_DEVICE_ORDER * 2]:
         try:
             mac = _normalize_mac(str(item))
         except ValueError:
@@ -195,7 +210,7 @@ def _sanitize_runtime(raw: object) -> dict:
     if isinstance(raw_cd, dict):
         for mac_raw, ts in raw_cd.items():
             try:
-                n_mac   = _normalize_mac(str(mac_raw))
+                n_mac = _normalize_mac(str(mac_raw))
                 expires = int(ts)
             except (ValueError, TypeError):
                 continue
@@ -204,7 +219,9 @@ def _sanitize_runtime(raw: object) -> dict:
     runtime["device_cooldowns"] = cooldowns
     return runtime
 
+
 # ─── Config / runtime I/O ─────────────────────────────────────────────────────
+
 
 def load_config() -> dict:
     cfg = _sanitize_config(_read_json(CONFIG_PATH, DEFAULT_CONFIG))
@@ -226,7 +243,9 @@ def save_runtime(runtime: dict) -> None:
     _write_json(RUNTIME_PATH, _sanitize_runtime(runtime))
     invalidate_status_cache()
 
+
 # ─── bluetoothctl wrappers ────────────────────────────────────────────────────
+
 
 def bluetooth_powered() -> bool:
     return "Powered: yes" in _run("bluetoothctl", "show", timeout=SHOW_TIMEOUT).stdout
@@ -274,11 +293,15 @@ def _parse_devices(stdout: str) -> list[dict]:
 
 
 def paired_devices() -> list[dict]:
-    return _parse_devices(_run("bluetoothctl", "devices", "Paired", timeout=LIST_TIMEOUT).stdout)
+    return _parse_devices(
+        _run("bluetoothctl", "devices", "Paired", timeout=LIST_TIMEOUT).stdout
+    )
 
 
 def connected_devices() -> list[dict]:
-    return _parse_devices(_run("bluetoothctl", "devices", "Connected", timeout=LIST_TIMEOUT).stdout)
+    return _parse_devices(
+        _run("bluetoothctl", "devices", "Connected", timeout=LIST_TIMEOUT).stdout
+    )
 
 
 def device_info(mac: str) -> dict:
@@ -320,7 +343,9 @@ def _device_is_connected(mac: str) -> bool:
             time.sleep(CONNECT_VERIFY_SLEEP)
     return False
 
+
 # ─── Priority helper ──────────────────────────────────────────────────────────
+
 
 def _priority_index(mac: str, cfg: dict) -> int:
     try:
@@ -328,65 +353,74 @@ def _priority_index(mac: str, cfg: dict) -> int:
     except ValueError:
         return 10_000
 
+
 # ─── Status payload ───────────────────────────────────────────────────────────
+
 
 def get_status_payload() -> dict:
     cached = _read_json(STATUS_CACHE_PATH, {})
     try:
-        if cached and time.time() - float(cached.get("_cached_at", 0)) < STATUS_CACHE_TTL:
+        if (
+            cached
+            and time.time() - float(cached.get("_cached_at", 0)) < STATUS_CACHE_TTL
+        ):
             cached.pop("_cached_at", None)
             return cached
     except (TypeError, ValueError):
         pass
 
-    cfg     = load_config()
+    cfg = load_config()
     runtime = load_runtime()
-    now     = int(time.time())
+    now = int(time.time())
     connected = connected_devices()
     connected_macs = {item["mac"] for item in connected}
     adapter = adapter_status()
 
     devices: list[dict] = []
     for item in paired_devices():
-        info     = device_info(item["mac"])
+        info = device_info(item["mac"])
         info["connected"] = info["mac"] in connected_macs or info["connected"]
         override = cfg["device_overrides"].get(info["mac"], {})
         cooldown_until = runtime["device_cooldowns"].get(info["mac"], 0)
-        devices.append({
-            "mac":             info["mac"],
-            "name":            info["name"] or item["name"],
-            "connected":       info["connected"],
-            "trusted":         info["trusted"],
-            "paired":          info["paired"],
-            "blocked":         info["blocked"],
-            "auto_connect":    override.get("auto_connect", True),
-            "cooldown_until":  cooldown_until,
-            "cooldown_active": cooldown_until > now,
-            "priority":        _priority_index(info["mac"], cfg),
-        })
+        devices.append(
+            {
+                "mac": info["mac"],
+                "name": info["name"] or item["name"],
+                "connected": info["connected"],
+                "trusted": info["trusted"],
+                "paired": info["paired"],
+                "blocked": info["blocked"],
+                "auto_connect": override.get("auto_connect", True),
+                "cooldown_until": cooldown_until,
+                "cooldown_active": cooldown_until > now,
+                "priority": _priority_index(info["mac"], cfg),
+            }
+        )
 
     devices.sort(key=lambda d: (d["priority"], d["name"].lower(), d["mac"]))
 
     payload = {
-        "success":        True,
-        "powered":        adapter["powered"],
-        "adapter_name":   adapter["adapter_name"],
+        "success": True,
+        "powered": adapter["powered"],
+        "adapter_name": adapter["adapter_name"],
         "connected_count": len(connected),
         "connected_name": connected[0]["name"] if connected else "",
         "paired_devices": devices,
-        "config":         cfg,
-        "runtime":        runtime,
+        "config": cfg,
+        "runtime": runtime,
     }
     cached_payload = dict(payload)
     cached_payload["_cached_at"] = time.time()
     _write_json(STATUS_CACHE_PATH, cached_payload)
     return payload
 
+
 # ─── Runtime mutation helpers ─────────────────────────────────────────────────
+
 
 def _remember_success(mac: str) -> None:
     runtime = load_runtime()
-    runtime["last_success_ts"]  = int(time.time())
+    runtime["last_success_ts"] = int(time.time())
     runtime["last_success_mac"] = mac
     runtime["device_cooldowns"].pop(mac, None)
     save_runtime(runtime)
@@ -403,7 +437,9 @@ def _clear_device_cooldown(mac: str) -> None:
     runtime["device_cooldowns"].pop(mac, None)
     save_runtime(runtime)
 
+
 # ─── Commands ─────────────────────────────────────────────────────────────────
+
 
 def cmd_status() -> None:
     _out(get_status_payload())
@@ -426,33 +462,37 @@ def cmd_connect(mac: str) -> None:
     if connected:
         _remember_success(target)
     invalidate_status_cache()
-    _out({
-        "success": connected,
-        "mac":     target,
-        "stdout":  proc.stdout.strip(),
-        "stderr":  proc.stderr.strip(),
-    })
+    _out(
+        {
+            "success": connected,
+            "mac": target,
+            "stdout": proc.stdout.strip(),
+            "stderr": proc.stderr.strip(),
+        }
+    )
 
 
 def cmd_disconnect(mac: str) -> None:
-    target  = _normalize_mac(mac)
-    proc    = _run("bluetoothctl", "disconnect", target, timeout=DISCONNECT_TIMEOUT)
+    target = _normalize_mac(mac)
+    proc = _run("bluetoothctl", "disconnect", target, timeout=DISCONNECT_TIMEOUT)
     success = proc.returncode == 0
     if success:
         _set_device_cooldown(target, load_config()["disconnect_snooze_sec"])
     invalidate_status_cache()
-    _out({
-        "success": success,
-        "mac":     target,
-        "stdout":  proc.stdout.strip(),
-        "stderr":  proc.stderr.strip(),
-    })
+    _out(
+        {
+            "success": success,
+            "mac": target,
+            "stdout": proc.stdout.strip(),
+            "stderr": proc.stderr.strip(),
+        }
+    )
 
 
 def _autoconnect_candidates(status: dict) -> list[dict]:
-    cfg     = status["config"]
+    cfg = status["config"]
     runtime = status["runtime"]
-    now     = int(time.time())
+    now = int(time.time())
     candidates: list[dict] = []
     for dev in status["paired_devices"]:
         if dev["connected"] or dev["blocked"] or not dev["auto_connect"]:
@@ -467,10 +507,10 @@ def _autoconnect_candidates(status: dict) -> list[dict]:
 
 
 def _cmd_autoconnect(force: bool) -> None:
-    status  = get_status_payload()
-    cfg     = status["config"]
+    status = get_status_payload()
+    cfg = status["config"]
     runtime = status["runtime"]
-    now     = int(time.time())
+    now = int(time.time())
 
     if not cfg["enabled"]:
         _out({"success": False, "reason": "disabled"})
@@ -484,7 +524,13 @@ def _cmd_autoconnect(force: bool) -> None:
 
     elapsed = now - int(runtime.get("last_attempt_ts", 0))
     if not force and elapsed < cfg["retry_interval_sec"]:
-        _out({"success": False, "reason": "cooldown", "retry_in": cfg["retry_interval_sec"] - elapsed})
+        _out(
+            {
+                "success": False,
+                "reason": "cooldown",
+                "retry_in": cfg["retry_interval_sec"] - elapsed,
+            }
+        )
         return
 
     candidates = _autoconnect_candidates(status)
@@ -498,18 +544,27 @@ def _cmd_autoconnect(force: bool) -> None:
 
     attempts: list[dict] = []
     for dev in candidates:
-        proc      = _run("bluetoothctl", "connect", dev["mac"], timeout=CONNECT_TIMEOUT)
+        proc = _run("bluetoothctl", "connect", dev["mac"], timeout=CONNECT_TIMEOUT)
         connected = _device_is_connected(dev["mac"])
-        attempts.append({
-            "mac":     dev["mac"],
-            "name":    dev["name"],
-            "success": connected,
-            "stdout":  proc.stdout.strip(),
-            "stderr":  proc.stderr.strip(),
-        })
+        attempts.append(
+            {
+                "mac": dev["mac"],
+                "name": dev["name"],
+                "success": connected,
+                "stdout": proc.stdout.strip(),
+                "stderr": proc.stderr.strip(),
+            }
+        )
         if connected:
             _remember_success(dev["mac"])
-            _out({"success": True, "reason": "connected", "device": dev, "attempts": attempts})
+            _out(
+                {
+                    "success": True,
+                    "reason": "connected",
+                    "device": dev,
+                    "attempts": attempts,
+                }
+            )
             return
 
     _out({"success": False, "reason": "connect_failed", "attempts": attempts})
@@ -530,24 +585,88 @@ def cmd_power(state: str) -> None:
     proc = _run("bluetoothctl", "power", wanted, timeout=SHOW_TIMEOUT)
     powered = _read_power_after_change(wanted == "on")
     invalidate_status_cache()
-    _out({
-        "success": proc.returncode == 0 and powered == (wanted == "on"),
-        "state": wanted,
-        "powered": powered,
-        "stdout": proc.stdout.strip(),
-        "stderr": proc.stderr.strip(),
-    })
+    _out(
+        {
+            "success": proc.returncode == 0 and powered == (wanted == "on"),
+            "state": wanted,
+            "powered": powered,
+            "stdout": proc.stdout.strip(),
+            "stderr": proc.stderr.strip(),
+        }
+    )
+
+
+def _scan_event_from_line(line: str) -> dict | None:
+    if "[NEW] Device" not in line:
+        return None
+    match = MAC_RE.search(line)
+    if not match:
+        return None
+    mac = match.group(0).upper()
+    name = line[match.end() :].strip().strip('"\\')
+    if (
+        not name
+        or name == mac
+        or re.match(r"^([0-9A-Fa-f]{2}-){5}[0-9A-Fa-f]{2}$", name)
+    ):
+        return None
+    return {"event": "found", "mac": mac, "name": name}
+
+
+def cmd_scan_stream() -> None:
+    proc = subprocess.Popen(
+        ["bluetoothctl"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        bufsize=1,
+    )
+    assert proc.stdin is not None
+    assert proc.stdout is not None
+    deadline = time.monotonic() + 15
+    seen: set[str] = set()
+    try:
+        proc.stdin.write("scan on\n")
+        proc.stdin.flush()
+        while time.monotonic() < deadline and proc.poll() is None:
+            readable, _, _ = select.select([proc.stdout], [], [], 0.25)
+            if not readable:
+                continue
+            line = proc.stdout.readline()
+            if not line:
+                continue
+            if "Discovery stopped" in line or "Discovering: no" in line:
+                break
+            event = _scan_event_from_line(line)
+            if event and event["mac"] not in seen:
+                seen.add(event["mac"])
+                _out(event)
+    finally:
+        try:
+            proc.stdin.write("scan off\n")
+            proc.stdin.flush()
+        except (BrokenPipeError, OSError):
+            pass
+        try:
+            proc.terminate()
+            proc.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        _out({"event": "done"})
+
 
 # ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 COMMANDS: dict[str, tuple] = {
-    "status":           (cmd_status,           0),
-    "save_config":      (cmd_save_config,       1),
-    "connect":          (cmd_connect,           1),
-    "disconnect":       (cmd_disconnect,        1),
-    "power":            (cmd_power,             1),
-    "autoconnect":      (cmd_autoconnect,       0),
-    "force_autoconnect":(cmd_force_autoconnect, 0),
+    "status": (cmd_status, 0),
+    "save_config": (cmd_save_config, 1),
+    "connect": (cmd_connect, 1),
+    "disconnect": (cmd_disconnect, 1),
+    "power": (cmd_power, 1),
+    "autoconnect": (cmd_autoconnect, 0),
+    "force_autoconnect": (cmd_force_autoconnect, 0),
+    "scan-stream": (cmd_scan_stream, 0),
 }
 
 if __name__ == "__main__":

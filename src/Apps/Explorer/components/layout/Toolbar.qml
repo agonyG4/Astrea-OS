@@ -26,9 +26,9 @@ Rectangle {
     function normalizePathInput(text) {
         var value = (text || "").trim()
         if (!value) return ""
-        if (value === "~") return "/home/agony"
-        if (value.indexOf("~/") === 0) return "/home/agony/" + value.slice(2)
-        if (value.charAt(0) !== "/") return (AppState.currentPath || "/home/agony").replace(/\/$/, "") + "/" + value
+        if (value === "~") return AppState.homePath
+        if (value.indexOf("~/") === 0) return AppState.homePath + "/" + value.slice(2)
+        if (value.charAt(0) !== "/") return (AppState.currentPath || AppState.homePath).replace(/\/$/, "") + "/" + value
         return value
     }
 
@@ -89,14 +89,14 @@ Rectangle {
         var prefix = ""
 
         if (!raw) {
-            basePath = AppState.currentPath || "/home/agony"
+            basePath = AppState.currentPath || AppState.homePath
         } else if (raw.charAt(raw.length - 1) !== "/") {
             var slashIndex = raw.lastIndexOf("/")
             if (slashIndex >= 0) {
                 basePath = slashIndex === 0 ? "/" : raw.slice(0, slashIndex)
                 prefix = raw.slice(slashIndex + 1)
             } else {
-                basePath = AppState.currentPath || "/home/agony"
+                basePath = AppState.currentPath || AppState.homePath
                 prefix = raw
             }
         }
@@ -190,7 +190,7 @@ Rectangle {
                     color: Theme.text
                     font.pixelSize: 13
                     selectByMouse: true
-                    placeholderText: "/home/agony"
+                    placeholderText: AppState.homePath
                     placeholderTextColor: Theme.textTer
                     verticalAlignment: TextInput.AlignVCenter
                     leftPadding: 0

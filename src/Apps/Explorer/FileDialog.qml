@@ -19,7 +19,7 @@ Dialog {
     closePolicy: Popup.NoAutoClose
 
     property string mode: "open_file" // open_file | save_file | select_folder
-    property string startFolder: AppState.currentPath || "/home/agony"
+    property string startFolder: AppState.currentPath || AppState.homePath
     property string acceptLabel: mode === "save_file" ? "Salvar" : mode === "select_folder" ? "Selecionar pasta" : "Abrir"
     property string dialogTitle: mode === "save_file" ? "Salvar arquivo" : mode === "select_folder" ? "Selecionar pasta" : "Abrir arquivo"
     property string initialViewMode: "icon"

@@ -9,12 +9,14 @@ QtObject {
     id: state
 
     readonly property bool isPortalDialog: (Quickshell.env("ASTREA_FILE_DIALOG_OPTIONS") || Quickshell.env("BENCH_FILE_DIALOG_OPTIONS") || "") !== ""
+    readonly property string homePath: Quickshell.env("HOME") || ""
     readonly property string quickLookPathFile: "/tmp/explorer-quicklook-path"
     readonly property string quickLookPidFile: "/tmp/explorer-quicklook.pid"
-    readonly property string backendPath: "/home/agony/.local/share/Astrea/Core/bridge/apps/explorer_backend"
+    readonly property string backendPath: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/apps/explorer_backend"
+    readonly property string astreaLaunch: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/bin/astrea-launch"
     readonly property string networkRootPath: (Quickshell.env("XDG_RUNTIME_DIR") || ("/run/user/" + Quickshell.env("UID"))) + "/gvfs"
-    readonly property string trashFilesPath: "/home/agony/.local/share/Trash/files"
-    readonly property string trashInfoPath: "/home/agony/.local/share/Trash/info"
+    readonly property string trashFilesPath: homePath + "/.local/share/Trash/files"
+    readonly property string trashInfoPath: homePath + "/.local/share/Trash/info"
     readonly property string recentVirtualPath: "recent://"
     readonly property real minZoom: 0.75
     readonly property real maxZoom: 1.7
@@ -111,7 +113,7 @@ QtObject {
     property alias networkConnecting: deviceNetObj.networkConnecting
 
     property Settings persistedState: Settings {
-        location: "file:///home/agony/.config/explorer.conf"
+        location: "file://" + state.homePath + "/.config/explorer.conf"
         category: "Explorer"
         property alias currentPath: state.currentPath
         property alias showPreview: state.showPreview

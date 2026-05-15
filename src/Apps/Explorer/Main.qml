@@ -150,7 +150,7 @@ ApplicationWindow {
                                 Text {
                                     text: {
                                         var p = modelData.path;
-                                        if (p === "/home/agony") return "Pasta pessoal";
+                                        if (p === AppState.homePath) return "Pasta pessoal";
                                         return p.split("/").pop() || "Raiz";
                                     }
                                     Layout.fillWidth: true

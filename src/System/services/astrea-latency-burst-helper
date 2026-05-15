@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""Privileged Astrea launch burst helper.
+
+This helper is intentionally narrow. It is designed to be allowed through sudo
+without a password for the desktop user, but it never executes arbitrary shell
+input.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+
+CPUFREQ = Path("/sys/devices/system/cpu/cpufreq")
+INTEL_NO_TURBO = Path("/sys/devices/system/cpu/intel_pstate/no_turbo")
+
+
+def governor_paths() -> list[Path]:
+    return sorted(CPUFREQ.glob("policy*/scaling_governor"))
+
+
+def read_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+
+def write_text(path: Path, value: str) -> None:
+    path.write_text(value + "\n", encoding="utf-8")
+
+
+def run(args: list[str]) -> tuple[int, str]:
+    result = subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    return result.returncode, (result.stdout + result.stderr).strip()
+
+
+def snapshot() -> dict[str, object]:
+    return {
+        "governors": {str(path): read_text(path) for path in governor_paths()},
+        "intel_no_turbo": read_text(INTEL_NO_TURBO),
+    }
+
+
+def set_governor(governor: str) -> list[str]:
+    details: list[str] = []
+    for path in governor_paths():
+        try:
+            write_text(path, governor)
+        except OSError as exc:
+            details.append(f"{path}: {exc}")
+    return details
+
+
+def burst() -> int:
+    before = snapshot()
+    details = set_governor("performance")
+    if INTEL_NO_TURBO.exists():
+        try:
+            write_text(INTEL_NO_TURBO, "0")
+            details.append("intel turbo enabled")
+        except OSError as exc:
+            details.append(f"intel turbo: {exc}")
+    print(json.dumps({"ok": True, "snapshot": before, "details": details}, ensure_ascii=False))
+    return 0
+
+
+def restore(snapshot_text: str) -> int:
+    try:
+        payload = json.loads(snapshot_text)
+    except json.JSONDecodeError as exc:
+        print(json.dumps({"ok": False, "error": f"invalid snapshot: {exc}"}, ensure_ascii=False))
+        return 2
+
+    details: list[str] = []
+    governors = payload.get("governors") if isinstance(payload, dict) else None
+    if isinstance(governors, dict):
+        for path_text, governor in governors.items():
+            if not isinstance(path_text, str) or not path_text.startswith(str(CPUFREQ)):
+                continue
+            if governor not in {"performance", "powersave", "schedutil", "ondemand", "conservative"}:
+                continue
+            try:
+                write_text(Path(path_text), governor)
+            except OSError as exc:
+                details.append(f"{path_text}: {exc}")
+
+    turbo = payload.get("intel_no_turbo") if isinstance(payload, dict) else None
+    if turbo in {"0", "1"} and INTEL_NO_TURBO.exists():
+        try:
+            write_text(INTEL_NO_TURBO, turbo)
+            details.append("intel turbo restored")
+        except OSError as exc:
+            details.append(f"intel turbo restore: {exc}")
+
+    print(json.dumps({"ok": True, "details": details}, ensure_ascii=False))
+    return 0
+
+
+def boost_pid(pid_text: str) -> int:
+    try:
+        pid = int(pid_text)
+    except ValueError:
+        print(json.dumps({"ok": False, "error": "invalid pid"}, ensure_ascii=False))
+        return 2
+    if pid <= 1 or not Path(f"/proc/{pid}").exists():
+        print(json.dumps({"ok": False, "error": "pid not found"}, ensure_ascii=False))
+        return 1
+
+    details: list[str] = []
+    code, out = run(["renice", "-n", "-15", "-p", str(pid)])
+    details.append("renice ok" if code == 0 else f"renice: {out}")
+    code, out = run(["ionice", "-c", "2", "-n", "0", "-p", str(pid)])
+    details.append("ionice ok" if code == 0 else f"ionice: {out}")
+    print(json.dumps({"ok": True, "details": details}, ensure_ascii=False))
+    return 0
+
+
+def main() -> int:
+    if os.geteuid() != 0:
+        print(json.dumps({"ok": False, "error": "must run as root"}, ensure_ascii=False))
+        return 1
+    if len(sys.argv) < 2:
+        print("usage: astrea-latency-burst-helper burst|restore <snapshot>|pid <pid>", file=sys.stderr)
+        return 2
+    command = sys.argv[1]
+    if command == "burst":
+        return burst()
+    if command == "restore" and len(sys.argv) == 3:
+        return restore(sys.argv[2])
+    if command == "pid" and len(sys.argv) == 3:
+        return boost_pid(sys.argv[2])
+    print("usage: astrea-latency-burst-helper burst|restore <snapshot>|pid <pid>", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

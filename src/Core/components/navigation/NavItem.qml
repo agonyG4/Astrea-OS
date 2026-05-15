@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Effects
+import Quickshell
 import ".." as Components
 
 Item {
@@ -22,6 +23,8 @@ Item {
         ? "#5f6368"
         : Qt.rgba(1, 1, 1, 0.78)
     readonly property color activeForeground: "#ffffff"
+    readonly property string astreaRoot: Quickshell.env("ASTREA_ROOT")
+        || (Quickshell.env("HOME") + "/.local/share/Astrea")
 
     // ── Fundo ─────────────────────────────────────────────────────────────
     Rectangle {
@@ -99,11 +102,13 @@ Item {
                 // Build themed path when iconKey is set and a theme is active.
                 readonly property string themedPath: {
                     if (root.iconKey !== "" && Components.Theme.iconTheme !== "")
-                        return "file:///home/agony/.local/share/Astrea/Assets/icons/settings/themes/"
+                        return "file://" + root.astreaRoot + "/Assets/icons/settings/themes/"
                                + Components.Theme.iconTheme + "/" + root.iconKey + ".svg"
                     return ""
                 }
-                readonly property string fallbackSource: root.iconSource !== "" ? root.iconSource : ""
+                readonly property string fallbackSource: root.iconSource !== ""
+                    ? root.iconSource
+                    : (root.iconKey !== "" ? "file://" + root.astreaRoot + "/Assets/icons/settings/" + root.iconKey + ".svg" : "")
                 readonly property string resolvedSource: {
                     if (themedPath !== "" && !themedFailed)
                         return themedPath

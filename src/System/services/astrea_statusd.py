@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import signal
 import shutil
 import subprocess
@@ -7,8 +8,13 @@ import time
 from pathlib import Path
 
 HOME = Path.home()
-ASTREA_ROOT = HOME / ".local/share/Astrea"
-STATE_DIR = HOME / ".local/state/Astrea/status"
+ASTREA_ROOT = Path(
+    os.environ.get("ASTREA_ROOT", HOME / ".local/share/Astrea")
+).expanduser()
+STATE_DIR = (
+    Path(os.environ.get("XDG_STATE_HOME", HOME / ".local/state")).expanduser()
+    / "Astrea/status"
+)
 BLUETOOTH_HELPER = ASTREA_ROOT / "System/scripts/bluetooth_manager.py"
 
 AUDIO_PATH = STATE_DIR / "audio.json"
@@ -27,7 +33,12 @@ running = True
 
 
 def dependency_payload(name: str, *, kind: str = "dependency_missing") -> dict:
-    return {"ok": False, "degraded": True, "error": kind, "message": f"Missing dependency: {name}"}
+    return {
+        "ok": False,
+        "degraded": True,
+        "error": kind,
+        "message": f"Missing dependency: {name}",
+    }
 
 
 def command_available(name: str) -> bool:
@@ -39,14 +50,19 @@ def run_cmd(args, timeout=6):
         name = str(args[0]) if args else ""
         return subprocess.CompletedProcess(args, 127, "", f"Missing dependency: {name}")
     try:
-        return subprocess.run(args, text=True, capture_output=True, timeout=timeout, check=False)
+        return subprocess.run(
+            args, text=True, capture_output=True, timeout=timeout, check=False
+        )
     except Exception as exc:
         return subprocess.CompletedProcess(args, 1, "", str(exc))
 
 
 def write_json_if_changed(path, payload):
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    data = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n"
+    data = (
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        + "\n"
+    )
     try:
         if path.exists() and path.read_text(encoding="utf-8") == data:
             return
@@ -77,14 +93,24 @@ def audio_status():
         "muted": muted,
     }
     if proc.returncode != 0:
-        payload.update({"degraded": True, "error": proc.stderr.strip() or "wpctl_failed"})
+        payload.update(
+            {"degraded": True, "error": proc.stderr.strip() or "wpctl_failed"}
+        )
     return payload
 
 
 def network_status():
     if not command_available("ip"):
         payload = dependency_payload("ip")
-        payload.update({"connected": False, "type": "none", "ssid": "", "download": "0 B/s", "upload": "0 B/s"})
+        payload.update(
+            {
+                "connected": False,
+                "type": "none",
+                "ssid": "",
+                "download": "0 B/s",
+                "upload": "0 B/s",
+            }
+        )
         return payload
     route = run_cmd(["ip", "route", "get", "1.1.1.1"], timeout=3).stdout.split()
     iface = ""
@@ -93,13 +119,21 @@ def network_status():
             iface = route[index + 1]
             break
     if not iface:
-        return {"connected": False, "type": "none", "ssid": "", "download": "0 B/s", "upload": "0 B/s"}
+        return {
+            "connected": False,
+            "type": "none",
+            "ssid": "",
+            "download": "0 B/s",
+            "upload": "0 B/s",
+        }
 
     if (Path("/sys/class/net") / iface / "wireless").exists():
         net_type = "wifi"
         ssid = ""
         if command_available("nmcli"):
-            wifi = run_cmd(["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"], timeout=4).stdout
+            wifi = run_cmd(
+                ["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"], timeout=4
+            ).stdout
             for line in wifi.splitlines():
                 if line.startswith("yes:"):
                     ssid = line.split(":", 1)[1]

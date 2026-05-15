@@ -20,11 +20,11 @@ Item {
     readonly property color popupBg: Theme.popupBg
 
     // ── Constantes e Caminhos ────────────────────────────────────────────────
-    readonly property string _featureBase: Quickshell.env("HOME") + "/.local/share/Astrea/Features/Paper"
-    readonly property string _userBase:    Quickshell.env("HOME") + "/.local/share/Astrea/Data/user"
+    readonly property string _featureBase: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Features/Paper"
+    readonly property string _userBase:    (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Data/user"
     readonly property string _configBase:  Quickshell.env("HOME") + "/.config/AstreaOS/user"
     readonly property string _prefsBase:   _configBase + "/paper"
-    readonly property string _scripts:     Quickshell.env("HOME") + "/.local/share/Astrea/Core/bridge/wallpaper"
+    readonly property string _scripts:     (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/wallpaper"
     readonly property string wpFull:       _prefsBase + "/wallpaper/wallpaper.jpg"
     readonly property string wpName_f:     _prefsBase + "/wallpaper/wallpaper_name.txt"
     readonly property string transFil:     _prefsBase + "/wallpaper_transition.txt"

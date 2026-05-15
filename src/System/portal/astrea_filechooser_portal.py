@@ -97,6 +97,39 @@ def parse_filters(serialized_filters):
     return name_filters
 
 
+def option_to_bool(value):
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
+def filters_include_file_types(serialized_filters):
+    if not serialized_filters:
+        return False
+
+    for entry in serialized_filters:
+        if len(entry) < 2:
+            continue
+
+        for item in entry[1]:
+            if len(item) < 2:
+                continue
+
+            value = str(item[1]).strip()
+            if not value:
+                continue
+            if value in ("*", "*.*"):
+                return True
+            if value.startswith("*."):
+                return True
+            if "/" in value and value not in ("inode/directory", "application/x-directory"):
+                return True
+
+    return False
+
+
 def file_uri(path):
     return "file://" + quote(path)
 
@@ -316,8 +349,13 @@ class AstreaFileChooser(dbus.service.Object):
                 f"OpenFile handle={handle!r} app_id={app_id!r} parent_window={parent_window!r} "
                 f"title={title!r} option_keys={sorted(str(key) for key in options.keys())}"
             )
-            directory = bool(options.get("directory", False))
-            mode = "select_folder" if directory else "open_file"
+            directory = option_to_bool(options.get("directory", False))
+            has_file_filters = filters_include_file_types(options.get("filters"))
+            mode = "select_folder" if directory and not has_file_filters else "open_file"
+            log_debug(
+                f"OpenFile resolved mode={mode!r} directory={directory!r} "
+                f"has_file_filters={has_file_filters!r}"
+            )
             selection = run_dialog(mode, title, options)
             if not selection.get("accepted"):
                 return RESPONSE_CANCELLED, dbus.Dictionary({}, signature="sv")

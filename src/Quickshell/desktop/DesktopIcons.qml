@@ -29,6 +29,9 @@ Item {
     property string desktopSignature: ""
     readonly property string modulePath: localPath(Qt.resolvedUrl("."))
     readonly property string scriptPath: modulePath + "/app_index.py"
+    readonly property string homePath: Quickshell.env("HOME") || ""
+    readonly property string astreaRoot: (Quickshell.env("ASTREA_ROOT") || (homePath + "/.local/share/Astrea")) + ""
+    readonly property string astreaLaunch: astreaRoot + "/bin/astrea-launch"
     readonly property string stateDir: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/Astrea/desktop-icons"
     readonly property string statePath: stateDir + "/state.json"
     readonly property string legacyStatePath: modulePath + "/state.json"
@@ -43,8 +46,19 @@ Item {
     }
 
     function directoryForPath(path) {
+        path = expandHomePath(path)
         var index = (path || "").lastIndexOf("/")
         return index > 0 ? path.slice(0, index) : path
+    }
+
+    function expandHomePath(path) {
+        if (!path)
+            return path
+        if (path === "$HOME")
+            return homePath
+        if (path.indexOf("$HOME/") === 0)
+            return homePath + "/" + path.slice(6)
+        return path
     }
 
     function sortedApps() {
@@ -347,7 +361,7 @@ Item {
             return
 
         launcher.running = false
-        launcher.command = ["gio", "launch", path]
+        launcher.command = [astreaLaunch, "--desktop", expandHomePath(path)]
         launcher.running = true
     }
 
@@ -365,7 +379,7 @@ Item {
             return
 
         opener.running = false
-        opener.command = ["gio", "open", path]
+        opener.command = [astreaLaunch, "--file", expandHomePath(path)]
         opener.running = true
     }
 
@@ -383,7 +397,7 @@ Item {
             return
 
         deleteDesktopProcess.running = false
-        deleteDesktopProcess.command = ["gio", "trash", path]
+        deleteDesktopProcess.command = ["gio", "trash", expandHomePath(path)]
         deleteDesktopProcess.running = true
     }
 
