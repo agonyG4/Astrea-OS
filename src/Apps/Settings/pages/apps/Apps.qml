@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
+import "../../AstreaI18n" as AstreaI18n
 
 ScrollPage {
     id: root
@@ -22,11 +23,18 @@ ScrollPage {
     property string errorMessage: ""
     property string searchText: ""
     property string _appsBuf: ""
+    property string _detailsBuf: ""
     property string _actionBuf: ""
     property string actionMessage: ""
     property bool actionError: false
-    property string expandedAppId: ""
+    property string selectedAppId: ""
+    property var selectedAppData: ({})
+    property string detailsAppId: ""
+    property bool detailsLoading: false
+    property string detailsError: ""
+    property real savedListScrollY: 0
     property var appsData: ({ apps: [], total: 0 })
+    property var detailsData: ({})
 
     readonly property var filteredApps: appsData.apps.filter(function(app) {
         const q = root.searchText.trim().toLowerCase()
@@ -60,11 +68,100 @@ ScrollPage {
     }
 
     function toggleExpanded(app) {
-        const id = root.appIdentifier(app)
-        root.expandedAppId = root.expandedAppId === id ? "" : id
+        root.openAppPage(app)
     }
 
-    function runAction(action, app) {
+    function currentScrollY() {
+        return root.contentItem && root.contentItem.contentY !== undefined ? root.contentItem.contentY : 0
+    }
+
+    function setScrollY(y) {
+        if (!root.contentItem || root.contentItem.contentY === undefined)
+            return
+        const maxY = Math.max(0, root.contentItem.contentHeight - root.contentItem.height)
+        root.contentItem.contentY = Math.max(0, Math.min(y, maxY))
+    }
+
+    function restoreListScrollY() {
+        const y = root.savedListScrollY
+        Qt.callLater(function() {
+            root.setScrollY(y)
+            Qt.callLater(function() {
+                root.setScrollY(y)
+            })
+        })
+    }
+
+    function openAppPage(app) {
+        const id = root.appIdentifier(app)
+        if (!id)
+            return
+        root.savedListScrollY = root.currentScrollY()
+        root.setScrollY(0)
+        root.selectedAppId = id
+        root.selectedAppData = app
+        root.loadDetails(app)
+        root.setScrollY(0)
+        Qt.callLater(function() {
+            root.setScrollY(0)
+        })
+    }
+
+    function closeAppPage() {
+        root.selectedAppId = ""
+        root.selectedAppData = ({})
+        root.detailsError = ""
+        root.actionMessage = ""
+        root.actionError = false
+        root.restoreListScrollY()
+    }
+
+    function detailApp(app) {
+        if (root.detailsAppId === root.appIdentifier(app) && root.detailsData && root.detailsData.app)
+            return root.detailsData.app
+        return app
+    }
+
+    function permissionFor(id) {
+        const app = root.detailApp(root.selectedAppData)
+        const permissions = app.permissions || []
+        for (let i = 0; i < permissions.length; i++) {
+            if (permissions[i].id === id)
+                return permissions[i]
+        }
+        if (id === "microphone")
+            return ({ id: "microphone", name: "Microfone", description: "Carregando permissão do app...", blocked: false, supported: false })
+        if (id === "camera")
+            return ({ id: "camera", name: "Câmera", description: "Carregando permissão do app...", blocked: false, supported: false })
+        return ({ id: id, name: "", description: "", blocked: false, supported: false })
+    }
+
+    function uninstallState() {
+        if (root.isProtectedApp(root.selectedAppData))
+            return ({ can: false, label: "Settings protegido", reason: "Settings é protegido e não pode ser desinstalado." })
+        if (root.detailsLoading)
+            return ({ can: false, label: "Verificando...", reason: "" })
+        const app = root.detailApp(root.selectedAppData)
+        if (app.uninstall)
+            return app.uninstall
+        return ({ can: false, label: "Desinstalar", reason: "Não foi possível verificar a forma de remoção deste app." })
+    }
+
+    function loadDetails(app) {
+        const id = root.appIdentifier(app)
+        if (!id || detailsProc.running)
+            return
+        root.detailsAppId = id
+        root.detailsLoading = true
+        root.detailsError = ""
+        root.detailsData = ({})
+        root._detailsBuf = ""
+        detailsProc.targetAppId = id
+        detailsProc.command = ["python3", root.scriptPath, "details", id]
+        detailsProc.running = true
+    }
+
+    function runAction(action, app, permissionId, blocked) {
         if (!app || actionProc.running)
             return
 
@@ -72,7 +169,10 @@ ScrollPage {
         root.actionError = false
         root._actionBuf = ""
         actionProc.currentAction = action
-        actionProc.command = ["python3", root.scriptPath, action, root.appIdentifier(app)]
+        let command = ["python3", root.scriptPath, action, root.appIdentifier(app)]
+        if (action === "set-permission")
+            command = command.concat([permissionId || "", blocked ? "blocked" : "allowed"])
+        actionProc.command = command
         actionProc.running = true
     }
 
@@ -102,6 +202,36 @@ ScrollPage {
     }
 
     Process {
+        id: detailsProc
+        property string targetAppId: ""
+        command: []
+        running: false
+        stdout: SplitParser {
+            onRead: line => root._detailsBuf += line
+        }
+        onExited: code => {
+            if (targetAppId !== root.selectedAppId)
+                return
+
+            root.detailsLoading = false
+            let payload = ({})
+            try {
+                payload = JSON.parse(root._detailsBuf || "{}")
+            } catch (e) {
+                payload = ({ ok: false, message: "Erro lendo detalhes do app: " + e })
+            }
+
+            if (code !== 0 || payload.ok === false) {
+                root.detailsError = payload.message || "Não foi possível ler as configurações do app"
+                root.detailsData = ({})
+            } else {
+                root.detailsData = payload
+            }
+            root._detailsBuf = ""
+        }
+    }
+
+    Process {
         id: actionProc
         property string currentAction: ""
         command: []
@@ -123,6 +253,14 @@ ScrollPage {
 
             if (!root.actionError && (currentAction === "create-shortcut" || currentAction === "uninstall"))
                 root.reloadApps()
+            if (!root.actionError && currentAction === "uninstall")
+                root.closeAppPage()
+            if (!root.actionError && currentAction === "set-permission") {
+                if (payload.app)
+                    root.detailsData = ({ ok: true, app: payload.app })
+                else if (root.selectedAppId !== "")
+                    root.loadDetails({ desktop_file: root.selectedAppId, id: root.selectedAppId })
+            }
         }
     }
 
@@ -134,9 +272,8 @@ ScrollPage {
 
         implicitWidth: parent ? parent.width : 200
         readonly property bool hasComment: !!(modelData.comment && modelData.comment !== "")
-        readonly property bool expanded: root.expandedAppId === root.appIdentifier(modelData)
         readonly property int baseHeight: hasComment ? 68 : 56
-        implicitHeight: baseHeight + (expanded ? 124 : 0)
+        implicitHeight: baseHeight
 
         Rectangle {
             anchors {
@@ -147,11 +284,9 @@ ScrollPage {
                 bottomMargin: 6
             }
             radius: 12
-            color: rowItem.expanded
-                ? Qt.rgba(1, 1, 1, 0.055)
-                : (rowArea.containsMouse ? Qt.rgba(1, 1, 1, 0.04) : "transparent")
-            border.width: rowItem.expanded || rowArea.containsMouse ? 1 : 0
-            border.color: rowItem.expanded ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.35) : Qt.rgba(1, 1, 1, 0.04)
+            color: rowArea.containsMouse ? Qt.rgba(1, 1, 1, 0.04) : "transparent"
+            border.width: rowArea.containsMouse ? 1 : 0
+            border.color: Qt.rgba(1, 1, 1, 0.04)
             Behavior on color { ColorAnimation { duration: 180 } }
             Behavior on border.color { ColorAnimation { duration: 180 } }
         }
@@ -168,52 +303,13 @@ ScrollPage {
             }
             height: parent.hasComment ? 42 : 36
 
-            Rectangle {
+            AppIcon {
                 id: iconBox
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                width: 40
-                height: 40
-                radius: 12
-                color: Qt.rgba(1, 1, 1, 0.06)
-                border.width: 1
-                border.color: Qt.rgba(1, 1, 1, 0.04)
-                clip: true
-
-                Image {
-                    id: themedIconImage
-                    anchors.fill: parent
-                    anchors.margins: 7
-                    source: modelData.icon ? "image://icon/" + modelData.icon : ""
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
-                    asynchronous: false
-                    cache: true
-                    mipmap: true
-                    visible: status === Image.Ready
-                }
-
-                Image {
-                    id: iconImage
-                    anchors.fill: parent
-                    anchors.margins: 7
-                    source: (modelData.icon_path && (modelData.icon_path.startsWith("/") || modelData.icon_path.startsWith("file://")))
-                        ? (modelData.icon_path.startsWith("file://") ? modelData.icon_path : "file://" + modelData.icon_path)
-                        : ""
-                    fillMode: Image.PreserveAspectFit
-                    smooth: true
-                    asynchronous: true
-                    visible: !themedIconImage.visible && status === Image.Ready
-                }
-
-                Text {
-                    anchors.centerIn: parent
-                    text: (modelData.name || "?").slice(0, 1).toUpperCase()
-                    color: "#ffffff"
-                    font.pixelSize: 14
-                    font.weight: Font.DemiBold
-                    visible: !themedIconImage.visible && !iconImage.visible
-                }
+                appData: modelData
+                iconSize: 42
+                iconRadius: 10
             }
 
             Column {
@@ -253,58 +349,9 @@ ScrollPage {
                     right: parent.right
                     verticalCenter: parent.verticalCenter
                 }
-                text: rowItem.expanded ? "⌃" : "⌄"
+                text: "›"
                 color: root.textSecondary
-                font.pixelSize: 14
-                rotation: rowItem.expanded ? 180 : 0
-                Behavior on rotation { NumberAnimation { duration: 160; easing.type: Easing.OutCubic } }
-            }
-        }
-
-        ColumnLayout {
-            id: actionPanel
-            anchors {
-                left: parent.left
-                right: parent.right
-                top: rowContent.bottom
-                leftMargin: 22
-                rightMargin: 22
-                topMargin: 12
-            }
-            spacing: 8
-            visible: rowItem.expanded
-
-            Rectangle {
-                Layout.fillWidth: true
-                height: 1
-                color: root.cardBorder
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-
-                ActionChip {
-                    Layout.fillWidth: true
-                    label: "Criar atalho"
-                    enabled: !actionProc.running
-                    onTriggered: root.runAction("create-shortcut", rowItem.modelData)
-                }
-
-                ActionChip {
-                    Layout.fillWidth: true
-                    label: "Abrir local"
-                    enabled: !actionProc.running
-                    onTriggered: root.runAction("open-location", rowItem.modelData)
-                }
-            }
-
-            ActionChip {
-                Layout.fillWidth: true
-                label: root.isProtectedApp(rowItem.modelData) ? "Settings protegido" : "Desinstalar"
-                destructive: !root.isProtectedApp(rowItem.modelData)
-                enabled: !root.isProtectedApp(rowItem.modelData) && !actionProc.running
-                onTriggered: root.runAction("uninstall", rowItem.modelData)
+                font.pixelSize: 20
             }
         }
 
@@ -333,6 +380,121 @@ ScrollPage {
             cursorShape: Qt.PointingHandCursor
             acceptedButtons: Qt.LeftButton
             onClicked: root.toggleExpanded(rowItem.modelData)
+        }
+    }
+
+    component InfoPill: Rectangle {
+        id: pill
+        property string label: ""
+        property string value: ""
+
+        implicitHeight: 48
+        radius: 10
+        color: Qt.rgba(1, 1, 1, 0.045)
+        border.width: 1
+        border.color: root.cardBorder
+
+        Column {
+            anchors.fill: parent
+            anchors.margins: 10
+            spacing: 2
+
+            Text {
+                width: parent.width
+                text: pill.label
+                color: root.textSecondary
+                font.family: Theme.fontFamily
+                font.pixelSize: 10
+                elide: Text.ElideRight
+            }
+
+            Text {
+                width: parent.width
+                text: pill.value
+                color: root.textPrimary
+                font.family: Theme.fontFamily
+                font.pixelSize: 12
+                font.weight: Font.Medium
+                elide: Text.ElideRight
+            }
+        }
+    }
+
+    component InfoLine: RowLayout {
+        property string label: ""
+        property string value: ""
+
+        Layout.fillWidth: true
+        spacing: 8
+
+        Text {
+            text: label
+            color: root.textSecondary
+            font.family: Theme.fontFamily
+            font.pixelSize: 11
+            Layout.preferredWidth: 58
+            elide: Text.ElideRight
+        }
+
+        Text {
+            text: value
+            color: root.textPrimary
+            font.family: Theme.fontFamily
+            font.pixelSize: 11
+            Layout.fillWidth: true
+            elide: Text.ElideMiddle
+        }
+    }
+
+    component PermissionRow: Rectangle {
+        id: permissionRow
+        required property var permission
+        required property var appData
+        readonly property bool canEdit: permission && permission.supported === true && !actionProc.running
+
+        implicitHeight: Math.max(60, permissionText.implicitHeight + 22)
+        radius: 10
+        color: Qt.rgba(1, 1, 1, 0.035)
+        border.width: 1
+        border.color: root.cardBorder
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.margins: 10
+            spacing: 12
+
+            ColumnLayout {
+                id: permissionText
+                Layout.fillWidth: true
+                spacing: 2
+
+                Text {
+                    Layout.fillWidth: true
+                    text: permission ? (permission.name || "") : ""
+                    color: root.textPrimary
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 12
+                    font.weight: Font.Medium
+                    elide: Text.ElideRight
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: permission ? (permission.description || "") : ""
+                    color: root.textSecondary
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 10
+                    wrapMode: Text.Wrap
+                    maximumLineCount: 2
+                    elide: Text.ElideRight
+                }
+            }
+
+            ToggleSwitch {
+                checked: permission && permission.blocked === true
+                enabled: permissionRow.canEdit
+                onToggled: targetChecked => root.runAction("set-permission", permissionRow.appData, permissionRow.permission.id, targetChecked)
+            }
         }
     }
 
@@ -378,6 +540,62 @@ ScrollPage {
         }
     }
 
+    component AppIcon: Rectangle {
+        id: appIcon
+        required property var appData
+        property int iconSize: 52
+        property int iconRadius: 14
+        readonly property bool fileIconReady: fileIconImage.status === Image.Ready
+        readonly property bool themedIconReady: themedIconImage.status === Image.Ready
+        readonly property bool hasIcon: fileIconReady || themedIconReady
+
+        width: iconSize
+        height: iconSize
+        radius: iconRadius
+        color: hasIcon ? "transparent" : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+        border.width: hasIcon ? 0 : 1
+        border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22)
+        clip: true
+
+        Image {
+            id: fileIconImage
+            anchors.fill: parent
+            anchors.margins: Math.max(2, Math.round(parent.width * 0.04))
+            source: (appIcon.appData.icon_path && (appIcon.appData.icon_path.startsWith("/") || appIcon.appData.icon_path.startsWith("file://")))
+                ? (appIcon.appData.icon_path.startsWith("file://") ? appIcon.appData.icon_path : "file://" + appIcon.appData.icon_path)
+                : ""
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+            asynchronous: true
+            cache: true
+            mipmap: true
+            visible: status === Image.Ready
+        }
+
+        Image {
+            id: themedIconImage
+            anchors.fill: parent
+            anchors.margins: Math.max(3, Math.round(parent.width * 0.07))
+            source: appIcon.appData.icon ? "image://icon/" + appIcon.appData.icon : ""
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+            asynchronous: true
+            cache: true
+            mipmap: true
+            visible: !fileIconImage.visible && status === Image.Ready
+        }
+
+        Text {
+            anchors.centerIn: parent
+            text: (appIcon.appData.name || "?").slice(0, 1).toUpperCase()
+            color: root.textPrimary
+            font.family: Theme.fontFamily
+            font.pixelSize: Math.round(parent.width * 0.34)
+            font.weight: Font.DemiBold
+            visible: !appIcon.hasIcon
+        }
+    }
+
     Item {
         Layout.alignment: Qt.AlignHCenter
         visible: root.loading
@@ -392,10 +610,10 @@ ScrollPage {
     ColumnLayout {
         width: parent.width
         spacing: 0
-        visible: !root.loading
+        visible: !root.loading && root.selectedAppId === ""
 
         SectionHeader {
-            text: "APPS"
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.apps.apps.text.apps"]) || "APPS")
             textSecondary: root.textSecondary
             Layout.bottomMargin: 12
         }
@@ -420,7 +638,7 @@ ScrollPage {
                     spacing: 4
 
                     Text {
-                        text: "Installed applications"
+                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.apps.apps.text.installed_applications"]) || "Installed applications")
                         color: root.textPrimary
                         font.pixelSize: 16
                         font.weight: Font.DemiBold
@@ -456,7 +674,7 @@ ScrollPage {
                         TextField {
                             Layout.fillWidth: true
                             text: root.searchText
-                            placeholderText: "Buscar por nome, comentário ou desktop id"
+                            placeholderText: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.apps.apps.placeholderText.buscar_por_nome_comentario_ou_desktop_id"]) || "Search by name, comment, or desktop id")
                             color: root.textPrimary
                             placeholderTextColor: root.textSecondary
                             background: Item {}
@@ -522,6 +740,264 @@ ScrollPage {
                     delegate: AppRow {
                         isLast: index === root.filteredApps.length - 1
                     }
+                }
+            }
+        }
+    }
+
+    ColumnLayout {
+        width: parent.width
+        spacing: 0
+        visible: !root.loading && root.selectedAppId !== ""
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.bottomMargin: 16
+            spacing: 10
+
+            ActionChip {
+                Layout.preferredWidth: 92
+                label: "‹ Voltar"
+                enabled: true
+                onTriggered: root.closeAppPage()
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: "Apps"
+                color: root.textSecondary
+                font.family: Theme.fontFamily
+                font.pixelSize: 12
+                elide: Text.ElideRight
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.bottomMargin: 18
+            radius: 12
+            color: root.cardBg
+            border.width: 1
+            border.color: root.cardBorder
+            implicitHeight: appHeader.implicitHeight + 32
+
+            RowLayout {
+                id: appHeader
+                anchors.fill: parent
+                anchors.margins: 16
+                spacing: 16
+
+                AppIcon {
+                    appData: root.detailApp(root.selectedAppData)
+                    iconSize: 64
+                    iconRadius: 16
+                    Layout.preferredWidth: 64
+                    Layout.preferredHeight: 64
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.detailApp(root.selectedAppData).name || root.detailApp(root.selectedAppData).id || "App"
+                        color: root.textPrimary
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 20
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.detailApp(root.selectedAppData).comment || root.detailApp(root.selectedAppData).generic || root.detailApp(root.selectedAppData).id || ""
+                        color: root.textSecondary
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 12
+                        wrapMode: Text.Wrap
+                        maximumLineCount: 2
+                        elide: Text.ElideRight
+                    }
+                }
+            }
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: root.detailsError !== ""
+            text: root.detailsError
+            color: root.errorColor
+            font.family: Theme.fontFamily
+            font.pixelSize: 12
+            wrapMode: Text.Wrap
+            Layout.bottomMargin: 12
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.bottomMargin: 18
+            radius: 12
+            color: root.cardBg
+            border.width: 1
+            border.color: root.cardBorder
+            implicitHeight: infoCol.implicitHeight + 32
+
+            ColumnLayout {
+                id: infoCol
+                anchors.fill: parent
+                anchors.margins: 16
+                spacing: 10
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Informações"
+                    color: root.textPrimary
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 14
+                    font.weight: Font.DemiBold
+                }
+
+                GridLayout {
+                    Layout.fillWidth: true
+                    columns: 2
+                    columnSpacing: 10
+                    rowSpacing: 10
+
+                    InfoPill {
+                        Layout.fillWidth: true
+                        label: "Tipo"
+                        value: root.detailApp(root.selectedAppData).install_type || (root.selectedAppData.source === "user" ? "Usuário" : "Sistema")
+                    }
+
+                    InfoPill {
+                        Layout.fillWidth: true
+                        label: "Tamanho"
+                        value: root.detailsLoading
+                            ? "Calculando..."
+                            : (root.detailApp(root.selectedAppData).size ? root.detailApp(root.selectedAppData).size.label : "Não disponível")
+                    }
+                }
+
+                InfoLine {
+                    label: "ID"
+                    value: root.detailApp(root.selectedAppData).flatpak_id || root.detailApp(root.selectedAppData).id || ""
+                }
+
+                InfoLine {
+                    label: "Arquivo"
+                    value: root.detailApp(root.selectedAppData).desktop_file || ""
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.bottomMargin: 18
+            radius: 12
+            color: root.cardBg
+            border.width: 1
+            border.color: root.cardBorder
+            implicitHeight: permissionsCol.implicitHeight + 32
+
+            ColumnLayout {
+                id: permissionsCol
+                anchors.fill: parent
+                anchors.margins: 16
+                spacing: 10
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Privacidade"
+                    color: root.textPrimary
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 14
+                    font.weight: Font.DemiBold
+                }
+
+                PermissionRow {
+                    Layout.fillWidth: true
+                    permission: root.permissionFor("microphone")
+                    appData: root.selectedAppData
+                }
+
+                PermissionRow {
+                    Layout.fillWidth: true
+                    permission: root.permissionFor("camera")
+                    appData: root.selectedAppData
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.bottomMargin: 28
+            radius: 12
+            color: root.cardBg
+            border.width: 1
+            border.color: root.cardBorder
+            implicitHeight: actionsCol.implicitHeight + 32
+
+            ColumnLayout {
+                id: actionsCol
+                anchors.fill: parent
+                anchors.margins: 16
+                spacing: 10
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Ações"
+                    color: root.textPrimary
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 14
+                    font.weight: Font.DemiBold
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    ActionChip {
+                        Layout.fillWidth: true
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.apps.apps.label.criar_atalho"]) || "Create shortcut")
+                        enabled: !actionProc.running
+                        onTriggered: root.runAction("create-shortcut", root.selectedAppData)
+                    }
+
+                    ActionChip {
+                        Layout.fillWidth: true
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.apps.apps.label.abrir_local"]) || "Open location")
+                        enabled: !actionProc.running
+                        onTriggered: root.runAction("open-location", root.selectedAppData)
+                    }
+                }
+
+                ActionChip {
+                    Layout.fillWidth: true
+                    label: root.uninstallState().label || "Desinstalar"
+                    destructive: root.uninstallState().can === true
+                    enabled: root.uninstallState().can === true && !actionProc.running
+                    onTriggered: root.runAction("uninstall", root.selectedAppData)
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: root.uninstallState().can !== true && (root.uninstallState().reason || "") !== ""
+                    text: root.uninstallState().reason || ""
+                    color: root.textSecondary
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 11
+                    wrapMode: Text.Wrap
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    visible: root.actionMessage !== ""
+                    text: root.actionMessage
+                    color: root.actionError ? root.errorColor : root.textSecondary
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 12
+                    wrapMode: Text.Wrap
                 }
             }
         }

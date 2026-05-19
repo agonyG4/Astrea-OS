@@ -1,6 +1,6 @@
 # Astrea - Spotlight
 
-Related notes: [[Astrea - Quickshell Runtime]], [[Astrea - Weather Bridge]]
+Related notes: [[Astrea - Quickshell Runtime]], [[Astrea - Weather Bridge]], [[Astrea - Launcher and Latency]]
 
 ## File
 `Quickshell/spotlight/Spotlight.qml`
@@ -39,8 +39,9 @@ Weather refresh is on-demand:
 3. User types a query.
 4. QML filters app entries.
 5. User selects an app.
-6. Spotlight calls `entry.execute()`.
-7. Usage count is persisted.
+6. Spotlight calls `bin/astrea-launch --desktop <desktop-id>` or `--command <command>`.
+7. `astrea-launchd` handles the actual launch and optional latency burst.
+8. Usage count is persisted.
 
 ## Important Boundary
 Spotlight is resident inside `Quickshell/shell.qml`. A quit call inside resident Spotlight would affect the shell process, so standalone and resident behavior matter.

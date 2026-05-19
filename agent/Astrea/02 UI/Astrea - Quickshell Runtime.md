@@ -1,6 +1,6 @@
 # Astrea - Quickshell Runtime
 
-Related notes: [[Astrea]], [[Astrea - Entry Points]], [[Astrea - Desktop Icons]], [[Astrea - Top Bar]], [[Astrea - Island]], [[Astrea - Spotlight]], [[Astrea - Notifications]]
+Related notes: [[Astrea]], [[Astrea - Entry Points]], [[Astrea - Desktop Icons]], [[Astrea - Top Bar]], [[Astrea - Island]], [[Astrea - Spotlight]], [[Astrea - Alt Tab]], [[Astrea - Notifications]]
 
 ## Folder
 `Quickshell/`
@@ -16,6 +16,7 @@ It composes:
 - [[Astrea - Top Bar]]
 - [[Astrea - Island]]
 - [[Astrea - Spotlight]]
+- [[Astrea - Alt Tab]]
 - [[Astrea - Notifications]]
 
 ## Main Entry

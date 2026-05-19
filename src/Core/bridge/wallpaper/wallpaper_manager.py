@@ -43,6 +43,7 @@ TRANSITIONS = [
     "random",
 ]
 TRANSITION_FILE = USER_CONFIG_DIR / "paper/wallpaper_transition.txt"
+BLURRED_WALLPAPER_FILE = USER_CONFIG_DIR / "paper/wallpaper_use_blurred.txt"
 
 
 def read_text(path: Path, default: str = "") -> str:
@@ -87,6 +88,7 @@ def unique_slug(base_slug: str, parent: Path) -> str:
 def library_item(folder: Path) -> dict | None:
     wallpaper = folder / "wallpaper.jpg"
     thumb = folder / "thumb.jpg"
+    blurred = blurred_variant(folder)
     if not wallpaper.exists():
         return None
 
@@ -100,6 +102,7 @@ def library_item(folder: Path) -> dict | None:
         "thumbPath": str(thumb),
         "thumbMtime": int(thumb.stat().st_mtime),
         "baseDir": str(folder.parent),
+        "blurredPath": str(blurred) if blurred else "",
     }
 
 
@@ -115,6 +118,44 @@ def transition_index() -> int:
     except ValueError:
         pass
     return 0
+
+
+def blurred_variant(folder: Path) -> Path | None:
+    for name in ("blurred.png", "blurred.jpg"):
+        candidate = folder / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def wallpaper_variant_for_mode(src: Path, use_blurred: bool) -> Path:
+    if not use_blurred:
+        return src
+    blurred = blurred_variant(src.parent)
+    return blurred if blurred else src
+
+
+def blurred_enabled() -> bool:
+    return read_text(BLURRED_WALLPAPER_FILE, "0") == "1"
+
+
+def set_blurred_enabled(enabled: bool) -> None:
+    write_text(BLURRED_WALLPAPER_FILE, "1" if enabled else "0")
+
+
+def source_for_blur_mode_toggle(enabled: bool) -> Path | None:
+    active = current_source("wallpaper")
+    if not active:
+        return None
+
+    folder = active.parent
+    wallpaper = folder / "wallpaper.jpg"
+    blurred = blurred_variant(folder)
+    if enabled:
+        return blurred or active
+    if blurred and active == blurred and wallpaper.exists():
+        return wallpaper
+    return active
 
 
 def set_transition(index: int) -> None:
@@ -142,6 +183,7 @@ def state_payload(scope: str) -> dict:
     }
     if scope == "wallpaper":
         payload["transitionIndex"] = transition_index()
+        payload["useBlurred"] = blurred_enabled()
     return payload
 
 
@@ -224,6 +266,7 @@ def apply_scope(scope: str, src: str, name: str, transition_idx: int | None, no_
     source = Path(src).expanduser().resolve()
     if not source.exists():
         raise FileNotFoundError(f"wallpaper nao encontrado: {source}")
+    source = wallpaper_variant_for_mode(source, blurred_enabled() if scope == "wallpaper" else False)
 
     state_dir = STATE_DIRS[scope]
     wallpaper = state_dir / "wallpaper.jpg"
@@ -231,14 +274,21 @@ def apply_scope(scope: str, src: str, name: str, transition_idx: int | None, no_
 
     relink(wallpaper, source)
     write_text(state_dir / "wallpaper_name.txt", name)
+    try:
+        ensure_thumb(wallpaper, thumb)
+    except Exception as exc:
+        print(f"[wallpaper] thumbnail refresh failed: {exc}", file=sys.stderr)
+
+    preview = thumb if thumb.exists() else wallpaper
+    preview_mtime = preview.stat().st_mtime if preview.exists() else source.stat().st_mtime
 
     payload = {
         "scope": scope,
         "name": name,
         "wallpaperPath": str(wallpaper),
         "thumbPath": str(thumb),
-        "previewPath": str(source),
-        "previewMtime": int(source.stat().st_mtime),
+        "previewPath": str(preview),
+        "previewMtime": int(preview_mtime),
     }
 
     if scope == "wallpaper":
@@ -286,6 +336,16 @@ def apply_scope(scope: str, src: str, name: str, transition_idx: int | None, no_
     emit_json(payload)
 
 
+def set_blurred_mode(enabled: bool, no_animate: bool = False) -> None:
+    set_blurred_enabled(enabled)
+    source = source_for_blur_mode_toggle(enabled)
+    if source and source.exists():
+        name = read_text(STATE_DIRS["wallpaper"] / "wallpaper_name.txt", "My Wallpaper")
+        apply_scope("wallpaper", str(source), name, transition_index(), no_animate)
+    else:
+        emit_json(state_payload("wallpaper"))
+
+
 def add_user_wallpaper(src: str, name: str) -> None:
     source = Path(src).expanduser().resolve()
     if not source.exists():
@@ -318,6 +378,13 @@ def main() -> None:
     transition_parser = subparsers.add_parser("set-transition")
     transition_parser.add_argument("--index", type=int, required=True)
     transition_parser.set_defaults(handler=lambda args: set_transition(args.index))
+
+    blur_parser = subparsers.add_parser("set-blurred")
+    blur_parser.add_argument("--enabled", choices=("0", "1"), required=True)
+    blur_parser.add_argument("--no-animate", action="store_true")
+    blur_parser.set_defaults(
+        handler=lambda args: set_blurred_mode(args.enabled == "1", args.no_animate)
+    )
 
     run_awww_parser = subparsers.add_parser("run-awww")
     run_awww_parser.add_argument("--src", required=True)

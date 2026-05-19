@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import ".." as Components
+import "../AstreaI18n" as AstreaI18n
 
 Rectangle {
     id: root
@@ -114,7 +115,7 @@ Rectangle {
         }
 
         Text {
-            text: "per second"
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["core.components.feedback.speed_card.text.per_second"]) || "per second")
             color: Components.Theme.textSecondary
             opacity: 0.5
             font.family: Components.Theme.fontFamily

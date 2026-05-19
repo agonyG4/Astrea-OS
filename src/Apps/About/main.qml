@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
+import "AstreaI18n" as AstreaI18n
 
 ApplicationWindow {
     id: window
@@ -13,7 +14,7 @@ ApplicationWindow {
     minimumHeight: 420
     maximumWidth: 640
     maximumHeight: 420
-    title: "Sobre o AstreaOS"
+    title: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["about.title"]) || "About AstreaOS"
     color: "transparent"
     flags: Qt.Window | Qt.FramelessWindowHint
 
@@ -165,7 +166,7 @@ ApplicationWindow {
                     // Version
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: "Versão " + window.sysVersion
+                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["about.version"]) || "Version {version}").replace("{version}", window.sysVersion)
                         color: "#636366"
                         font { pixelSize: 12 }
                     }
@@ -202,7 +203,7 @@ ApplicationWindow {
                             }
 
                             Text {
-                                text: "Software atualizado"
+                                text: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["about.software_updated"]) || "Software up to date"
                                 color: "#8e8e93"
                                 font { pixelSize: 11 }
                                 anchors.verticalCenter: parent.verticalCenter
@@ -242,12 +243,12 @@ ApplicationWindow {
 
                     Repeater {
                         model: [
-                            { label: "Kernel",       value: window.sysKernel  },
-                            { label: "Desktop",      value: window.sysDesktop },
-                            { label: "Processador",  value: window.sysCpu     },
-                            { label: "GPU",          value: window.sysGpu     },
-                            { label: "Memória",      value: window.sysMemory  },
-                            { label: "Armazena.",    value: window.sysStorage },
+                            { label: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["about.label.kernel"]) || "Kernel",       value: window.sysKernel  },
+                            { label: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["about.label.desktop"]) || "Desktop",     value: window.sysDesktop },
+                            { label: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["about.label.processor"]) || "Processor", value: window.sysCpu     },
+                            { label: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["about.label.gpu"]) || "GPU",             value: window.sysGpu     },
+                            { label: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["about.label.memory"]) || "Memory",       value: window.sysMemory  },
+                            { label: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["about.label.storage"]) || "Storage",     value: window.sysStorage },
                         ]
 
                         delegate: Item {

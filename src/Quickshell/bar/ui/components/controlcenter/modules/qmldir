@@ -1,0 +1,12 @@
+ConnectivityModule  1.0 ConnectivityModule.qml
+ConnectivityRow     1.0 ConnectivityRow.qml
+ControlTile         1.0 ControlTile.qml
+ControlToggleModule 1.0 ControlToggleModule.qml
+MainControlsModule  1.0 MainControlsModule.qml
+MediaButton         1.0 MediaButton.qml
+NowPlayingModule    1.0 NowPlayingModule.qml
+QuickTilesModule    1.0 QuickTilesModule.qml
+SliderModule        1.0 SliderModule.qml
+WidgetLibraryOverlay 1.0 WidgetLibraryOverlay.qml
+WidgetLibraryPanel  1.0 WidgetLibraryPanel.qml
+WidgetTemplate      1.0 WidgetTemplate.qml

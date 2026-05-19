@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
+import "../../AstreaI18n" as AstreaI18n
 
 ScrollPage {
     id: root
@@ -19,6 +20,7 @@ ScrollPage {
     readonly property color successColor: Theme.successColor
     readonly property color warningColor: Theme.warningColor
     readonly property string heroArtPath: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + "/Assets/images/brand/astrea-logo.png"
+    readonly property string stateJsonScript: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + "/Core/bridge/state_json.py"
     readonly property string installedVersion: "Astrea 1"
     readonly property string updateSize: root.selectedChannel === 0 ? "2.4 GB" : "2.6 GB"
     readonly property string updateName: root.selectedChannel === 0 ? "Astrea 1" : "Astrea 1 Beta"
@@ -40,7 +42,7 @@ ScrollPage {
             id: actionLabel
             anchors.centerIn: parent
             text: parent.label
-            color: primary ? "#ffffff" : root.textPrimary
+            color: primary ? Theme.accentForeground : root.textPrimary
             font.pixelSize: 12
             font.weight: Font.Medium
         }
@@ -53,6 +55,7 @@ ScrollPage {
     }
 
     readonly property string configPath: (Quickshell.env("HOME") || "") + "/.config/AstreaOS/system/system.json"
+    readonly property string defaultConfigJson: JSON.stringify({ "auto_updater": false, "channel": "stable" }, null, 4)
     readonly property var channelOptions: ["Stable", "Alpha"]
     readonly property var channelValues: ["stable", "alpha"]
 
@@ -73,9 +76,7 @@ ScrollPage {
 
     function saveConfig(showMessage) {
         saveConfigProc.jsonData = JSON.stringify(root.updateConfig, null, 4)
-        saveConfigProc.command = ["bash", "-c",
-            "mkdir -p \"$(dirname \"$1\")\"; cat <<'EOF' > \"$1\"\n" + saveConfigProc.jsonData + "\nEOF\n",
-            "--", root.configPath]
+        saveConfigProc.command = ["python3", root.stateJsonScript, "write", root.configPath, saveConfigProc.jsonData]
         saveConfigProc.showMessage = showMessage
         saveConfigProc.running = false
         saveConfigProc.running = true
@@ -93,17 +94,7 @@ ScrollPage {
 
     Process {
         id: loadConfigProc
-        command: ["bash", "-c",
-            "FILE=\"$1\";" +
-            "mkdir -p \"$(dirname \"$FILE\")\";" +
-            "if [ ! -f \"$FILE\" ]; then " +
-            "  printf '%s\n' '{' " +
-            "    '  \"auto_updater\": false,' " +
-            "    '  \"channel\": \"stable\"' " +
-            "  '}' > \"$FILE\"; " +
-            "fi; " +
-            "cat \"$FILE\"",
-            "--", root.configPath]
+        command: ["python3", root.stateJsonScript, "read-or-init", root.configPath, root.defaultConfigJson]
         stdout: SplitParser {
             onRead: line => root._configBuf += line
         }
@@ -174,7 +165,7 @@ ScrollPage {
         visible: !root.loading
 
         SectionHeader {
-            text: "SOFTWARE UPDATE"
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.software_update.text.software_update"]) || "SOFTWARE UPDATE")
             textSecondary: root.textSecondary
             Layout.bottomMargin: 12
         }
@@ -253,7 +244,7 @@ ScrollPage {
                         }
 
                         Text {
-                            text: "A página salva as preferências de update agora e aplica esse comportamento quando o updater real estiver disponível."
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.software_update.text.a_pagina_salva_as_preferaancias_de_update_agora"]) || "This page now saves update preferences and applies that behavior when the real updater is available.")
                             color: root.textSecondary
                             font.pixelSize: 12
                             wrapMode: Text.Wrap
@@ -266,12 +257,12 @@ ScrollPage {
                         Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
 
                         ActionButton {
-                            label: "Atualizar"
+                            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.software_update.label.atualizar"]) || "Update")
                             primary: true
                         }
 
                         ActionButton {
-                            label: "Atualizar à noite"
+                            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.software_update.label.atualizar_a_noite"]) || "Update tonight")
                         }
                     }
                 }
@@ -294,8 +285,8 @@ ScrollPage {
                 spacing: 0
 
                 SettingRow {
-                    label: "Auto updater"
-                    sublabel: "Salva a preferência para quando o updater real estiver conectado."
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.software_update.label.auto_updater"]) || "Auto updater")
+                    sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.software_update.sublabel.salva_a_preferaancia_para_quando_o_updater_real"]) || "Saves the preference for when the real updater is connected.")
                     textPrimary: root.textPrimary
                     textSecondary: root.textSecondary
                     cardBorder: root.cardBorder
@@ -309,8 +300,8 @@ ScrollPage {
                 }
 
                 SettingRow {
-                    label: "Release channel"
-                    sublabel: "Stable prioriza previsibilidade; Alpha recebe novidades mais cedo."
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.software_update.label.release_channel"]) || "Release channel")
+                    sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.software_update.sublabel.stable_prioriza_previsibilidade_alpha_recebe_nov"]) || "Stable prioritizes predictability; Alpha gets new features earlier.")
                     textPrimary: root.textPrimary
                     textSecondary: root.textSecondary
                     cardBorder: root.cardBorder
@@ -334,15 +325,15 @@ ScrollPage {
                 }
 
                 SettingRow {
-                    label: "Current state"
-                    sublabel: "Sem backend conectado no momento, então nenhum update é realmente baixado ou aplicado."
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.software_update.label.current_state"]) || "Current state")
+                    sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.software_update.sublabel.sem_backend_conectado_no_momento_entao_nenhum_up"]) || "No backend is connected right now, so no update is actually downloaded or applied.")
                     textPrimary: root.textPrimary
                     textSecondary: root.textSecondary
                     cardBorder: root.cardBorder
                     isLast: true
 
                     StatusBadge {
-                        label: "Unavailable"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.software_update.label.unavailable"]) || "Unavailable")
                         tone: Qt.rgba(root.warningColor.r, root.warningColor.g, root.warningColor.b, 0.28)
                     }
                 }

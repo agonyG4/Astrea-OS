@@ -506,37 +506,30 @@ def _autoconnect_candidates(status: dict) -> list[dict]:
     return candidates
 
 
-def _cmd_autoconnect(force: bool) -> None:
+def run_autoconnect(force: bool = False) -> dict:
     status = get_status_payload()
     cfg = status["config"]
     runtime = status["runtime"]
     now = int(time.time())
 
     if not cfg["enabled"]:
-        _out({"success": False, "reason": "disabled"})
-        return
+        return {"success": False, "reason": "disabled"}
     if not status["powered"]:
-        _out({"success": False, "reason": "powered_off"})
-        return
+        return {"success": False, "reason": "powered_off"}
     if status["connected_count"] > 0:
-        _out({"success": False, "reason": "already_connected"})
-        return
+        return {"success": False, "reason": "already_connected"}
 
     elapsed = now - int(runtime.get("last_attempt_ts", 0))
     if not force and elapsed < cfg["retry_interval_sec"]:
-        _out(
-            {
-                "success": False,
-                "reason": "cooldown",
-                "retry_in": cfg["retry_interval_sec"] - elapsed,
-            }
-        )
-        return
+        return {
+            "success": False,
+            "reason": "cooldown",
+            "retry_in": cfg["retry_interval_sec"] - elapsed,
+        }
 
     candidates = _autoconnect_candidates(status)
     if not candidates:
-        _out({"success": False, "reason": "no_candidates"})
-        return
+        return {"success": False, "reason": "no_candidates"}
 
     # stamp attempt before trying (avoids hammering on fast failures)
     runtime["last_attempt_ts"] = now
@@ -557,17 +550,18 @@ def _cmd_autoconnect(force: bool) -> None:
         )
         if connected:
             _remember_success(dev["mac"])
-            _out(
-                {
-                    "success": True,
-                    "reason": "connected",
-                    "device": dev,
-                    "attempts": attempts,
-                }
-            )
-            return
+            return {
+                "success": True,
+                "reason": "connected",
+                "device": dev,
+                "attempts": attempts,
+            }
 
-    _out({"success": False, "reason": "connect_failed", "attempts": attempts})
+    return {"success": False, "reason": "connect_failed", "attempts": attempts}
+
+
+def _cmd_autoconnect(force: bool) -> None:
+    _out(run_autoconnect(force))
 
 
 def cmd_autoconnect() -> None:

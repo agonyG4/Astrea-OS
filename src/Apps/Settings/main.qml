@@ -4,10 +4,11 @@ import QtQuick.Effects
 import QtQuick.Controls
 import Quickshell
 import "AstreaComponents"
+import "AstreaI18n" as AstreaI18n
 
 ApplicationWindow {
     id: window
-    title: "Astrea Settings"
+    title: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["settings.title"]) || "Astrea Settings"
     visible: true
     readonly property int defaultWidth: 1050
     readonly property int defaultHeight: 650
@@ -41,6 +42,7 @@ ApplicationWindow {
     readonly property var pages: [
         "pages/system/System.qml",
         "pages/system/SoftwareUpdate.qml",
+        "pages/system/Language.qml",
         "pages/display/Display.qml",
         "pages/apps/Apps.qml",
         "pages/system/Performance.qml",
@@ -81,18 +83,19 @@ ApplicationWindow {
     // ── Nav model ─────────────────────────────────────────────────────────
     ListModel {
         id: navModel
-        ListElement { label: "System";          sym: "\uf303"; iconSource: "";                                                                          iconKey: "" }           // nf-linux-archlinux
-        ListElement { label: "Software Update"; sym: "";       iconSource: ""; iconKey: "software-center" }
-        ListElement { label: "Display";         sym: "";       iconSource: ""; iconKey: "display" }
-        ListElement { label: "Apps";            sym: "";       iconSource: ""; iconKey: "apps" }
-        ListElement { label: "Performance";     sym: "";       iconSource: ""; iconKey: "performance" }
-        ListElement { label: "Internet";        sym: "";       iconSource: ""; iconKey: "network" }
-        ListElement { label: "Bluetooth";       sym: "";       iconSource: ""; iconKey: "bluetooth" }
-        ListElement { label: "Personalization"; sym: "";       iconSource: ""; iconKey: "theme" }
-        ListElement { label: "Paper";           sym: "";       iconSource: ""; iconKey: "wallpaper" }
-        ListElement { label: "Audio";           sym: "";       iconSource: ""; iconKey: "audio" }
-        ListElement { label: "Island";          sym: "\uf0c2"; iconSource: "";                                                                          iconKey: "" }           // nf-fa-cloud
-        ListElement { label: "Storage";         sym: "\uf1c0"; iconSource: "";                                                                          iconKey: "" }           // nf-fa-database
+        ListElement { label: "System";          labelKey: "settings.nav.system";          sym: "\uf303"; iconSource: ""; iconKey: "" } // nf-linux-archlinux
+        ListElement { label: "Software Update"; labelKey: "settings.nav.software_update"; sym: "";       iconSource: ""; iconKey: "software-center" }
+        ListElement { label: "Language";        labelKey: "settings.nav.language";        sym: "\uf1ab"; iconSource: ""; iconKey: "" } // nf-fa-language
+        ListElement { label: "Display";         labelKey: "settings.nav.display";         sym: "";       iconSource: ""; iconKey: "display" }
+        ListElement { label: "Apps";            labelKey: "settings.nav.apps";            sym: "";       iconSource: ""; iconKey: "apps" }
+        ListElement { label: "Performance";     labelKey: "settings.nav.performance";     sym: "";       iconSource: ""; iconKey: "performance" }
+        ListElement { label: "Internet";        labelKey: "settings.nav.internet";        sym: "";       iconSource: ""; iconKey: "network" }
+        ListElement { label: "Bluetooth";       labelKey: "settings.nav.bluetooth";       sym: "";       iconSource: ""; iconKey: "bluetooth" }
+        ListElement { label: "Personalization"; labelKey: "settings.nav.personalization"; sym: "";       iconSource: ""; iconKey: "theme" }
+        ListElement { label: "Paper";           labelKey: "settings.nav.paper";           sym: "";       iconSource: ""; iconKey: "wallpaper" }
+        ListElement { label: "Audio";           labelKey: "settings.nav.audio";           sym: "";       iconSource: ""; iconKey: "audio" }
+        ListElement { label: "Island";          labelKey: "settings.nav.island";          sym: "\uf0c2"; iconSource: ""; iconKey: "" } // nf-fa-cloud
+        ListElement { label: "Storage";         labelKey: "settings.nav.storage";         sym: "\uf1c0"; iconSource: ""; iconKey: "" } // nf-fa-database
     }
 
     // ── Drop shadow ───────────────────────────────────────────────────────
@@ -154,6 +157,7 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 model:         navModel
                 selectedIndex: window.selectedIndex
+                translationMessages: AstreaI18n.I18n.messages || ({})
                 onSelectIndex: (i) => window.navigateTo(i)
                 onOpenUserProfile: window.navigateToUserConfig()
             }

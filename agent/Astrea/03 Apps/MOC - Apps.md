@@ -6,11 +6,13 @@ Parent: [[Astrea]]
 App notes describe standalone Astrea applications.
 
 ## Apps
+- [[Astrea - About App]]
 - [[Astrea - Settings App]]
 - [[Astrea - Explorer App]]
 - [[Astrea - Weather App]]
 
 ## App Backends
+- About: [[Astrea - Core Bridge]]
 - Settings: [[Astrea - Core Bridge]], [[Astrea - Display Bridge]], [[Astrea - Audio Bridge]], [[Astrea - Bluetooth Manager]], [[Astrea - Wallpaper Bridge]]
 - Explorer: [[Astrea - Explorer Backend]]
 - Weather: [[Astrea - Weather Bridge]]
@@ -28,7 +30,7 @@ Add the new behavior where the app already owns similar behavior.
 Reuse shared imports:
 - Settings uses `AstreaComponents`.
 - Explorer uses `AstreaFiles`.
-- Weather uses app-local components plus [[Astrea - Weather Bridge]] for data.
+- Weather uses `AstreaComponents`, app-local components, and [[Astrea - Weather Bridge]] for data.
 
 Do not duplicate a shared context menu, row, card, sidebar, or theme object inside an app.
 

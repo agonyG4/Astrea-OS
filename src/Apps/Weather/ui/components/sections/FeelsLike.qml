@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import "../../../AstreaComponents" as UI
 import "../common" as WeatherCommon
+import "../../../AstreaI18n" as AstreaI18n
 
 ColumnLayout {
     property var weatherData
@@ -13,9 +14,10 @@ ColumnLayout {
     Rectangle {
         Layout.fillWidth: true
         implicitHeight: 160
-        radius: UI.Theme.cardRadius
-        color: UI.Theme.cardBg
-        opacity: 0.92
+        radius: 20
+        color: "#252529"
+        border.color: "#34343A"
+        border.width: 1
 
         ColumnLayout {
             id: feelsContent
@@ -24,7 +26,7 @@ ColumnLayout {
             spacing: 8
 
             UI.TextLabel {
-                text: "SENSAÇÃO TÉRMICA"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.components.sections.feels_like.text.sensaaao_tarmica"]) || "SENSAÇÃO TÉRMICA")
                 font.pixelSize: UI.Theme.fontSizeSmall
                 font.weight: 600
                 textColor: UI.Theme.textTertiary

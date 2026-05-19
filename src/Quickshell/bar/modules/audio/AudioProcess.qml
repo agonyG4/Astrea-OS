@@ -51,7 +51,6 @@ QtObject {
     property var volSetProc: Process {
         command: []
         running: false
-        onExited: root.refresh()
     }
 
     property var statusRefreshProc: Process {

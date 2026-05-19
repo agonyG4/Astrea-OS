@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
 import QtQuick.Effects
+import "../../AstreaI18n" as AstreaI18n
 
 Item {
     id: root
@@ -36,10 +37,11 @@ Item {
 
     property string currentPreviewPath: _thumbPath
     property int currentPreviewVersion: 0
-    property string wpThumb: "file://" + currentPreviewPath + "?t=" + currentPreviewVersion
+    property string wpThumb: _fileUrl(currentPreviewPath, currentPreviewVersion)
     property int    selTrans: 0
     property string wpName:   ""
     property string _picked:  ""
+    property bool useBlurredWallpaper: false
 
     readonly property var transitions: [
         {l:"Simple",t:"simple"},{l:"Fade",t:"fade"},{l:"Left",t:"left"},
@@ -48,8 +50,14 @@ Item {
         {l:"Center",t:"center"},{l:"Outer",t:"outer"},{l:"Any",t:"any"},{l:"Random",t:"random"}
     ]
 
+    function _fileUrl(path, version) {
+        if (!path)
+            return ""
+        return encodeURI("file://" + path) + "?t=" + version
+    }
+
     function _refreshPreviewNow() {
-        root.wpThumb = "file://" + root.currentPreviewPath + "?t=" + root.currentPreviewVersion
+        root.wpThumb = root._fileUrl(root.currentPreviewPath, root.currentPreviewVersion)
     }
 
     ListModel { id: userModel }
@@ -79,6 +87,8 @@ Item {
             root.wpName = payload.name
         if (payload.transitionIndex !== undefined)
             root.selTrans = payload.transitionIndex
+        if (payload.useBlurred !== undefined)
+            root.useBlurredWallpaper = payload.useBlurred
         if (!preservePreview) {
             if (payload.previewPath)
                 root.currentPreviewPath = payload.previewPath
@@ -100,8 +110,9 @@ Item {
             model.append({
                 slug: item.slug,
                 name: item.name,
-                imgPath: "file://" + item.thumbPath + "?t=" + (item.thumbMtime || 0),
+                imgPath: root._fileUrl(item.thumbPath, item.thumbMtime || 0),
                 wallpaperPath: item.wallpaperPath,
+                blurredPath: item.blurredPath || "",
                 baseDir: item.baseDir
             })
         }
@@ -113,8 +124,9 @@ Item {
         model.append({
             slug: item.slug,
             name: item.name,
-            imgPath: "file://" + item.thumbPath + "?t=" + (item.thumbMtime || 0),
+            imgPath: root._fileUrl(item.thumbPath, item.thumbMtime || 0),
             wallpaperPath: item.wallpaperPath,
+            blurredPath: item.blurredPath || "",
             baseDir: item.baseDir
         })
     }
@@ -143,7 +155,7 @@ Item {
         id: nameProc
         running: false
         property string _buf: ""
-        command: ["bash", "-c", "cat \"$1\" 2>/dev/null || true", "--", root.wpName_f]
+        command: ["cat", root.wpName_f]
         stdout: SplitParser { onRead: (line) => nameProc._buf += line }
         onExited: () => {
             const name = nameProc._buf.trim()
@@ -174,6 +186,27 @@ Item {
         function run(idx) {
             command = ["python3", root.wallpaperManager, "set-transition", "--index", String(idx)]
             root._runProcess(transitionProc)
+        }
+    }
+
+    Process {
+        id: blurredProc
+        running: false
+        property string _json: ""
+        function run(enabled) {
+            command = [
+                "python3", root.wallpaperManager, "set-blurred",
+                "--enabled", enabled ? "1" : "0"
+            ]
+            root._runProcess(blurredProc)
+        }
+        stdout: SplitParser { onRead: (line) => blurredProc._json += line }
+        onExited: (code) => {
+            if (code === 0) {
+                let payload = root._parseJson(blurredProc._json, "set-blurred")
+                root._applyState(payload, false)
+            }
+            blurredProc._json = ""
         }
     }
 
@@ -295,7 +328,7 @@ Item {
                 anchors { left: parent.left; right: parent.right; top: parent.top; margins: 20 }
                 spacing: 16
 
-                Text { text: "Name this wallpaper"; font.pixelSize: 15; font.weight: Font.Medium; color: root.textPrimary }
+                Text { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.text.name_this_wallpaper"]) || "Name this wallpaper"); font.pixelSize: 15; font.weight: Font.Medium; color: root.textPrimary }
 
                 Rectangle {
                     Layout.fillWidth: true; height: 36; radius: 8
@@ -325,13 +358,13 @@ Item {
                             required property var modelData
                             Layout.fillWidth: true; height: 34; radius: 8
                             color: modelData.accent
-                                ? (bma.containsMouse ? Qt.rgba(10/255,132/255,255/255,0.8) : root.accent)
+                                ? (bma.containsMouse ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.82) : root.accent)
                                 : (bma.containsMouse ? Qt.rgba(1,1,1,0.08) : Qt.rgba(1,1,1,0.04))
                             border.width: modelData.accent ? 0 : 1; border.color: root.cardBorder
                             Behavior on color { ColorAnimation { duration: 120 } }
                             Text { anchors.centerIn: parent; text: modelData.t; font.pixelSize: 13
                                 font.weight: modelData.accent ? Font.Medium : Font.Normal
-                                color: modelData.accent ? "#fff" : root.textSecondary }
+                                color: modelData.accent ? Theme.accentForeground : root.textSecondary }
                             MouseArea { id: bma; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                                 onClicked: modelData.accent ? dlg._ok() : (dlg.visible=false) }
                         }
@@ -370,7 +403,7 @@ Item {
             width: parent.width
             spacing: 0
 
-            SectionHeader { text: "CURRENT"; Layout.bottomMargin: 12; textSecondary: root.textSecondary }
+            SectionHeader { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.text.current"]) || "CURRENT"); Layout.bottomMargin: 12; textSecondary: root.textSecondary }
 
             Rectangle {
                 Layout.fillWidth: true; Layout.bottomMargin: 8
@@ -428,7 +461,7 @@ Item {
                                 }
                                 Text {
                                     Layout.alignment: Qt.AlignCenter
-                                    text: "Preview Fail"; font.pixelSize: 10; font.weight: Font.Medium; color: root.textSecondary
+                                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.text.preview_fail"]) || "Preview Fail"); font.pixelSize: 10; font.weight: Font.Medium; color: root.textSecondary
                                 }
                             }
                         }
@@ -445,7 +478,7 @@ Item {
                                     font.family: "JetBrainsMono Nerd Font"; font.pixelSize: 22; color: "#fff"
                                 }
                                 Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter; text: "Change"
+                                    anchors.horizontalCenter: parent.horizontalCenter; text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.text.change"]) || "Change")
                                     font.pixelSize: 11; font.weight: Font.Medium; color: "#fff"
                                 }
                             }
@@ -465,11 +498,23 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            Text { text: "Show on all workspaces"; font.pixelSize: 13; color: root.textPrimary; Layout.fillWidth: true }
+                            Text { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.text.show_on_all_workspaces"]) || "Show on all workspaces"); font.pixelSize: 13; color: root.textPrimary; Layout.fillWidth: true }
                             ToggleSwitch {
                                 id: wsToggle
                                 checked: true
                                 onToggled: checked = !checked
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Text { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.text.use_blurred_wallpaper"]) || "Use blurred wallpaper"); font.pixelSize: 13; color: root.textPrimary; Layout.fillWidth: true }
+                            ToggleSwitch {
+                                checked: root.useBlurredWallpaper
+                                onToggled: {
+                                    root.useBlurredWallpaper = !root.useBlurredWallpaper
+                                    blurredProc.run(root.useBlurredWallpaper)
+                                }
                             }
                         }
 
@@ -508,7 +553,7 @@ Item {
                 implicitHeight: tRow.implicitHeight
                 SettingRow {
                     id: tRow; anchors.left: parent.left; anchors.right: parent.right
-                    label: "Transition"; sublabel: "awww wallpaper animation"; isLast: true
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.label.transition"]) || "Transition"); sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.sublabel.awww_wallpaper_animation"]) || "awww wallpaper animation"); isLast: true
                     textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
                     SelectButton {
                         implicitWidth: 140; label: root.transitions[root.selTrans].l
@@ -522,7 +567,7 @@ Item {
 
             Rectangle { Layout.fillWidth: true; Layout.bottomMargin: 24; height: 1; color: root.cardBorder }
 
-            SectionHeader { text: "WALLPAPER LIBRARY"; Layout.bottomMargin: 12; textSecondary: root.textSecondary }
+            SectionHeader { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.text.wallpaper_library"]) || "WALLPAPER LIBRARY"); Layout.bottomMargin: 12; textSecondary: root.textSecondary }
 
             Rectangle {
                 Layout.fillWidth: true; radius: 12; color: root.cardBg
@@ -534,7 +579,7 @@ Item {
 
                     LibSect {
                         Layout.fillWidth: true
-                        label: "Dynamic Wallpapers"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.label.dynamic_wallpapers"]) || "Dynamic Wallpapers")
                         model: dynamicModel
                         dir: dynamicDir
                     }
@@ -546,10 +591,10 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true; Layout.margins: 16; Layout.topMargin: 12; Layout.bottomMargin: 12; spacing: 8
-                            Text { text: "User Wallpapers"; font.pixelSize: 13; font.weight: Font.Medium; color: root.textPrimary; Layout.fillWidth: true }
+                            Text { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.text.user_wallpapers"]) || "User Wallpapers"); font.pixelSize: 13; font.weight: Font.Medium; color: root.textPrimary; Layout.fillWidth: true }
                             Rectangle {
                                 width: 26; height: 26; radius: 8
-                                color: addMa.containsMouse ? Qt.rgba(10/255,132/255,255/255,0.15) : Qt.rgba(1,1,1,0.06)
+                                color: addMa.containsMouse ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.15) : Qt.rgba(1,1,1,0.06)
                                 border.width: 1; border.color: addMa.containsMouse ? root.accent : root.cardBorder
                                 Behavior on color { ColorAnimation { duration: 120 } }
                                 Text { anchors.centerIn: parent; text: "+"; font.pixelSize: 16; font.weight: Font.Light
@@ -572,7 +617,7 @@ Item {
                             implicitHeight: userModel.count ? ugrid.implicitHeight : emptyLbl.implicitHeight
 
                             Text { id: emptyLbl; anchors.horizontalCenter: parent.horizontalCenter
-                                text: "No wallpapers found"; font.pixelSize: 12; color: root.textSecondary
+                                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.text.no_wallpapers_found"]) || "No wallpapers found"); font.pixelSize: 12; color: root.textSecondary
                                 visible: !userModel.count }
 
                             Grid {
@@ -586,6 +631,7 @@ Item {
                                 required property string slug
                                 required property string baseDir
                                 required property string wallpaperPath
+                                required property string blurredPath
                                 width: (ugrid.width - 16) / 3; height: width * 0.6 + 28
 
                                 ColumnLayout {
@@ -639,7 +685,7 @@ Item {
                     Rectangle { Layout.fillWidth: true; height: 1; color: root.cardBorder }
                     LibSect {
                         Layout.fillWidth: true
-                        label: "Landscapes"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.label.landscapes"]) || "Landscapes")
                         model: landscapesModel
                         dir: landscapesDir
                     }
@@ -671,7 +717,7 @@ Item {
             visible: ls.open; Layout.fillWidth: true; Layout.leftMargin: 16; Layout.rightMargin: 16; Layout.bottomMargin: 14
             implicitHeight: (ls.model && ls.model.count) ? ugrid_ls.implicitHeight : nf.implicitHeight
 
-            Text { id: nf; anchors.horizontalCenter: parent.horizontalCenter; text: "No wallpapers found"; font.pixelSize: 12; color: root.textSecondary; visible: !(ls.model && ls.model.count) }
+            Text { id: nf; anchors.horizontalCenter: parent.horizontalCenter; text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.wallpaper.text.no_wallpapers_found"]) || "No wallpapers found"); font.pixelSize: 12; color: root.textSecondary; visible: !(ls.model && ls.model.count) }
 
             Grid {
                 id: ugrid_ls; width: parent.width; columns: 3; spacing: 8; visible: ls.model && ls.model.count > 0
@@ -684,6 +730,7 @@ Item {
                             required property string slug
                             required property string baseDir
                             required property string wallpaperPath
+                            required property string blurredPath
                             width: (ugrid_ls.width - 16) / 3; height: width * 0.6 + 28
 
                             ColumnLayout {

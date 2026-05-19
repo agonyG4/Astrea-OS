@@ -1,9 +1,11 @@
 import Quickshell
 import Quickshell.Io
 import QtQuick
-import Qt5Compat.GraphicalEffects
-import "../system" as SystemComponents
+import "../system/popups" as SystemComponents
 import "../../.."
+import "."
+import "modules"
+import "ControlCenterRegistry.js" as ModuleRegistry
 
 SystemComponents.TopbarPopup {
     id: control
@@ -13,6 +15,7 @@ SystemComponents.TopbarPopup {
     property string ssid: ""
     property bool btOn: false
     property string btDevicesJson: "[]"
+    property bool btScanning: false
     property var btProcess: null
     property var netProcess: null
     property int masterVol: 50
@@ -23,16 +26,32 @@ SystemComponents.TopbarPopup {
     property int brightnessStep: 5
     property bool sliderAnimationsEnabled: false
     property bool airdropOn: false
+    property bool focusOn: false
     property bool customizeMode: false
+    readonly property int layoutVersion: ModuleRegistry.schemaVersion
+    readonly property string astreaRoot: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + ""
+    readonly property string stateJsonScript: astreaRoot + "/Core/bridge/state_json.py"
     readonly property string layoutStateDir: Quickshell.env("HOME") + "/.local/state/Astrea"
+    readonly property string layoutStatePath: layoutStateDir + "/control-center-layout.json"
 
     readonly property var parsedBtDevices: {
         try { return JSON.parse(btDevicesJson) } catch(e) { return [] }
     }
     readonly property int connectedBtCount: parsedBtDevices.filter(d => d.connected === true).length
+    readonly property bool btPowerPending: btProcess ? btProcess.powerPending : false
+    readonly property string btPowerError: btProcess ? btProcess.powerError : ""
     readonly property string wifiTitle: netType === "wifi" && ssid !== "" ? ssid : "Wi-Fi"
     readonly property string wifiSubtitle: !netConnected ? "Desconectado" : (netType === "wifi" ? "Conectado" : "Ethernet ativo")
-    readonly property string bluetoothSubtitle: !btOn ? "Desligado" : (connectedBtCount > 0 ? connectedBtCount + " conectado" : "Ligado")
+    readonly property string bluetoothSubtitle: btPowerError !== "" ? btPowerError
+        : btPowerPending ? "Alterando..."
+        : !btOn ? "Desligado"
+        : btScanning && connectedBtCount === 0 ? "Buscando..."
+        : connectedBtCount > 0 ? connectedBtCount + " conectado" : "Ligado"
+    readonly property string statusSummary: [
+        netConnected ? (netType === "wifi" && ssid !== "" ? ssid : "Ethernet") : "Sem rede",
+        btOn ? (connectedBtCount > 0 ? connectedBtCount + " BT" : "BT ligado") : "BT off",
+        masterMuted ? "Mudo" : masterVol + "%"
+    ].join("  /  ")
     readonly property bool hasMusic: musicState && musicState.musicTitleText !== ""
     readonly property string musicTitle: hasMusic ? musicState.musicTitleText : "Nada tocando"
     readonly property string musicArtist: hasMusic ? musicState.musicArtistText : "Spotify"
@@ -42,13 +61,15 @@ SystemComponents.TopbarPopup {
     readonly property color popupGlass: Theme.background
     readonly property color popupWash: "transparent"
     readonly property color popupBorder: Theme.border
+    readonly property int fixedContentHeight: 420
 
     signal volumeChangeHandled(int v)
     signal muteChangeHandled(bool muted)
 
-    popupWidth: 356
-    cardPadding: Theme.spacingContainer
-    contentSpacing: Theme.spacingLarge
+    popupWidth: 332
+    cardPadding: 12
+    cardRadius: 18
+    contentSpacing: Theme.spacing
     backgroundColor: control.popupGlass
     washColor: control.popupWash
     borderColor: control.popupBorder
@@ -86,7 +107,7 @@ SystemComponents.TopbarPopup {
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: control.customizeMode ? "Concluir" : "Customizar"
+                    text: control.customizeMode ? "OK" : "Editar controles"
                     color: Theme.textActive
                     font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption; weight: Font.DemiBold }
                 }
@@ -200,49 +221,122 @@ SystemComponents.TopbarPopup {
             control.btProcess.requestScan("control-center")
     }
 
-    function blockHeight(kind) {
-        return kind === "main" ? 160 : 72
+    function moduleHeight(kind, size, group) {
+        return ModuleRegistry.moduleHeight(kind, size)
     }
 
-    function blockLabel(kind) {
-        if (kind === "main")
-            return "Conectividade e mídia"
-        if (kind === "volume")
-            return "Volume"
-        return "Brilho"
+    function moduleLabel(kind, size, group) {
+        return ModuleRegistry.moduleLabel(kind)
     }
 
-    function applyLayoutOrder(order) {
-        const allowed = ["main", "volume", "brightness"]
+    function moduleSpan(kind, size, group) {
+        return ModuleRegistry.moduleSpan(kind)
+    }
+
+    function applyLayoutModules(modules) {
         const seen = {}
         layoutModel.clear()
 
-        for (let i = 0; i < order.length; i++) {
-            const kind = order[i]
-            if (allowed.indexOf(kind) !== -1 && !seen[kind]) {
-                layoutModel.append({ "kind": kind })
-                seen[kind] = true
+        const incoming = modules && modules.length > 0 ? ModuleRegistry.migrateModules(modules) : ModuleRegistry.cloneDefaultModules()
+        for (let i = 0; i < incoming.length; i++) {
+            const normalized = ModuleRegistry.normalizeModule(incoming[i])
+            if (normalized && !seen[normalized.moduleId]) {
+                layoutModel.append(normalized)
+                seen[normalized.moduleId] = true
             }
         }
 
-        for (let j = 0; j < allowed.length; j++) {
-            const fallbackKind = allowed[j]
-            if (!seen[fallbackKind])
-                layoutModel.append({ "kind": fallbackKind })
+        if (layoutModel.count === 0)
+            applyLayoutModules(ModuleRegistry.cloneDefaultModules())
+    }
+
+    function currentLayoutModules() {
+        const modules = []
+        for (let i = 0; i < layoutModel.count; i++) {
+            const row = layoutModel.get(i)
+            modules.push({
+                "moduleId": row.moduleId,
+                "kind": row.kind,
+                "size": row.size,
+                "group": row.group,
+                "slot": row.slot
+            })
+        }
+        return modules
+    }
+
+    function hasModuleKind(kind) {
+        for (let i = 0; i < layoutModel.count; i++) {
+            if (layoutModel.get(i).kind === kind)
+                return true
+        }
+        return false
+    }
+
+    function nextModuleId(kind) {
+        let index = 1
+        while (true) {
+            const candidate = index === 1 ? kind : kind + "-" + index
+            let exists = false
+            for (let i = 0; i < layoutModel.count; i++) {
+                if (layoutModel.get(i).moduleId === candidate) {
+                    exists = true
+                    break
+                }
+            }
+            if (!exists)
+                return candidate
+            index++
         }
     }
 
-    function currentLayoutOrder() {
-        const order = []
-        for (let i = 0; i < layoutModel.count; i++)
-            order.push(layoutModel.get(i).kind)
-        return order
+    function addModule(kind) {
+        const module = ModuleRegistry.createModule(kind)
+        if (!module)
+            return
+
+        module.moduleId = control.nextModuleId(kind)
+        const nextSlot = blockStack.nextAvailableSlotForKind(kind)
+        module.slot = nextSlot
+        layoutModel.append(module)
+        queueLayoutSave()
+    }
+
+    function removeModule(moduleId) {
+        if (layoutModel.count <= 1)
+            return
+
+        for (let i = 0; i < layoutModel.count; i++) {
+            const row = layoutModel.get(i)
+            const rowKey = row.moduleId !== "" ? row.moduleId : row.kind
+            if (rowKey === moduleId) {
+                layoutModel.remove(i)
+                queueLayoutSave()
+                return
+            }
+        }
     }
 
     function saveLayout() {
-        layoutSaveProc.payload = JSON.stringify({ order: currentLayoutOrder() })
+        layoutSaveProc.payload = JSON.stringify({ version: control.layoutVersion, modules: currentLayoutModules() })
         layoutSaveProc.running = false
         layoutSaveProc.running = true
+    }
+
+    function moduleComponent(kind) {
+        if (kind === "wifi" || kind === "bluetooth" || kind === "airdrop" || kind === "focus" || kind === "mirror")
+            return controlToggleModuleComponent
+        if (kind === "brightness")
+            return brightnessModuleComponent
+        if (kind === "volume")
+            return volumeModuleComponent
+        if (kind === "media")
+            return mediaModuleComponent
+        return null
+    }
+
+    function queueLayoutSave() {
+        layoutSaveTimer.restart()
     }
 
     Timer {
@@ -255,6 +349,18 @@ SystemComponents.TopbarPopup {
         id: sliderAnimationDelay
         interval: 260
         onTriggered: control.sliderAnimationsEnabled = true
+    }
+
+    Timer {
+        id: layoutSaveTimer
+        interval: 60
+        repeat: false
+        onTriggered: control.saveLayout()
+    }
+
+    onCustomizeModeChanged: {
+        if (!customizeMode)
+            control.queueLayoutSave()
     }
 
     onShownChanged: {
@@ -271,6 +377,10 @@ SystemComponents.TopbarPopup {
         } else {
             if (control.btProcess)
                 control.btProcess.releaseScan("control-center")
+            if (control.customizeMode) {
+                control.customizeMode = false
+                control.queueLayoutSave()
+            }
             sliderAnimationDelay.stop()
             control.sliderAnimationsEnabled = false
         }
@@ -314,7 +424,7 @@ SystemComponents.TopbarPopup {
 
     Process {
         id: volReadProc
-        command: ["bash", "-c", "wpctl get-volume @DEFAULT_AUDIO_SINK@"]
+        command: ["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"]
         running: false
         stdout: SplitParser {
             onRead: data => {
@@ -345,7 +455,7 @@ SystemComponents.TopbarPopup {
 
     Process {
         id: layoutLoadProc
-        command: ["bash", "-c", "cat \"$1/control-center-layout.json\" 2>/dev/null || true", "--", control.layoutStateDir]
+        command: ["python3", control.stateJsonScript, "read", control.layoutStatePath]
         running: false
         stdout: SplitParser {
             onRead: data => {
@@ -355,8 +465,14 @@ SystemComponents.TopbarPopup {
 
                 try {
                     const parsed = JSON.parse(trimmed)
-                    if (parsed && parsed.order)
-                        control.applyLayoutOrder(parsed.order)
+                    if (parsed && parsed.modules) {
+                        control.applyLayoutModules(parsed.modules)
+                        if (parsed.version !== control.layoutVersion)
+                            control.queueLayoutSave()
+                    } else if (parsed && parsed.order) {
+                        control.applyLayoutModules(ModuleRegistry.modulesFromLegacyOrder(parsed.order))
+                        control.queueLayoutSave()
+                    }
                 } catch(e) {}
             }
         }
@@ -365,7 +481,7 @@ SystemComponents.TopbarPopup {
     Process {
         id: layoutSaveProc
         property string payload: ""
-        command: ["bash", "-c", "mkdir -p \"$1\" && printf '%s' \"$2\" > \"$1/control-center-layout.json\"", "--", control.layoutStateDir, payload]
+        command: ["python3", control.stateJsonScript, "write", control.layoutStatePath, payload]
         running: false
     }
 
@@ -373,61 +489,65 @@ SystemComponents.TopbarPopup {
 
     ListModel {
         id: layoutModel
-        ListElement { kind: "main" }
-        ListElement { kind: "volume" }
-        ListElement { kind: "brightness" }
+        ListElement { moduleId: "wifi"; kind: "wifi"; size: "small"; group: ""; slot: 0 }
+        ListElement { moduleId: "bluetooth"; kind: "bluetooth"; size: "small"; group: ""; slot: 1 }
+        ListElement { moduleId: "airdrop"; kind: "airdrop"; size: "small"; group: ""; slot: 2 }
+        ListElement { moduleId: "focus"; kind: "focus"; size: "small"; group: ""; slot: 3 }
+        ListElement { moduleId: "mirror"; kind: "mirror"; size: "small"; group: ""; slot: 4 }
+        ListElement { moduleId: "brightness"; kind: "brightness"; size: "small"; group: ""; slot: 8 }
+        ListElement { moduleId: "volume"; kind: "volume"; size: "small"; group: ""; slot: 12 }
+        ListElement { moduleId: "media"; kind: "media"; size: "medium"; group: ""; slot: 16 }
     }
 
-    Item {
+    Flickable {
+        id: blockViewport
+
         width: parent.width
-        height: 30
+        height: control.customizeMode ? control.fixedContentHeight : blockStack.height
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        contentWidth: width
+        contentHeight: blockStack.height
+        interactive: contentHeight > height
 
-        Text {
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            text: "Central de Controle"
-            color: Theme.textActive
-            font {
-                family: Theme.fontFamily
-                pixelSize: Theme.fontSizeTitle
-                weight: Font.DemiBold
-            }
-        }
+        ReorderableStack {
+            id: blockStack
 
-        Rectangle {
-            anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
-            width: 30
-            height: 30
-            radius: height / 2
-            color: Theme.surface
-
-            Text {
-                anchors.centerIn: parent
-                text: "󰃠"
-                color: Theme.textDim
-                font {
-                    family: Theme.fontFamily
-                    pixelSize: Theme.fontSizeIcon
+            width: blockViewport.width
+            model: layoutModel
+            editMode: control.customizeMode
+            itemSpacing: control.contentSpacing
+            itemHeightProvider: (kind, size, group) => control.moduleHeight(kind, size, group)
+            itemSpanProvider: (kind, size, group) => control.moduleSpan(kind, size, group)
+            itemLabelProvider: (kind, size, group) => control.moduleLabel(kind, size, group)
+            itemDelegate: controlCenterBlockDelegate
+            editOverlayRadius: Theme.radiusLarge
+            editOverlayColor: Qt.rgba(1, 1, 1, 0.035)
+            editOverlayBorderColor: Theme.border
+            labelColor: Theme.textSecondary
+            labelFontFamily: Theme.fontFamily
+            labelPixelSize: Theme.fontSizeMicro
+            onItemDropped: control.queueLayoutSave()
+            onItemMovedToSlot: (key, slot) => {
+                for (let i = 0; i < layoutModel.count; i++) {
+                    const row = layoutModel.get(i)
+                    const rowKey = row.moduleId !== "" ? row.moduleId : row.kind
+                    if (rowKey === key) {
+                        layoutModel.setProperty(i, "slot", slot)
+                        control.queueLayoutSave()
+                        return
+                    }
                 }
             }
+            onItemRemoveRequested: key => control.removeModule(key)
         }
     }
 
-    ReorderableStack {
-        id: blockStack
-        width: parent.width
-        model: layoutModel
-        editMode: control.customizeMode
-        itemSpacing: control.contentSpacing
-        itemHeightProvider: key => control.blockHeight(key)
-        itemLabelProvider: key => control.blockLabel(key)
-        itemDelegate: controlCenterBlockDelegate
-        editOverlayRadius: Theme.radiusLarge
-        labelColor: Theme.textSecondary
-        labelFontFamily: Theme.fontFamily
-        labelPixelSize: Theme.fontSizeMicro
-        onItemDropped: control.saveLayout()
+    WidgetLibraryOverlay {
+        control: control
+        open: control.shown && control.customizeMode
+        onAddRequested: kind => control.addModule(kind)
+        onDoneRequested: control.customizeMode = false
     }
 
     Component {
@@ -435,551 +555,45 @@ SystemComponents.TopbarPopup {
 
         Item {
             property string itemKey: ""
+            property string itemKind: ""
+            property string itemSize: ""
+            property string itemGroup: ""
+            property int itemSlot: -1
 
             Loader {
                 anchors.fill: parent
-                sourceComponent: itemKey === "main"
-                    ? mainBlockComponent
-                    : itemKey === "volume"
-                        ? volumeBlockComponent
-                        : brightnessBlockComponent
-            }
-        }
-    }
-
-    Component {
-        id: mainBlockComponent
-
-        Item {
-            Row {
-                anchors.fill: parent
-                spacing: Theme.spacingMedium
-
-                ConnectivityCard {
-                    width: (parent.width - parent.spacing) / 2
-                    height: parent.height
-                }
-
-                MediaCard {
-                    width: (parent.width - parent.spacing) / 2
-                    height: parent.height
-                    title: control.musicTitle
-                    artist: control.musicArtist
-                    artSource: control.musicArt
-                    playing: control.musicPlaying
-                    active: control.hasMusic
-                    onPreviousClicked: control.previousTrack()
-                    onPlayClicked: control.playPause()
-                    onNextClicked: control.nextTrack()
+                sourceComponent: control.moduleComponent(itemKind)
+                onLoaded: {
+                    if (item && item.control !== undefined)
+                        item.control = control
+                    if (item && item.moduleKind !== undefined)
+                        item.moduleKind = itemKind
+                    if (item && item.moduleSize !== undefined)
+                        item.moduleSize = itemSize
+                    if (item && item.moduleGroup !== undefined)
+                        item.moduleGroup = itemGroup
                 }
             }
         }
     }
 
     Component {
-        id: volumeBlockComponent
-
-        SliderCard {
-            title: "Volume"
-            leftIcon: control.volumeIcon()
-            rightIcon: control.masterMuted ? "󰝟" : "󰕾"
-            value: control.masterVol
-            muted: control.masterMuted
-            animateValue: control.sliderAnimationsEnabled
-            onValueChangedByUser: v => control.applyVolume(v)
-            onWheelChangedByUser: delta => control.applyVolume(control.masterVol + delta * 2)
-            onIconClicked: control.toggleMute()
-        }
+        id: controlToggleModuleComponent
+        ControlToggleModule {}
     }
 
     Component {
-        id: brightnessBlockComponent
-
-        SliderCard {
-            title: "Brilho"
-            leftIcon: "󰃞"
-            rightIcon: "󰃠"
-            value: control.brightness
-            muted: false
-            animateValue: control.sliderAnimationsEnabled
-            onValueChangedByUser: v => control.applyBrightness(v)
-            onWheelChangedByUser: delta => control.applyBrightness(control.brightness + delta * control.brightnessStep)
-        }
+        id: brightnessModuleComponent
+        SliderModule {}
     }
 
-    component MediaCard: Rectangle {
-        id: mediaCard
-
-        property string title: ""
-        property string artist: ""
-        property string artSource: ""
-        property bool playing: false
-        property bool active: false
-        signal previousClicked()
-        signal playClicked()
-        signal nextClicked()
-
-        implicitHeight: 160
-        radius: Theme.radiusLarge
-        color: active ? Theme.surface : Theme.background
-        border.width: 1
-        border.color: active ? Theme.barBorderHover : Theme.border
-
-        Behavior on color { ColorAnimation { duration: Theme.animationStandard } }
-        Behavior on border.color { ColorAnimation { duration: Theme.animationStandard } }
-
-        Rectangle {
-            id: mediaArt
-            anchors.left: parent.left
-            anchors.top: parent.top
-            anchors.leftMargin: Theme.spacingLarge
-            anchors.topMargin: Theme.spacingLarge
-            width: 46
-            height: 46
-            radius: Theme.tileRadius
-            clip: true
-            color: Theme.surface
-
-            Rectangle {
-                id: mediaArtMask
-                anchors.fill: parent
-                radius: Theme.tileRadius
-                visible: false
-            }
-
-            Image {
-                anchors.fill: parent
-                source: mediaCard.artSource
-                fillMode: Image.PreserveAspectCrop
-                smooth: true
-                mipmap: true
-                cache: false
-                asynchronous: true
-                visible: mediaCard.artSource !== ""
-                layer.enabled: true
-                layer.effect: OpacityMask { maskSource: mediaArtMask }
-            }
-
-            Text {
-                anchors.centerIn: parent
-                visible: mediaCard.artSource === ""
-                text: "󰝚"
-                color: Theme.iconMain
-                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIconLarge }
-            }
-        }
-
-        Column {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: mediaArt.bottom
-            anchors.leftMargin: Theme.spacingXLarge
-            anchors.rightMargin: Theme.spacingLarge
-            anchors.topMargin: Theme.spacingXLarge
-            spacing: 3
-
-            Text {
-                width: parent.width
-                text: mediaCard.title
-                color: Theme.textActive
-                elide: Text.ElideRight
-                maximumLineCount: 1
-                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeTitle; weight: Font.DemiBold }
-            }
-
-            Text {
-                width: parent.width
-                text: mediaCard.artist
-                color: Theme.textSecondary
-                elide: Text.ElideRight
-                opacity: Theme.opacityEmphasis
-                maximumLineCount: 1
-                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeBody; weight: Font.Medium }
-            }
-        }
-
-        Row {
-            anchors.left: parent.left
-            anchors.bottom: parent.bottom
-            anchors.leftMargin: 15
-            anchors.bottomMargin: Theme.spacingXLarge
-            spacing: Theme.spacingXLarge
-
-            MediaButton {
-                icon: "󰒮"
-                enabled: mediaCard.active
-                onClicked: mediaCard.previousClicked()
-            }
-
-            MediaButton {
-                icon: mediaCard.playing ? "󰏤" : "󰐊"
-                enabled: mediaCard.active
-                primary: true
-                onClicked: mediaCard.playClicked()
-            }
-
-            MediaButton {
-                icon: "󰒭"
-                enabled: mediaCard.active
-                onClicked: mediaCard.nextClicked()
-            }
-        }
+    Component {
+        id: volumeModuleComponent
+        SliderModule {}
     }
 
-    component MediaButton: Rectangle {
-        id: mediaButton
-
-        property string icon: ""
-        property bool primary: false
-        signal clicked()
-
-        width: primary ? 38 : 30
-        height: primary ? 38 : 30
-        radius: width / 2
-        color: !enabled ? Theme.background
-                        : primary ? (mediaArea.containsMouse ? Theme.barBorderHover : Theme.surface)
-                                  : (mediaArea.containsMouse ? Theme.separator : "transparent")
-        opacity: enabled ? 1 : 0.38
-
-        Behavior on color { ColorAnimation { duration: Theme.animationQuick } }
-        Behavior on opacity { NumberAnimation { duration: Theme.animationQuick } }
-
-        Text {
-            anchors.centerIn: parent
-            text: mediaButton.icon
-            color: Theme.iconMain
-            font { family: Theme.fontFamily; pixelSize: mediaButton.primary ? Theme.fontSizeIconLarge : Theme.fontSizeIcon }
-        }
-
-        MouseArea {
-            id: mediaArea
-            anchors.fill: parent
-            enabled: mediaButton.enabled
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: mediaButton.clicked()
-        }
-    }
-
-    component ConnectivityCard: Rectangle {
-        id: connectivityCard
-
-        radius: Theme.radiusLarge
-        color: Theme.background
-        border.width: 1
-        border.color: Theme.border
-
-        Column {
-            anchors.fill: parent
-            anchors.margins: Theme.spacing
-            spacing: Theme.spacingMicro
-
-            ConnectivityRow {
-                width: parent.width
-                height: (parent.height - parent.spacing * 2) / 3
-                icon: control.netConnected && control.netType !== "none"
-                    ? (control.netType === "wifi" ? "󰖩" : "󰈀")
-                    : "󰖪"
-                title: control.wifiTitle
-                subtitle: control.wifiSubtitle
-                active: control.netConnected && control.netType === "wifi"
-                onClicked: control.toggleWifi()
-            }
-
-            ConnectivityRow {
-                width: parent.width
-                height: (parent.height - parent.spacing * 2) / 3
-                icon: control.btOn ? "󰂯" : "󰂲"
-                title: "Bluetooth"
-                subtitle: control.bluetoothSubtitle
-                active: control.btOn
-                onClicked: control.toggleBluetooth()
-            }
-
-            ConnectivityRow {
-                width: parent.width
-                height: (parent.height - parent.spacing * 2) / 3
-                icon: "󰀝"
-                title: "AirDrop"
-                subtitle: control.airdropOn ? "Ativo" : "Desativado"
-                active: control.airdropOn
-                onClicked: control.airdropOn = !control.airdropOn
-            }
-        }
-    }
-
-    component ConnectivityRow: Rectangle {
-        id: rowRoot
-
-        property string icon: ""
-        property string title: ""
-        property string subtitle: ""
-        property bool active: false
-        signal clicked()
-
-        radius: Theme.radiusMedium
-        color: active ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.22)
-                      : (rowMouse.containsMouse ? Theme.separator : "transparent")
-
-        Behavior on color { ColorAnimation { duration: Theme.animationSubtle } }
-
-        Row {
-            anchors.fill: parent
-            anchors.leftMargin: Theme.spacingInset
-            anchors.rightMargin: Theme.spacingInset
-            spacing: Theme.spacing
-
-            Rectangle {
-                width: 28
-                height: 28
-                radius: Theme.cornerRadiusLarge
-                anchors.verticalCenter: parent.verticalCenter
-                color: rowRoot.active ? Theme.iconActive : Theme.surface
-
-                Text {
-                    anchors.centerIn: parent
-                    text: rowRoot.icon
-                    color: rowRoot.active ? Theme.background : Theme.iconMain
-                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
-                }
-            }
-
-            Column {
-                width: parent.width - 36
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 0
-
-                Text {
-                    width: parent.width
-                    text: rowRoot.title
-                    color: Theme.textActive
-                    elide: Text.ElideRight
-                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.DemiBold }
-                }
-
-                Text {
-                    width: parent.width
-                    text: rowRoot.subtitle
-                    color: Theme.textSecondary
-                    opacity: Theme.opacityEmphasis
-                    elide: Text.ElideRight
-                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeMicro; weight: Font.Medium }
-                }
-            }
-        }
-
-        MouseArea {
-            id: rowMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: rowRoot.clicked()
-        }
-    }
-
-    component ControlTile: Rectangle {
-        id: tile
-
-        property string icon: ""
-        property string title: ""
-        property string subtitle: ""
-        property bool active: false
-        signal clicked()
-
-        radius: Theme.radiusMedium
-        color: active ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.22)
-                      : (tileMouse.containsMouse ? Theme.separator : Theme.background)
-        border.width: 1
-        border.color: active ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.36) : Theme.border
-
-        Behavior on color { ColorAnimation { duration: Theme.animationHover } }
-        Behavior on border.color { ColorAnimation { duration: Theme.animationHover } }
-
-        Row {
-            anchors.fill: parent
-            anchors.margins: Theme.spacingMedium
-            spacing: Theme.spacingControlGap
-
-            Rectangle {
-                width: 30
-                height: 30
-                radius: height / 2
-                anchors.verticalCenter: parent.verticalCenter
-                color: tile.active ? Theme.iconActive : Theme.surface
-
-                Text {
-                    anchors.centerIn: parent
-                    text: tile.icon
-                    color: tile.active ? Theme.background : Theme.iconMain
-                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
-                }
-            }
-
-            Column {
-                width: parent.width - 39
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 1
-
-                Text {
-                    width: parent.width
-                    text: tile.title
-                    color: Theme.textActive
-                    elide: Text.ElideRight
-                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.DemiBold }
-                }
-
-                Text {
-                    width: parent.width
-                    text: tile.subtitle
-                    color: Theme.textSecondary
-                    opacity: Theme.opacityEmphasis
-                    elide: Text.ElideRight
-                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption }
-                }
-            }
-        }
-
-        MouseArea {
-            id: tileMouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: Qt.PointingHandCursor
-            onClicked: tile.clicked()
-        }
-    }
-
-    component SliderCard: Rectangle {
-        id: sliderCard
-
-        property string title: ""
-        property string leftIcon: ""
-        property string rightIcon: ""
-        property int value: 0
-        property bool muted: false
-        property bool animateValue: false
-        signal valueChangedByUser(int value)
-        signal wheelChangedByUser(int delta)
-        signal iconClicked()
-
-        height: 72
-        radius: Theme.radiusLarge
-        color: Theme.background
-        border.width: 1
-        border.color: Theme.border
-
-        Text {
-            anchors.left: parent.left
-            anchors.top: parent.top
-            anchors.leftMargin: Theme.spacingLarge
-            anchors.topMargin: Theme.spacingControlGap
-            text: sliderCard.title
-            color: Theme.textActive
-            opacity: Theme.opacitySubtle
-            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.DemiBold }
-        }
-
-        Text {
-            id: sliderLeftIcon
-            anchors.left: parent.left
-            anchors.bottom: parent.bottom
-            anchors.leftMargin: Theme.spacingLarge
-            anchors.bottomMargin: Theme.spacingLarge
-            text: sliderCard.leftIcon
-            color: sliderCard.muted ? Theme.iconMuted : Theme.iconMain
-            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
-
-            MouseArea {
-                anchors.fill: parent
-                anchors.margins: -8
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: sliderCard.iconClicked()
-            }
-        }
-
-        Item {
-            id: sliderArea
-            anchors.left: sliderLeftIcon.right
-            anchors.right: sliderRightIcon.left
-            anchors.verticalCenter: sliderLeftIcon.verticalCenter
-            anchors.leftMargin: Theme.spacingLarge
-            anchors.rightMargin: Theme.spacingLarge
-            height: 24
-
-            Rectangle {
-                id: sliderTrack
-                anchors.verticalCenter: parent.verticalCenter
-                width: parent.width
-                height: 6
-                radius: 3
-                color: Theme.separator
-
-                Rectangle {
-                    width: Math.max(radius * 2, sliderTrack.width * (sliderCard.value / 100))
-                    height: parent.height
-                    radius: parent.radius
-                    gradient: Gradient {
-                        orientation: Gradient.Horizontal
-                        GradientStop { position: 0.0; color: sliderCard.muted ? Theme.iconMuted : Theme.iconMain }
-                        GradientStop { position: 1.0; color: sliderCard.muted ? Theme.iconMuted : Theme.iconActive }
-                    }
-                    Behavior on width {
-                        enabled: sliderCard.animateValue
-                        NumberAnimation { duration: Theme.animationSlider; easing.type: Easing.OutCubic }
-                    }
-                }
-            }
-
-            Rectangle {
-                anchors.verticalCenter: parent.verticalCenter
-                x: Math.max(0, Math.min(sliderTrack.width - width, sliderTrack.width * (sliderCard.value / 100) - width / 2))
-                width: sliderMouse.pressed ? 20 : (sliderMouse.containsMouse ? 18 : 14)
-                height: width
-                radius: width / 2
-                color: Theme.iconActive
-
-                Behavior on width { NumberAnimation { duration: Theme.animationMicro; easing.type: Easing.OutCubic } }
-                Behavior on x {
-                    enabled: !sliderMouse.pressed && sliderCard.animateValue
-                    NumberAnimation { duration: Theme.animationSlider; easing.type: Easing.OutCubic }
-                }
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius: parent.radius
-                    color: "transparent"
-                    border.width: 1
-                    border.color: Theme.border
-                }
-            }
-
-            MouseArea {
-                id: sliderMouse
-                anchors.fill: parent
-                anchors.topMargin: -10
-                anchors.bottomMargin: -10
-                hoverEnabled: true
-                preventStealing: true
-                cursorShape: Qt.PointingHandCursor
-
-                onPressed: e => sliderCard.valueChangedByUser(control.volumePercentFromX(e.x, sliderTrack.width))
-                onPositionChanged: e => {
-                    if (pressed)
-                        sliderCard.valueChangedByUser(control.volumePercentFromX(e.x, sliderTrack.width))
-                }
-                onWheel: e => sliderCard.wheelChangedByUser(e.angleDelta.y > 0 ? 1 : -1)
-            }
-        }
-
-        Text {
-            id: sliderRightIcon
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.rightMargin: Theme.spacingLarge
-            anchors.bottomMargin: Theme.spacingLarge
-            text: sliderCard.rightIcon
-            color: sliderCard.muted ? Theme.iconMuted : Theme.iconMain
-            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
-        }
+    Component {
+        id: mediaModuleComponent
+        NowPlayingModule {}
     }
 }

@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Controls.impl 2.15
 import "../.."
+import "../../AstreaI18n" as AstreaI18n
 
 Rectangle {
     color: Theme.bg
@@ -46,9 +47,9 @@ Rectangle {
             width: parent.width; spacing: 6
             Repeater {
                 model: [
-                    { label: "Tipo",       value: AppState.selectedFile.split(".").pop().toUpperCase() || "—" },
-                    { label: "Modificado", value: "—" },
-                    { label: "Criado",     value: "—" },
+                    { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.preview_panel.label.tipo"]) || "Kind"),       value: AppState.selectedFile.split(".").pop().toUpperCase() || "—" },
+                    { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.preview_panel.label.modificado"]) || "Modified"), value: "—" },
+                    { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.preview_panel.label.criado"]) || "Created"),     value: "—" },
                 ]
                 Column {
                     width: parent.width; spacing: 2
@@ -62,7 +63,7 @@ Rectangle {
     // ── Placeholder ───────────────────────────────────────────
     Text {
         anchors.centerIn: parent
-        text: "Nenhum item\nselecionado"
+        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.preview_panel.text.nenhum_item_selecionado"]) || "No item\\nselected")
         color: Theme.textTer; font.pixelSize: 13
         horizontalAlignment: Text.AlignHCenter
         visible: AppState.selectedFile === ""

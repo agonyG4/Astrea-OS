@@ -4,6 +4,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
+import "../../AstreaI18n" as AstreaI18n
 
 Item {
     id: root
@@ -14,13 +15,23 @@ Item {
     property real   totalSize:        0
     property real   diskTotal:        0
     property real   scannedTotal:     0
+    property real   compressionAmount: 0
+    property real   compressionSaved: 0
+    property bool   compressionExact: false
     property real   categorizedTotal: 0
     property bool   scanning:         false
+    property bool   refreshRunning:   false
+    property bool   cacheStale:       false
+    property int    refreshPollSecs:  5
     property string errorMessage:     ""
     property bool   autoScanStarted:  false
 
     readonly property var homeData:   storageData.filter(d => !d.is_system)
     readonly property var systemData: storageData.filter(d => d.is_system)
+
+    function isPacman(item) {
+        return item && item.id === "sys:pacman"
+    }
 
     function formatBytes(bytes) {
         if (bytes < 1000)          return bytes.toFixed(0)              + " B"
@@ -34,8 +45,8 @@ Item {
         return diskTotal > 0 ? totalSize / diskTotal : 0
     }
 
-    function compressionSavings() {
-        return Math.max(0, scannedTotal - totalSize)
+    function compressionDisplayAmount() {
+        return Math.max(0, compressionAmount > 0 ? compressionAmount : compressionSaved)
     }
 
     function usageText() {
@@ -48,9 +59,11 @@ Item {
         }
 
         let text = formatBytes(totalSize) + " de " + formatBytes(diskTotal) + " usados"
-        const saved = compressionSavings()
-        if (saved > 0)
-            text += " · " + formatBytes(saved) + " comprimidos"
+        const compressed = compressionDisplayAmount()
+        if (compressed > 0)
+            text += " · " + (compressionExact ? "" : "~") + formatBytes(compressed) + " Comprimidos"
+        if (refreshRunning)
+            text += " · atualizando"
         return text
     }
 
@@ -84,18 +97,22 @@ Item {
                     if (d.disk_used)  root.totalSize = d.disk_used
                     if (d.disk_total) root.diskTotal  = d.disk_total
                     if (d.scanned_total) root.scannedTotal = d.scanned_total
+                    root.compressionAmount = d.compressed_total || d.compression_total || 0
+                    root.compressionSaved = d.compressed_saved || d.compression_saved || 0
+                    root.compressionExact = d.compressed_exact === true
+                    root.refreshRunning = d.refresh_running === true
+                    root.scanning = root.refreshRunning
+                    root.cacheStale = d.cache_stale === true
+                    root.refreshPollSecs = Math.max(2, d.refresh_poll_seconds || 5)
                     if (d.data) {
                         root.storageData = d.data
                         root.categorizedTotal = d.data.reduce((s, i) => s + i.size, 0)
                     }
-                    if (d.error === "No cache found" && !root.autoScanStarted) {
-                        root.autoScanStarted = true
-                        root.startScan(true)
-                        return
-                    }
-                    if (!d.error && d.cache_updated_ago_seconds > 86400 && root.storageData.length > 0 && !root.autoScanStarted) {
-                        root.autoScanStarted = true
-                        root.startScan(false)
+                    if (root.refreshRunning && !refreshPollTimer.running) {
+                        refreshPollTimer.interval = root.refreshPollSecs * 1000
+                        refreshPollTimer.start()
+                    } else if (!root.refreshRunning) {
+                        refreshPollTimer.stop()
                     }
                 } catch (e) {
                     root.errorMessage = "Could not parse storage data"
@@ -104,7 +121,7 @@ Item {
             } else {
                 root.errorMessage = "Could not load storage data"
             }
-            root.loading = false
+            root.loading = root.refreshRunning && root.storageData.length === 0
         }
     }
 
@@ -136,6 +153,16 @@ Item {
             root.scanning = false
             root.loading = false
             root.errorMessage = "Storage scan timed out"
+        }
+    }
+
+    Timer {
+        id: refreshPollTimer
+        interval: 5000
+        repeat: true
+        onTriggered: {
+            if (!statsProc.running)
+                statsProc.running = true
         }
     }
 
@@ -179,7 +206,7 @@ Item {
                     ColumnLayout {
                         spacing: 2
                         Text {
-                            text: "Armazenamento"
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.storage.text.armazenamento"]) || "Storage")
                             color: Theme.textPrimary
                             font.family: Theme.fontFamily
                             font.pixelSize: 17
@@ -208,7 +235,7 @@ Item {
                             const p = root.usedPercent()
                             if (p > 0.9) return Qt.rgba(1, 0.23, 0.19, 0.18)
                             if (p > 0.7) return Qt.rgba(1, 0.62, 0, 0.15)
-                            return Qt.rgba(10/255, 132/255, 1, 0.15)
+                            return Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.15)
                         }
                         Text {
                             id: pctLabel
@@ -285,8 +312,15 @@ Item {
                         model: root.storageData
                         Row {
                             spacing: 5
+                            PacmanIcon {
+                                width: 8; height: 8
+                                visible: root.isPacman(modelData)
+                                anchors.verticalCenter: parent.verticalCenter
+                                color: modelData.color
+                            }
                             Rectangle {
                                 width: 8; height: 8; radius: 4
+                                visible: !root.isPacman(modelData)
                                 anchors.verticalCenter: parent.verticalCenter
                                 color: modelData.color
                             }
@@ -307,8 +341,8 @@ Item {
         // Spacer
         Item { Layout.fillWidth: true; implicitHeight: 24 }
 
-        // ── Home ──────────────────────────────────────────────────────────
-        SectionHeader { text: "HOME"; Layout.bottomMargin: 10 }
+        // ── User ──────────────────────────────────────────────────────────
+        SectionHeader { text: "USER"; Layout.bottomMargin: 10 }
 
         Rectangle {
             Layout.fillWidth: true
@@ -330,7 +364,7 @@ Item {
         }
 
         // ── System ────────────────────────────────────────────────────────
-        SectionHeader { text: "SISTEMA"; Layout.bottomMargin: 10 }
+        SectionHeader { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.storage.text.sistema"]) || "SYSTEM"); Layout.bottomMargin: 10 }
 
         Rectangle {
             Layout.fillWidth: true
@@ -385,8 +419,36 @@ Item {
 
             Rectangle {
                 width: 8; height: 8; radius: 4
+                visible: !root.isPacman(modelData)
                 color: modelData.color
             }
+
+            PacmanIcon {
+                width: 10; height: 10
+                visible: root.isPacman(modelData)
+                color: modelData.color
+            }
+        }
+    }
+
+    component PacmanIcon: Canvas {
+        id: icon
+        property color color: "#FFD426"
+        onColorChanged: requestPaint()
+        onPaint: {
+            const ctx = getContext("2d")
+            const w = width
+            const h = height
+            const r = Math.min(w, h) / 2
+            const cx = w / 2
+            const cy = h / 2
+            ctx.clearRect(0, 0, w, h)
+            ctx.beginPath()
+            ctx.moveTo(cx, cy)
+            ctx.arc(cx, cy, r, Math.PI * 0.18, Math.PI * 1.82, false)
+            ctx.closePath()
+            ctx.fillStyle = color
+            ctx.fill()
         }
     }
 }

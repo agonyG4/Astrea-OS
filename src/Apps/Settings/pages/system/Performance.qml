@@ -4,9 +4,11 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
+import "../../AstreaI18n" as AstreaI18n
 
 ScrollPage {
     id: root
+    maxWidth: 900
 
     readonly property color textPrimary: Theme.textPrimary
     readonly property color textSecondary: Theme.textSecondary
@@ -280,7 +282,7 @@ ScrollPage {
         visible: !root.loading
 
         SectionHeader {
-            text: "PERFORMANCE"
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.performance.text.performance"]) || "PERFORMANCE")
             textSecondary: root.textSecondary
             Layout.bottomMargin: 12
         }
@@ -296,7 +298,7 @@ ScrollPage {
         }
 
         SectionHeader {
-            text: "POWER PROFILE"
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.performance.text.power_profile"]) || "POWER PROFILE")
             textSecondary: root.textSecondary
             Layout.bottomMargin: 12
         }
@@ -316,7 +318,7 @@ ScrollPage {
                 spacing: 0
 
                 SettingRow {
-                    label: "Preferred profile"
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.performance.label.preferred_profile"]) || "Preferred profile")
                     sublabel: root.runtimeStatus.powerprofilesctl
                         ? "O Astrea aplica este perfil automaticamente quando detectar diferença"
                         : "O Astrea salva este perfil e aplica automaticamente quando o daemon estiver disponível"
@@ -346,7 +348,7 @@ ScrollPage {
         }
 
         SectionHeader {
-            text: "SYSTEM BEHAVIOR"
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.performance.text.system_behavior"]) || "SYSTEM BEHAVIOR")
             textSecondary: root.textSecondary
             Layout.bottomMargin: 12
         }
@@ -366,7 +368,7 @@ ScrollPage {
                 spacing: 0
 
                 SettingRow {
-                    label: "Gamemode"
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.performance.label.gamemode"]) || "Gamemode")
                     sublabel: root.runtimeStatus.gamemode
                         ? "Permite que o Astrea trate o GameMode como prioridade quando ele estiver disponível"
                         : "Gamemode não detectado; a preferência fica salva para depois"

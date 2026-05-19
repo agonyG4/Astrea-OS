@@ -7,13 +7,16 @@ Item {
     property var model: null
     property bool editMode: false
     property real itemSpacing: Theme.spacingXLarge
-    property var itemHeightProvider: function(key) { return 0 }
-    property var itemLabelProvider: function(key) { return "" }
+    property int columnCount: 4
+    property var itemHeightProvider: function(kind, size, group) { return 0 }
+    property var itemSpanProvider: function(kind, size, group) { return columnCount }
+    property var itemLabelProvider: function(kind, size, group) { return "" }
     property Component itemDelegate: null
 
     property bool draggingItem: false
     property string draggedKey: ""
     property int dragPreviewIndex: -1
+    property real dragLeft: 0
     property real dragTop: 0
 
     property real editOverlayRadius: Theme.cornerRadiusLarge
@@ -22,17 +25,109 @@ Item {
     property color labelColor: Qt.rgba(1, 1, 1, 0.62)
     property string labelFontFamily: Theme.fontFamily
     property int labelPixelSize: Theme.fontSizeMicro
+    property int hitboxRowsPadding: 2
+    property int hitboxMinimumRows: 6
+    property int hitboxSize: 54
 
     signal itemDropped()
+    signal itemMovedToSlot(string key, int slot)
+    signal itemRemoveRequested(string key)
 
-    height: layoutHeight()
+    height: editMode ? Math.max(layoutHeight(), hitboxLayoutHeight()) : layoutHeight()
+
+    function rowForKey(key) {
+        if (!model)
+            return null
+
+        for (let i = 0; i < model.count; i++) {
+            const row = model.get(i)
+            const rowKey = row.moduleId !== undefined && row.moduleId !== "" ? row.moduleId : row.kind
+            if (rowKey === key)
+                return row
+        }
+
+        return null
+    }
+
+    function rowKey(row) {
+        return row && row.moduleId !== undefined && row.moduleId !== "" ? row.moduleId : (row ? row.kind : "")
+    }
 
     function itemHeight(key) {
-        return itemHeightProvider ? itemHeightProvider(key) : 0
+        const row = rowForKey(key)
+        return itemHeightProvider && row ? itemHeightProvider(row.kind, row.size, row.group) : 0
+    }
+
+    function itemSpan(key) {
+        const row = rowForKey(key)
+        const requested = itemSpanProvider && row ? itemSpanProvider(row.kind, row.size, row.group) : columnCount
+        return Math.max(1, Math.min(columnCount, requested))
+    }
+
+    function itemSlot(key) {
+        const row = rowForKey(key)
+        return row && row.slot !== undefined && row.slot >= 0 ? row.slot : -1
+    }
+
+    function cellHeight() {
+        return 74
+    }
+
+    function hitboxRows() {
+        const layout = layoutMap(currentOrder())
+        return Math.max(hitboxMinimumRows, layout.__maxRow + 1 + hitboxRowsPadding)
+    }
+
+    function hitboxCount() {
+        return hitboxRows() * columnCount
+    }
+
+    function hitboxLayoutHeight() {
+        const rows = hitboxRows()
+        return rows > 0 ? rows * cellHeight() + Math.max(0, rows - 1) * itemSpacing : 0
+    }
+
+    function hitboxGeometry(slot) {
+        const layout = layoutMap(currentOrder())
+        const row = Math.floor(slot / columnCount)
+        const col = slot % columnCount
+        const colWidth = columnWidth()
+        const top = layout.__rowTops[row] !== undefined ? layout.__rowTops[row] : row * (cellHeight() + itemSpacing)
+        const rowHeight = layout.__rowHeights[row] !== undefined ? layout.__rowHeights[row] : cellHeight()
+        const size = Math.min(hitboxSize, Math.max(36, colWidth * 0.86))
+
+        return {
+            "x": col * (colWidth + itemSpacing) + (colWidth - size) / 2,
+            "y": top + (rowHeight - size) / 2,
+            "size": size
+        }
+    }
+
+    function slotOccupied(slot) {
+        const used = occupiedCells(draggingItem ? draggedKey : "")
+        return used[slot] !== undefined
+    }
+
+    function slotCoveredByDrag(slot) {
+        if (!draggingItem || dragPreviewIndex < 0)
+            return false
+
+        const span = itemSpan(draggedKey)
+        const start = normalizeSlotForSpan(dragPreviewIndex, span)
+        return slot >= start && slot < start + span
+    }
+
+    function columnWidth() {
+        return columnCount > 0 ? Math.max(1, (width - itemSpacing * (columnCount - 1)) / columnCount) : width
+    }
+
+    function widthForSpan(span) {
+        return columnWidth() * span + itemSpacing * Math.max(0, span - 1)
     }
 
     function itemLabel(key) {
-        return itemLabelProvider ? itemLabelProvider(key) : ""
+        const row = rowForKey(key)
+        return itemLabelProvider && row ? itemLabelProvider(row.kind, row.size, row.group) : ""
     }
 
     function currentOrder() {
@@ -41,7 +136,7 @@ Item {
             return order
 
         for (let i = 0; i < model.count; i++)
-            order.push(model.get(i).kind)
+            order.push(rowKey(model.get(i)))
 
         return order
     }
@@ -51,94 +146,257 @@ Item {
             return -1
 
         for (let i = 0; i < model.count; i++) {
-            if (model.get(i).kind === key)
+            if (rowKey(model.get(i)) === key)
                 return i
         }
 
         return -1
     }
 
-    function topForOrderIndex(order, index) {
+    function layoutMap(order) {
+        const map = {}
+        const cells = []
+        const rowHeights = {}
+        let maxRow = 0
+        const colWidth = columnWidth()
+
+        for (let i = 0; i < order.length; i++) {
+            const key = order[i]
+            const span = itemSpan(key)
+            const h = itemHeight(key)
+            let slot = root.draggingItem && key === root.draggedKey && root.dragPreviewIndex >= 0 ? root.dragPreviewIndex : itemSlot(key)
+            if (slot < 0)
+                slot = i
+
+            let row = Math.floor(slot / columnCount)
+            let col = slot % columnCount
+            if (span >= columnCount)
+                col = 0
+            else if (col + span > columnCount)
+                col = columnCount - span
+
+            slot = row * columnCount + col
+            cells.push({ "key": key, "slot": slot, "row": row, "col": col, "span": span, "height": h })
+            rowHeights[row] = Math.max(rowHeights[row] || cellHeight(), h)
+            maxRow = Math.max(maxRow, row)
+        }
+
+        const rowTops = {}
         let y = 0
-        for (let i = 0; i < index; i++)
-            y += itemHeight(order[i]) + itemSpacing
-        return y
+        for (let rowIndex = 0; rowIndex <= maxRow; rowIndex++) {
+            rowTops[rowIndex] = y
+            y += (rowHeights[rowIndex] || cellHeight()) + itemSpacing
+        }
+
+        let maxBottom = 0
+        for (let c = 0; c < cells.length; c++) {
+            const cell = cells[c]
+            const top = rowTops[cell.row] || 0
+            map[cell.key] = {
+                "x": cell.col * (colWidth + itemSpacing),
+                "y": top,
+                "width": widthForSpan(cell.span),
+                "height": cell.height,
+                "span": cell.span,
+                "slot": cell.slot
+            }
+            maxBottom = Math.max(maxBottom, top + cell.height)
+        }
+
+        map.__height = maxBottom
+        map.__rowTops = rowTops
+        map.__rowHeights = rowHeights
+        map.__maxRow = maxRow
+        return map
     }
 
     function layoutHeight() {
         if (!model)
             return 0
 
-        let h = 0
-        for (let i = 0; i < model.count; i++)
-            h += itemHeight(model.get(i).kind)
-
-        return h + Math.max(0, model.count - 1) * itemSpacing
+        return layoutMap(currentOrder()).__height
     }
 
     function visualOrder() {
-        const order = currentOrder()
-        if (!draggingItem || draggedKey === "" || dragPreviewIndex < 0)
-            return order
-
-        const without = []
-        for (let i = 0; i < order.length; i++) {
-            if (order[i] !== draggedKey)
-                without.push(order[i])
-        }
-
-        const insertAt = Math.max(0, Math.min(without.length, dragPreviewIndex))
-        without.splice(insertAt, 0, draggedKey)
-        return without
+        return currentOrder()
     }
 
-    function visualTop(key) {
-        const order = visualOrder()
+    function visualGeometry(key) {
+        const geometry = layoutMap(visualOrder())[key]
+        return geometry ? geometry : { "x": 0, "y": 0, "width": width, "height": itemHeight(key), "span": columnCount }
+    }
+
+    function clampDragLeft(key, left) {
+        const maxLeft = width - widthForSpan(itemSpan(key))
+        return Math.max(0, Math.min(maxLeft, left))
+    }
+
+    function clampDragTop(key, top) {
+        const maxTop = Math.max(0, layoutHeight() + (cellHeight() + itemSpacing) * 4 - itemHeight(key))
+        return Math.max(0, Math.min(maxTop, top))
+    }
+
+    function normalizeSlotForSpan(slot, span) {
+        const rowStart = Math.floor(Math.max(0, slot) / columnCount) * columnCount
+        const col = Math.max(0, slot) % columnCount
+
+        if (span >= columnCount)
+            return rowStart
+        if (col + span > columnCount)
+            return rowStart + columnCount - span
+        return rowStart + col
+    }
+
+    function slotForPosition(key, left, top) {
+        const span = itemSpan(key)
+        const draggedCenterX = left + widthForSpan(itemSpan(key)) / 2
+        const draggedCenterY = top + itemHeight(key) / 2
+        const colWidth = columnWidth()
+        const col = span >= columnCount ? 0 : Math.max(0, Math.min(columnCount - span, Math.floor(draggedCenterX / (colWidth + itemSpacing))))
+        const layout = layoutMap(currentOrder())
+        let row = 0
+
+        for (let r = 0; r <= layout.__maxRow + 8; r++) {
+            const rowTop = layout.__rowTops[r] !== undefined ? layout.__rowTops[r] : r * (cellHeight() + itemSpacing)
+            const rowHeight = layout.__rowHeights[r] !== undefined ? layout.__rowHeights[r] : cellHeight()
+            if (draggedCenterY < rowTop + rowHeight + itemSpacing / 2) {
+                row = r
+                break
+            }
+        }
+
+        return normalizeSlotForSpan(row * columnCount + col, span)
+    }
+
+    function occupiedCells(ignoreKey) {
+        const used = {}
+        const order = currentOrder()
         for (let i = 0; i < order.length; i++) {
-            if (order[i] === key)
-                return topForOrderIndex(order, i)
+            const key = order[i]
+            if (key === ignoreKey)
+                continue
+            const slot = itemSlot(key)
+            if (slot < 0)
+                continue
+            const span = itemSpan(key)
+            const rowStart = Math.floor(slot / columnCount) * columnCount
+            const start = span >= columnCount ? rowStart : slot
+            for (let j = 0; j < span; j++)
+                used[start + j] = key
+        }
+        return used
+    }
+
+    function canPlaceSlot(slot, span, used) {
+        const start = normalizeSlotForSpan(slot, span)
+        for (let i = 0; i < span; i++) {
+            if (used[start + i])
+                return false
+        }
+        return true
+    }
+
+    function conflictingKeys(slot, span, ignoreKey) {
+        const conflicts = []
+        const seen = {}
+        const used = occupiedCells(ignoreKey)
+        const start = normalizeSlotForSpan(slot, span)
+
+        for (let i = 0; i < span; i++) {
+            const key = used[start + i]
+            if (key && !seen[key]) {
+                conflicts.push(key)
+                seen[key] = true
+            }
+        }
+
+        return conflicts
+    }
+
+    function nextFreeSlotForSpan(span, ignoreKey) {
+        const used = occupiedCells(ignoreKey)
+        for (let slot = 0; slot < 128; slot++) {
+            const start = normalizeSlotForSpan(slot, span)
+            if (canPlaceSlot(start, span, used))
+                return start
         }
         return 0
     }
 
-    function clampDragTop(key, top) {
-        const maxTop = layoutHeight() - itemHeight(key)
-        return Math.max(0, Math.min(maxTop, top))
-    }
-
-    function previewIndexForTop(key, top) {
-        const order = currentOrder()
-        const without = []
-        for (let i = 0; i < order.length; i++) {
-            if (order[i] !== key)
-                without.push(order[i])
-        }
-
-        const draggedCenter = top + itemHeight(key) / 2
-        let preview = 0
-        for (let j = 0; j < without.length; j++) {
-            const center = topForOrderIndex(without, j) + itemHeight(without[j]) / 2
-            if (draggedCenter > center)
-                preview = j + 1
-        }
-
-        return Math.max(0, Math.min(model ? model.count - 1 : 0, preview))
+    function nextAvailableSlotForKind(kind) {
+        const span = itemSpanProvider ? Math.max(1, Math.min(columnCount, itemSpanProvider(kind, "small", ""))) : 1
+        return nextFreeSlotForSpan(span, "")
     }
 
     function finishDrag() {
         const key = draggedKey
-        const to = dragPreviewIndex
         const from = modelIndex(key)
+        const toSlot = dragPreviewIndex
+
+        if (model && from !== -1 && toSlot !== -1) {
+            const span = itemSpan(key)
+            const oldSlot = normalizeSlotForSpan(itemSlot(key), span)
+            const targetSlot = normalizeSlotForSpan(toSlot, span)
+            const conflicts = conflictingKeys(targetSlot, span, key)
+
+            itemMovedToSlot(key, targetSlot)
+
+            for (let i = 0; i < conflicts.length; i++) {
+                const conflictKey = conflicts[i]
+                const conflictSpan = itemSpan(conflictKey)
+                let replacementSlot = i === 0 && oldSlot >= 0 ? normalizeSlotForSpan(oldSlot, conflictSpan) : -1
+
+                if (replacementSlot < 0 || !canPlaceSlot(replacementSlot, conflictSpan, occupiedCells(conflictKey)))
+                    replacementSlot = nextFreeSlotForSpan(conflictSpan, conflictKey)
+
+                itemMovedToSlot(conflictKey, replacementSlot)
+            }
+        }
 
         draggingItem = false
         draggedKey = ""
         dragPreviewIndex = -1
+        dragLeft = 0
         dragTop = 0
 
-        if (model && from !== -1 && to !== -1 && from !== to)
-            model.move(from, to, 1)
-
         itemDropped()
+    }
+
+    Repeater {
+        model: root.editMode ? root.hitboxCount() : 0
+
+        delegate: Rectangle {
+            readonly property var hitbox: root.hitboxGeometry(index)
+
+            x: hitbox.x
+            y: hitbox.y
+            width: hitbox.size
+            height: hitbox.size
+            radius: height / 2
+            z: 1
+            visible: !root.slotOccupied(index) && !root.slotCoveredByDrag(index)
+            opacity: root.dragPreviewIndex === index ? 0.98 : 0.68
+            color: root.dragPreviewIndex === index
+                ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16)
+                : Qt.rgba(1, 1, 1, 0.035)
+            border.width: 1
+            border.color: root.dragPreviewIndex === index
+                ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.42)
+                : Qt.rgba(1, 1, 1, 0.14)
+
+            Behavior on opacity { NumberAnimation { duration: Theme.animationQuick } }
+            Behavior on color { ColorAnimation { duration: Theme.animationHover } }
+            Behavior on border.color { ColorAnimation { duration: Theme.animationHover } }
+
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 1
+                radius: height / 2
+                color: "transparent"
+                border.width: 1
+                border.color: Qt.rgba(1, 1, 1, root.dragPreviewIndex === index ? 0.20 : 0.075)
+            }
+        }
     }
 
     Repeater {
@@ -149,18 +407,27 @@ Item {
 
             required property int index
             required property string kind
-            readonly property bool isDragged: root.draggingItem && root.draggedKey === kind
-            readonly property real restingY: root.visualTop(kind)
+            required property string moduleId
+            required property string size
+            required property string group
+            required property int slot
+            readonly property string itemKey: moduleId !== "" ? moduleId : kind
+            readonly property bool isDragged: root.draggingItem && root.draggedKey === itemKey
+            readonly property var restingGeometry: root.visualGeometry(itemKey)
 
-            x: 0
-            y: isDragged ? root.dragTop : restingY
-            width: root.width
-            height: root.itemHeight(kind)
+            x: isDragged ? root.dragLeft : restingGeometry.x
+            y: isDragged ? root.dragTop : restingGeometry.y
+            width: isDragged ? root.widthForSpan(root.itemSpan(itemKey)) : restingGeometry.width
+            height: restingGeometry.height
             z: isDragged ? 20 : (root.editMode ? 5 : 0)
             scale: isDragged ? 1.025 : 1
             opacity: isDragged ? Theme.opacityDragging : 1
 
             Behavior on y {
+                enabled: !stackDelegate.isDragged
+                NumberAnimation { duration: Theme.animationFast; easing.type: Easing.OutCubic }
+            }
+            Behavior on x {
                 enabled: !stackDelegate.isDragged
                 NumberAnimation { duration: Theme.animationFast; easing.type: Easing.OutCubic }
             }
@@ -173,7 +440,15 @@ Item {
 
                 onLoaded: {
                     if (item && item.itemKey !== undefined)
-                        item.itemKey = stackDelegate.kind
+                        item.itemKey = stackDelegate.itemKey
+                    if (item && item.itemKind !== undefined)
+                        item.itemKind = stackDelegate.kind
+                    if (item && item.itemSize !== undefined)
+                        item.itemSize = stackDelegate.size
+                    if (item && item.itemGroup !== undefined)
+                        item.itemGroup = stackDelegate.group
+                    if (item && item.itemSlot !== undefined)
+                        item.itemSlot = stackDelegate.slot
                 }
             }
 
@@ -183,7 +458,7 @@ Item {
                 color: root.editOverlayColor
                 border.width: 1
                 border.color: root.editOverlayBorderColor
-                visible: root.editMode
+                visible: root.editMode && stackDelegate.width >= 96
             }
 
             Text {
@@ -191,8 +466,8 @@ Item {
                 anchors.bottom: parent.bottom
                 anchors.leftMargin: Theme.spacingMedium
                 anchors.bottomMargin: Theme.spacing
-                visible: root.editMode
-                text: root.itemLabel(kind)
+                visible: false
+                text: root.itemLabel(stackDelegate.itemKey)
                 color: root.labelColor
                 font {
                     family: root.labelFontFamily
@@ -201,32 +476,38 @@ Item {
                 }
             }
 
-            MouseArea {
-                id: dragArea
+	        MouseArea {
+	            id: dragArea
 
-                property real grabY: 0
+	            property real grabY: 0
+	            property real grabX: 0
 
-                anchors.fill: parent
-                enabled: root.editMode && (!root.draggingItem || stackDelegate.isDragged)
-                hoverEnabled: true
-                cursorShape: stackDelegate.isDragged ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+	            anchors.fill: parent
+	            enabled: root.editMode && (!root.draggingItem || stackDelegate.isDragged)
+	            hoverEnabled: true
+	            preventStealing: true
+	            cursorShape: stackDelegate.isDragged ? Qt.ClosedHandCursor : Qt.OpenHandCursor
 
-                onPressed: mouse => {
-                    grabY = mouse.y
-                    root.draggedKey = stackDelegate.kind
-                    root.dragPreviewIndex = stackDelegate.index
-                    root.dragTop = stackDelegate.y
-                    root.draggingItem = true
-                }
+	    onPressed: mouse => {
+		        const pointer = mapToItem(root, mouse.x, mouse.y)
+		        grabX = pointer.x - stackDelegate.x
+		        grabY = pointer.y - stackDelegate.y
+		        root.draggedKey = stackDelegate.itemKey
+		        root.dragPreviewIndex = stackDelegate.slot
+		        root.dragLeft = stackDelegate.x
+		        root.dragTop = stackDelegate.y
+		        root.draggingItem = true
+	                }
 
-                onPositionChanged: mouse => {
-                    if (!stackDelegate.isDragged)
-                        return
+	            onPositionChanged: mouse => {
+	                if (!stackDelegate.isDragged)
+	                    return
 
-                    const pointerY = stackDelegate.y + mouse.y
-                    root.dragTop = root.clampDragTop(stackDelegate.kind, pointerY - grabY)
-                    root.dragPreviewIndex = root.previewIndexForTop(stackDelegate.kind, root.dragTop)
-                }
+		        const pointer = mapToItem(root, mouse.x, mouse.y)
+		        root.dragLeft = root.clampDragLeft(stackDelegate.itemKey, pointer.x - grabX)
+		        root.dragTop = root.clampDragTop(stackDelegate.itemKey, pointer.y - grabY)
+		        root.dragPreviewIndex = root.slotForPosition(stackDelegate.itemKey, root.dragLeft, root.dragTop)
+	            }
 
                 onReleased: {
                     if (stackDelegate.isDragged)
@@ -236,10 +517,40 @@ Item {
                 onCanceled: {
                     if (stackDelegate.isDragged) {
                         root.draggingItem = false
-                        root.draggedKey = ""
-                        root.dragPreviewIndex = -1
-                        root.dragTop = 0
+	                        root.draggedKey = ""
+	                        root.dragPreviewIndex = -1
+	                        root.dragLeft = 0
+	                        root.dragTop = 0
                     }
+                }
+            }
+
+            Rectangle {
+                id: removeButton
+                x: stackDelegate.width < 96 ? (stackDelegate.width - Math.max(44, Math.min(stackDelegate.width, stackDelegate.height) * 0.72)) / 2 - 7 : -9
+                y: stackDelegate.width < 96 ? (stackDelegate.height - Math.max(44, Math.min(stackDelegate.width, stackDelegate.height) * 0.72)) / 2 - 7 : -9
+                width: 22
+                height: 22
+                radius: height / 2
+                z: 40
+                visible: root.editMode
+                color: removeArea.containsMouse ? Theme.iconActive : Qt.rgba(1, 1, 1, 0.82)
+                border.width: 1
+                border.color: Qt.rgba(0, 0, 0, 0.16)
+
+                Text {
+                    anchors.centerIn: parent
+                    text: "−"
+                    color: "#2c2c2e"
+                    font { family: Theme.fontFamily; pixelSize: 17; weight: Font.DemiBold }
+                }
+
+                MouseArea {
+                    id: removeArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.itemRemoveRequested(stackDelegate.itemKey)
                 }
             }
         }

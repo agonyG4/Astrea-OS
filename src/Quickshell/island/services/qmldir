@@ -1,0 +1,5 @@
+ArtworkFetcher       1.0 ArtworkFetcher.qml
+DominantColorProcess 1.0 DominantColorProcess.qml
+IslandConfigMonitor  1.0 IslandConfigMonitor.qml
+MusicBarsProcess     1.0 MusicBarsProcess.qml
+PlayerCommands       1.0 PlayerCommands.qml

@@ -4,6 +4,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
+import "../../AstreaI18n" as AstreaI18n
 
 Item {
     id: root
@@ -44,7 +45,7 @@ Item {
             spacing: 0
 
             SectionHeader {
-                text: "USER PROFILE"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.text.user_profile"]) || "USER PROFILE")
                 Layout.bottomMargin: 12
                 textSecondary: root.textSecondary
             }
@@ -128,7 +129,7 @@ Item {
                     
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        text: "Administrator"
+                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.text.administrator"]) || "Administrator")
                         font.pixelSize: 13
                         font.weight: Font.Normal
                         color: root.textSecondary
@@ -207,8 +208,8 @@ Item {
                     Item { Layout.preferredHeight: 4 } // Spacer
 
                     SettingRow {
-                        label: "Display Name"
-                        sublabel: "Name shown on lockscreen and menus"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.label.display_name"]) || "Display Name")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.sublabel.name_shown_on_lockscreen_and_menus"]) || "Name shown on lockscreen and menus")
                         textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
                         
                         Rectangle {
@@ -233,8 +234,8 @@ Item {
                     }
 
                     SettingRow {
-                        label: "Change Password"
-                        sublabel: "Update your login and sudo password"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.label.change_password"]) || "Change Password")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.sublabel.update_your_login_and_sudo_password"]) || "Update your login and sudo password")
                         textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
                         
                         Rectangle {
@@ -247,7 +248,7 @@ Item {
                             
                             Text {
                                 anchors.centerIn: parent
-                                text: "Change..."
+                                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.text.change"]) || "Change...")
                                 color: root.textPrimary
                                 font.pixelSize: 13
                                 font.weight: Font.Medium
@@ -261,8 +262,8 @@ Item {
                     }
 
                     SettingRow {
-                        label: "Automatic Login"
-                        sublabel: "Login without asking for password"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.label.automatic_login"]) || "Automatic Login")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.sublabel.login_without_asking_for_password"]) || "Login without asking for password")
                         isLast: true
                         textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
                         

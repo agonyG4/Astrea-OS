@@ -16,6 +16,7 @@ Use this note as the first stop before reading subsystem notes.
 - [[Astrea - Agent Working Rules]]
 - [[Astrea - Design Rules]]
 - [[Astrea - Project Overview]]
+- [[Astrea - Runtime Snapshot]]
 - [[Astrea - Entry Points]]
 - [[Astrea - Structure Breakdown]]
 - [[Astrea - Data Flow]]
@@ -34,12 +35,12 @@ Use this note as the first stop before reading subsystem notes.
 - [[MOC - Dependencies]]
 
 ## Architecture Domains
-- Architecture: [[Astrea - Project Overview]], [[Astrea - Structure Breakdown]], [[Astrea - Entry Points]], [[Astrea - Data Flow]], [[Astrea - Patterns]]
+- Architecture: [[Astrea - Project Overview]], [[Astrea - Runtime Snapshot]], [[Astrea - Structure Breakdown]], [[Astrea - Entry Points]], [[Astrea - Data Flow]], [[Astrea - Patterns]]
 - UI runtime: [[Astrea - Quickshell Runtime]], [[Astrea - Desktop Icons]], [[Astrea - Top Bar]], [[Astrea - Island]], [[Astrea - Spotlight]], [[Astrea - Notifications]]
-- Apps: [[Astrea - Settings App]], [[Astrea - Explorer App]], [[Astrea - Weather App]]
+- Apps: [[Astrea - About App]], [[Astrea - Settings App]], [[Astrea - Explorer App]], [[Astrea - Weather App]]
 - Core: [[Astrea - Core Components]], [[Astrea - Features]]
 - Bridges and backends: [[Astrea - Core Bridge]], [[Astrea - Explorer Backend]], [[Astrea - FileChooser Portal]], [[Astrea - Weather Bridge]], [[Astrea - Audio Bridge]], [[Astrea - Display Bridge]], [[Astrea - Wallpaper Bridge]]
-- System: [[Astrea - System Layer]], [[Astrea - Bluetooth Manager]]
+- System: [[Astrea - System Layer]], [[Astrea - Launcher and Latency]], [[Astrea - Bluetooth Manager]]
 - Data and assets: [[Astrea - Assets and Data]]
 - Meta: [[Astrea - AI Project Brain]], [[Astrea - Agent Working Rules]], [[Astrea - Design Rules]], [[Astrea - Unknowns]], [[Astrea - External Dependencies]]
 
@@ -55,6 +56,7 @@ Use this note as the first stop before reading subsystem notes.
 - [[Astrea - Settings App]]
 - [[Astrea - Explorer App]]
 - [[Astrea - Weather App]]
+- [[Astrea - About App]]
 
 ## Backend Map
 - [[Astrea - Core Bridge]]
@@ -64,6 +66,7 @@ Use this note as the first stop before reading subsystem notes.
 - [[Astrea - Display Bridge]]
 - [[Astrea - Wallpaper Bridge]]
 - [[Astrea - Bluetooth Manager]]
+- [[Astrea - Launcher and Latency]]
 
 ## Open Questions
 - [[Astrea - Unknowns]]
@@ -75,18 +78,20 @@ For code agents:
 2. [[Astrea - Code Agent Guide]]
 3. [[Astrea - Agent Working Rules]]
 4. [[Astrea - Agent Task Recipes]]
-5. [[Astrea - Entry Points]]
-6. [[Astrea - Data Flow]]
-7. The matching domain MOC.
-8. The specific app, UI, bridge, system, or data note.
+5. [[Astrea - Runtime Snapshot]]
+6. [[Astrea - Entry Points]]
+7. [[Astrea - Data Flow]]
+8. The matching domain MOC.
+9. The specific app, UI, bridge, system, or data note.
 
 For a broad understanding:
 1. [[Astrea - Project Overview]]
 2. [[Astrea - Structure Breakdown]]
-3. [[Astrea - Entry Points]]
-4. [[Astrea - Data Flow]]
-5. [[Astrea - Patterns]]
-6. The domain MOC that matches the task.
+3. [[Astrea - Runtime Snapshot]]
+4. [[Astrea - Entry Points]]
+5. [[Astrea - Data Flow]]
+6. [[Astrea - Patterns]]
+7. The domain MOC that matches the task.
 
 For bug investigation:
 1. Identify the domain from [[Astrea - Entry Points]].

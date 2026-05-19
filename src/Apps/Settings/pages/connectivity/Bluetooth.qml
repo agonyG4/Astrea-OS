@@ -5,6 +5,7 @@ import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
+import "../../AstreaI18n" as AstreaI18n
 
 ScrollPage {
     id: root
@@ -162,45 +163,26 @@ ScrollPage {
 
     Process {
         id: scanProc
-        command: ["bash", "-c", "
-            (
-                echo 'scan on'
-                sleep 20
-                echo 'scan off'
-                sleep 1
-            ) | bluetoothctl | while IFS= read -r line; do
-                if echo \"$line\" | grep -q '\\[NEW\\] Device'; then
-                    MAC=$(echo \"$line\" | grep -oE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}')
-                    NAME=$(echo \"$line\" | sed 's/.*Device [0-9A-Fa-f:]*[[:space:]]*//')
-                    NAME=$(echo \"$NAME\" | tr -d '\"\\\\' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-                    if [ -n \"$MAC\" ] && [ -n \"$NAME\" ] && [ \"$NAME\" != \"$MAC\" ]; then
-                        echo \"found|$MAC|$NAME\"
-                    fi
-                fi
-                if echo \"$line\" | grep -q 'Discovery stopped\\|Discovering: no'; then
-                    echo 'scan_done'
-                fi
-            done
-        "]
+        command: ["python3", root.scriptPath, "scan-stream"]
         running: false
         stdout: SplitParser {
             onRead: data => {
-                const line = data.trim()
-                if (line === "scan_done") {
-                    root.scanning = false
-                } else if (line.indexOf("found|") === 0) {
-                    const p = line.split("|")
-                    if (p.length >= 3) {
-                        const mac = p[1], name = p[2]
-                        // Check if already in paired or scanned
+                try {
+                    const payload = JSON.parse(data.trim())
+                    if (payload.event === "done") {
+                        root.scanning = false
+                    } else if (payload.event === "found") {
+                        const mac = payload.mac || ""
+                        const name = payload.name || ""
                         const isPaired = root.pairedDevices.some(d => d.mac === mac)
                         const isScanned = root.scannedDevices.some(d => d.mac === mac)
-                        if (!isPaired && !isScanned) {
+                        if (mac && name && !isPaired && !isScanned) {
                             const updated = root.scannedDevices.slice()
                             updated.push({ mac: mac, name: name })
                             root.scannedDevices = updated
                         }
                     }
+                } catch (error) {
                 }
             }
         }
@@ -216,7 +198,26 @@ ScrollPage {
     Process {
         id: pairProc
         property string targetMac: ""
-        command: ["bash", "-c", "bluetoothctl pair \"$1\" && bluetoothctl trust \"$1\"", "--", targetMac]
+        command: ["bluetoothctl", "pair", targetMac]
+        running: false
+        onExited: exitCode => {
+            if (exitCode === 0) {
+                trustProc.targetMac = targetMac
+                trustProc.running = false
+                trustProc.running = true
+                return
+            }
+            root.pairingMac = ""
+            root.loadStatus()
+            root.scannedDevices = []
+            root.startScan() // Refresh scan after pairing
+        }
+    }
+
+    Process {
+        id: trustProc
+        property string targetMac: ""
+        command: ["bluetoothctl", "trust", targetMac]
         running: false
         onExited: () => {
             root.pairingMac = ""
@@ -272,7 +273,7 @@ ScrollPage {
                         spacing: 2
 
                         Text {
-                            text: "Bluetooth"
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.bluetooth.text.bluetooth"]) || "Bluetooth")
                             color: Theme.textPrimary
                             font.pixelSize: 16
                             font.weight: Font.DemiBold
@@ -280,7 +281,7 @@ ScrollPage {
                         }
 
                         Text {
-                            text: "Conecte-se a acessórios que você pode usar para atividades como streaming de música, digitação e jogos."
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.bluetooth.text.conecte_se_a_acessa3rios_que_vocaa_pode_usar_par"]) || "Connect to accessories you can use for music streaming, typing, and gaming.")
                             color: Theme.textSecondary
                             font.pixelSize: 13
                             Layout.fillWidth: true
@@ -326,7 +327,7 @@ ScrollPage {
 
         // ── Section Header: MY DEVICES ──────────────────────────────────
         SectionHeader {
-            text: "MEUS DISPOSITIVOS"
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.bluetooth.text.meus_dispositivos"]) || "MY DEVICES")
             Layout.leftMargin: 12
             Layout.topMargin: 8
             visible: root.pairedDevices.length > 0
@@ -368,7 +369,7 @@ ScrollPage {
             visible: root.scannedDevices.length > 0
             
             SectionHeader {
-                text: "OUTROS DISPOSITIVOS"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.bluetooth.text.outros_dispositivos"]) || "OTHER DEVICES")
                 Layout.fillWidth: true
             }
             

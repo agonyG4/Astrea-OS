@@ -4,6 +4,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
+import "../../AstreaI18n" as AstreaI18n
 
 Item {
     id: root
@@ -21,25 +22,97 @@ Item {
 
     readonly property string _script:
         (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/system/audio.py"
+    readonly property string spatialSinkName: "effect_input.virtual-surround-7.1-hesuvi"
 
     // ── State ─────────────────────────────────────────────────────────────
     property bool   loading:      true
+    property bool   showLoading:  false
     property string errorMsg:     ""
     property var    sinks:        []
+    property var    outputsState: ({ all: [], visible: [], hidden: [], hidden_names: [] })
     property var    apps:         []
+    property var    spatial:      ({ available: false, enabled: false, sink: spatialSinkName, target_sink: "" })
     property var    wp:           ({ sample_rate: 48000, buffer_size: 1024 })
     property var    mutedMap:     ({})
     property var    volumeMap:    ({})
     property bool   wpPending:    false
     property bool   wpRestarting: false
+    property bool   spatialPending: false
+    property int    _emptyAppsRefreshes: 0
+    property string _appsSignature: ""
     property int    editRate:     0
     property int    editBuffer:   0
 
     readonly property var rateOptions:   [44100, 48000, 88200, 96000, 192000]
     readonly property var bufferOptions: [32, 64, 128, 256, 512, 1024, 2048]
+    readonly property bool spatialAvailable: root.spatial.available === true
+    readonly property bool spatialActive: root.spatial.enabled === true
+    readonly property bool spatialCanDisable: root.spatialFallbackSinkName().length > 0
+    readonly property string spatialTargetSinkName: root.spatial.target_sink || root.spatialFallbackSinkName()
+    readonly property var outputSinks: root.outputsState.visible || []
+    readonly property var hiddenOutputSinks: root.outputsState.hidden || []
+
+    onLoadingChanged: {
+        if (loading) {
+            loadingTextDelay.restart()
+        } else {
+            loadingTextDelay.stop()
+            showLoading = false
+        }
+    }
+
+    Timer {
+        id: loadingTextDelay
+        interval: 220
+        repeat: false
+        onTriggered: root.showLoading = root.loading
+    }
 
     // ── Processos ─────────────────────────────────────────────────────────
     property string _buf: ""
+    property bool _fetchAgain: false
+
+    function appsSignature(items) {
+        let parts = []
+        for (let item of items || []) {
+            parts.push([
+                item.index,
+                item.name || "",
+                item.icon || "",
+                Math.round((item.volume || 0) * 1000),
+                item.muted ? 1 : 0
+            ].join(":"))
+        }
+        return parts.join("|")
+    }
+
+    function applyAppsSnapshot(items) {
+        const next = items || []
+        if (next.length === 0 && root.apps.length > 0) {
+            root._emptyAppsRefreshes += 1
+            if (root._emptyAppsRefreshes < 2)
+                return
+        } else {
+            root._emptyAppsRefreshes = 0
+        }
+
+        const sig = root.appsSignature(next)
+        if (sig === root._appsSignature)
+            return
+
+        root._appsSignature = sig
+        root.apps = next
+    }
+
+    function refreshAudioInfo() {
+        if (fetchProc.running) {
+            root._fetchAgain = true
+            return
+        }
+        root._buf = ""
+        root.errorMsg = ""
+        fetchProc.running = true
+    }
 
     Process {
         id: fetchProc
@@ -48,16 +121,27 @@ Item {
         stdout: SplitParser { onRead: (l) => root._buf += l }
         onExited: (code) => {
             root.loading = false
-            if (code !== 0) { root.errorMsg = "Script failed (exit " + code + ")"; return }
-            try {
-                const d = JSON.parse(root._buf)
-                root.sinks = d.sinks ?? []
-                if (!root._sliderActive) root.apps = d.apps ?? []
-                root.wp = d.wp ?? { sample_rate: 48000, buffer_size: 1024 }
-                root.editRate = root.wp.sample_rate
-                root.editBuffer = root.wp.buffer_size
-                root._buf = ""
-            } catch(e) { root.errorMsg = "Parse error: " + e }
+            if (code === 0) {
+                try {
+                    const d = JSON.parse(root._buf)
+                    root.sinks = d.sinks ?? []
+                    root.outputsState = d.outputs_state ?? { all: d.outputs ?? [], visible: d.outputs ?? [], hidden: d.hidden_output_items ?? [], hidden_names: d.hidden_outputs ?? [] }
+                    root.spatial = d.spatial ?? { available: false, enabled: false, sink: root.spatialSinkName, target_sink: "" }
+                    root.wp = d.wp ?? { sample_rate: 48000, buffer_size: 1024 }
+                    root.editRate = root.wp.sample_rate
+                    root.editBuffer = root.wp.buffer_size
+                    root._buf = ""
+                } catch(e) {
+                    root.errorMsg = "Parse error: " + e
+                }
+            } else if (code !== 15 && code !== 143) {
+                root.errorMsg = "Script failed (exit " + code + ")"
+            }
+            root._buf = ""
+            if (root._fetchAgain) {
+                root._fetchAgain = false
+                Qt.callLater(root.refreshAudioInfo)
+            }
         }
     }
 
@@ -70,10 +154,13 @@ Item {
         id: applyProc
         running: false; command: []
         onExited: (code) => {
+            root.spatialPending = false
             if (code === 0 && root.wpPending) {
                 root.wpPending    = false
                 root.wpRestarting = true
                 restartProc.running = true
+            } else if (code === 0) {
+                root.refreshAudioInfo()
             }
         }
     }
@@ -84,9 +171,8 @@ Item {
         running: false
         onExited: () => {
             root.wpRestarting = false
-            root._buf = ""; root.loading = true
-            fetchProc.running = false
-            Qt.callLater(() => fetchProc.running = true)
+            root.loading = true
+            Qt.callLater(root.refreshAudioInfo)
         }
     }
 
@@ -104,19 +190,111 @@ Item {
         }
     }
 
+    function _setSpatialOptimistic(enabled, target) {
+        var next = Object.assign({}, root.spatial)
+        next.enabled = enabled
+        next.target_sink = target || next.target_sink || root.spatialFallbackSinkName()
+        root.spatial = next
+    }
+
+    function spatialFallbackSinkName() {
+        for (let sink of root.outputSinks) {
+            if (sink && sink.default)
+                return sink.name
+        }
+        for (let sink of root.outputSinks) {
+            if (sink)
+                return sink.name
+        }
+        return ""
+    }
+
+    function toggleSpatialAudio() {
+        if (!root.spatialAvailable || root.spatialPending)
+            return
+        if (root.spatialActive) {
+            const fallback = root.spatialTargetSinkName || root.spatialFallbackSinkName()
+            if (fallback.length > 0) {
+                root.spatialPending = true
+                root._setSpatialOptimistic(false, fallback)
+                applyProc.command = ["pactl", "set-default-sink", fallback]
+                applyProc.running = false
+                applyProc.running = true
+            }
+        } else {
+            const target = root.spatialTargetSinkName || root.spatialFallbackSinkName()
+            if (target.length > 0) {
+                const currentTarget = root.spatial.target_sink || ""
+                root.spatialPending = true
+                root._setSpatialOptimistic(true, target)
+                if (target === currentTarget) {
+                    applyProc.command = ["pactl", "set-default-sink", root.spatialSinkName]
+                    applyProc.running = false
+                    applyProc.running = true
+                } else {
+                    root._apply({ spatial_enabled: true, target_sink: target })
+                }
+            }
+        }
+    }
+
+    property var outputMenuSink: ({})
+    property bool hiddenOutputsExpanded: false
+
+    function openOutputMenu(sink, x, y) {
+        root.outputMenuSink = sink || {}
+        outputMenu.openAt(x, y)
+    }
+
+    function setOutputAsDefault(name) {
+        if (!name)
+            return
+        root._apply({ set_default_sink: name })
+    }
+
+    function hideOutput(name) {
+        if (!name)
+            return
+        root.hiddenOutputsExpanded = true
+        root._apply({ hide_output: name })
+    }
+
+    function showOutput(name) {
+        if (!name)
+            return
+        root._apply({ show_output: name })
+    }
+
     property string _appsBuf: ""
+    property bool _fetchAppsAgain: false
+
+    function refreshApps() {
+        if (fetchAppsProc.running) {
+            root._fetchAppsAgain = true
+            return
+        }
+        root._appsBuf = ""
+        fetchAppsProc.running = true
+    }
+
     Process {
         id: fetchAppsProc
         command: ["python3", root._script, "apps"]
         running: false
         stdout: SplitParser { onRead: (l) => root._appsBuf += l }
         onExited: (code) => {
-            if (code !== 0) { root._appsBuf = ""; return }
-            try {
-                const d = JSON.parse(root._appsBuf)
-                if (!root._sliderActive) root.apps = d.apps ?? []
-            } catch(e) {}
+            if (code === 0) {
+                try {
+                    const d = JSON.parse(root._appsBuf)
+                    if (!root._sliderActive)
+                        root.applyAppsSnapshot(d.apps ?? [])
+                } catch(e) {}
+            }
             root._appsBuf = ""
+            if (root._fetchAppsAgain) {
+                root._fetchAppsAgain = false
+                Qt.callLater(root.refreshApps)
+            }
         }
     }
 
@@ -124,21 +302,21 @@ Item {
         interval: 2000; repeat: true; running: true
         onTriggered: {
             if (!root.loading && !root.wpRestarting) {
-                fetchAppsProc.running = false
-                Qt.callLater(() => fetchAppsProc.running = true)
+                root.refreshApps()
             }
         }
     }
 
-    Component.onCompleted: fetchProc.running = true
+    Component.onCompleted: {
+        root.refreshAudioInfo()
+        root.refreshApps()
+    }
 
     Timer {
         interval: 2000; repeat: true; running: true
         onTriggered: {
             if (!root.loading && !root._sliderActive && !root.wpRestarting) {
-                root._buf = ""
-                fetchProc.running = false
-                Qt.callLater(() => fetchProc.running = true)
+                root.refreshAudioInfo()
             }
         }
     }
@@ -146,8 +324,8 @@ Item {
     // ── Loading / Error ───────────────────────────────────────────────────
     Text {
         anchors.centerIn: parent
-        visible: root.loading
-        text: root.wpRestarting ? "Restarting WirePlumber…" : "Loading audio info…"
+        visible: root.showLoading
+        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.text.loading_audio_infoa"]) || "Loading audio info…")
         color: root.textSecondary; font.pixelSize: Theme.fontSizeNormal
     }
     Text {
@@ -171,8 +349,42 @@ Item {
             width: parent.width
             spacing: 0
 
+            // ── Spatial Audio ─────────────────────────────────────────────
+            SectionHeader { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.text.spatial_audio"]) || "SPATIAL AUDIO"); Layout.bottomMargin: 12 }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.bottomMargin: 24
+                radius: 12; color: root.cardBg
+                border.width: 1; border.color: root.cardBorder
+                implicitHeight: spatialCol.implicitHeight
+
+                ColumnLayout {
+                    id: spatialCol
+                    anchors { left: parent.left; right: parent.right }
+                    spacing: 0
+
+                    SettingRow {
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.label.astrea_spatial_audio"]) || "Astrea Spatial Audio")
+                        sublabel: root.spatialActive
+                            ? "Spatial processing is enabled"
+                            : (root.spatialAvailable ? "Spatial processing is disabled" : "Spatial output is not loaded")
+                        isLast: true
+                        clickable: root.spatialAvailable && (!root.spatialActive || root.spatialCanDisable)
+                        onClicked: root.toggleSpatialAudio()
+
+                        ToggleSwitch {
+                            checked: root.spatialActive
+                            enabled: root.spatialAvailable && (!root.spatialActive || root.spatialCanDisable)
+                            opacity: enabled ? 1 : 0.45
+                            onToggled: root.toggleSpatialAudio()
+                        }
+                    }
+                }
+            }
+
             // ── Output Device ─────────────────────────────────────────────
-            SectionHeader { text: "OUTPUT DEVICE"; Layout.bottomMargin: 12 }
+            SectionHeader { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.text.output_device"]) || "OUTPUT DEVICE"); Layout.bottomMargin: 12 }
 
             Rectangle {
                 Layout.fillWidth: true
@@ -187,33 +399,76 @@ Item {
                     spacing: 0
 
                     Repeater {
-                        model: root.sinks
+                        model: root.outputSinks
                         delegate: SettingRow {
+                            id: outputRow
                             required property var modelData
                             required property int index
                             label:    modelData.description || modelData.name
-                            sublabel: modelData.default ? "Default" : ""
-                            isLast:   index === root.sinks.length - 1
-
-                            onRightClicked: {
-                                renamePopup.openRename(modelData.name, modelData.description || modelData.name)
+                            readonly property bool isSpatialTarget: modelData.spatial_target === true
+                            readonly property bool isDefaultOutput: modelData.default === true
+                            readonly property bool isEffectiveDefault: modelData.effective_default === true
+                            sublabel: isSpatialTarget ? "Spatial Audio: On" : (isDefaultOutput ? "Default" : "")
+                            isLast:   index === root.outputSinks.length - 1 && root.hiddenOutputSinks.length === 0
+                            clickable: true
+                            controlBlocksRowClick: false
+                            onClicked: root.setOutputAsDefault(modelData.name)
+                            onRightClicked: (x, y) => {
+                                const pt = outputRow.mapToItem(outputMenu, x, y)
+                                root.openOutputMenu(modelData, pt.x + 6, pt.y + 6)
                             }
 
                             Rectangle {
                                 width: 18; height: 18; radius: 9
-                                color: modelData.default ? root.accent : "transparent"
+                                color: isEffectiveDefault ? root.accent : "transparent"
                                 border.width: 2
-                                border.color: modelData.default ? root.accent : Qt.rgba(1,1,1,0.3)
+                                border.color: isEffectiveDefault ? root.accent : Qt.rgba(1,1,1,0.3)
                                 Behavior on color { ColorAnimation { duration: 130 } }
                                 Rectangle {
                                     anchors.centerIn: parent
                                     width: 7; height: 7; radius: 4; color: "#fff"
-                                    visible: modelData.default
+                                    visible: isEffectiveDefault
                                 }
-                                MouseArea {
-                                    anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                                    onClicked: root._apply({ set_default_sink: modelData.name })
-                                }
+                            }
+                        }
+                    }
+
+                    SettingRow {
+                        visible: root.hiddenOutputSinks.length > 0
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.label.hidden_output_devices"]) || "Hidden output devices")
+                        sublabel: root.hiddenOutputSinks.length === 1
+                            ? "1 device hidden"
+                            : root.hiddenOutputSinks.length + " devices hidden"
+                        isLast: !root.hiddenOutputsExpanded
+                        clickable: true
+                        controlBlocksRowClick: false
+                        onClicked: root.hiddenOutputsExpanded = !root.hiddenOutputsExpanded
+
+                        Text {
+                            text: root.hiddenOutputsExpanded ? "Hide list" : "Show list"
+                            color: root.accent
+                            font.pixelSize: Theme.fontSizeNormal
+                            font.weight: Font.Medium
+                        }
+                    }
+
+                    Repeater {
+                        model: root.hiddenOutputsExpanded ? root.hiddenOutputSinks : []
+                        delegate: SettingRow {
+                            required property var modelData
+                            required property int index
+                            label: modelData.description || modelData.name
+                            sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.sublabel.hidden"]) || "Hidden")
+                            isLast: index === root.hiddenOutputSinks.length - 1
+                            clickable: true
+                            controlBlocksRowClick: false
+                            onClicked: root.showOutput(modelData.name)
+
+                            Text {
+                                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.text.show"]) || "Show")
+                                color: root.accent
+                                font.pixelSize: Theme.fontSizeNormal
+                                font.weight: Font.Medium
                             }
                         }
                     }
@@ -221,7 +476,7 @@ Item {
             }
 
             // ── Volume por app ────────────────────────────────────────────
-            SectionHeader { text: "APPLICATION VOLUME"; Layout.bottomMargin: 12 }
+            SectionHeader { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.text.application_volume"]) || "APPLICATION VOLUME"); Layout.bottomMargin: 12 }
 
             Rectangle {
                 Layout.fillWidth: true
@@ -233,7 +488,7 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     visible: root.apps.length === 0
-                    text: "No active audio streams"
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.text.no_active_audio_streams"]) || "No active audio streams")
                     color: root.textSecondary; font.pixelSize: Theme.fontSizeNormal
                 }
 
@@ -324,6 +579,14 @@ Item {
                                     implicitHeight: 28
                                     property real maxVal: 1.5
                                     property real sliderValue: (root.volumeMap[modelData.index] !== undefined) ? root.volumeMap[modelData.index] : (modelData.volume || 0.0)
+                                    property bool animatePosition: false
+
+                                    Timer {
+                                        interval: 180
+                                        running: true
+                                        repeat: false
+                                        onTriggered: sliderItem.animatePosition = true
+                                    }
 
                                     Binding {
                                         target: sliderItem
@@ -354,7 +617,7 @@ Item {
                                         anchors.verticalCenter: parent.verticalCenter
                                         width: 14; height: 14; radius: 7
                                         color: "#ffffff"
-                                        Behavior on x { enabled: !dragMa.drag.active; NumberAnimation { duration: 80 } }
+                                        Behavior on x { enabled: sliderItem.animatePosition && !dragMa.drag.active; NumberAnimation { duration: 80 } }
                                     }
 
                                     MouseArea {
@@ -404,93 +667,47 @@ Item {
                 }
             }
 
-            // ── WirePlumber ───────────────────────────────────────────────
-            SectionHeader { text: "PIPEWIRE / WIREPLUMBER"; Layout.bottomMargin: 12 }
-
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.bottomMargin: 24
-                radius: 12; color: root.cardBg
-                border.width: 1; border.color: root.cardBorder
-                implicitHeight: wpCol.implicitHeight
-
-                ColumnLayout {
-                    id: wpCol
-                    anchors { left: parent.left; right: parent.right }
-                    spacing: 0
-
-                    SettingRow {
-                        label: "Sample Rate"
-                        sublabel: "Current: " + root.wp.sample_rate + " Hz"
-                        isLast: false
-                        SelectButton {
-                            implicitWidth: 130
-                            label: root.editRate + " Hz"
-                            options: root.rateOptions.map(r => r + " Hz")
-                            selectedIndex: Math.max(0, root.rateOptions.indexOf(root.editRate))
-                            popupDirection: "up"
-                            onSelected: (i) => {
-                                root.editRate = root.rateOptions[i]
-                                root.wpPending = root.editRate !== root.wp.sample_rate ||
-                                                 root.editBuffer !== root.wp.buffer_size
-                            }
-                        }
-                    }
-
-                    SettingRow {
-                        label: "Buffer Size"
-                        sublabel: "Current: " + root.wp.buffer_size + " samples  (~" +
-                                  Math.round(root.wp.buffer_size / root.wp.sample_rate * 1000) + " ms)"
-                        isLast: false
-                        SelectButton {
-                            implicitWidth: 130
-                            label: root.editBuffer + " samples"
-                            options: root.bufferOptions.map(b => b + " samples")
-                            selectedIndex: Math.max(0, root.bufferOptions.indexOf(root.editBuffer))
-                            popupDirection: "up"
-                            onSelected: (i) => {
-                                root.editBuffer = root.bufferOptions[i]
-                                root.wpPending = root.editRate !== root.wp.sample_rate ||
-                                                 root.editBuffer !== root.wp.buffer_size
-                            }
-                        }
-                    }
-
-                    Item {
-                        Layout.fillWidth: true; implicitHeight: 52
-
-                        Text {
-                            anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: 16 }
-                            text: root.wpPending ? "⚠  Requires WirePlumber restart" : "Changes will restart WirePlumber"
-                            font.pixelSize: Theme.fontSizeSmall
-                            color: root.wpPending ? root.warningColor : root.textSecondary
-                            Behavior on color { ColorAnimation { duration: 150 } }
-                        }
-
-                        Rectangle {
-                            anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 16 }
-                            implicitWidth: applyLbl.implicitWidth + 28; implicitHeight: 32; radius: 8
-                            color: root.wpPending
-                                ? (applyMa.containsMouse ? Qt.lighter(root.accent, 1.15) : root.accent)
-                                : Qt.rgba(1,1,1,0.06)
-                            border.width: root.wpPending ? 0 : 1; border.color: root.cardBorder
-                            Behavior on color { ColorAnimation { duration: 120 } }
-                            Text {
-                                id: applyLbl; anchors.centerIn: parent; text: "Apply"
-                                font.pixelSize: Theme.fontSizeNormal; font.weight: Font.Medium
-                                color: root.wpPending ? "#ffffff" : root.textSecondary
-                            }
-                            MouseArea {
-                                id: applyMa; anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor; enabled: root.wpPending
-                                onClicked: root._apply({ sample_rate: root.editRate, buffer_size: root.editBuffer })
-                            }
-                        }
-                    }
-                }
-            }
-
             Item { implicitHeight: 8 }
+        }
+    }
+
+    ContextMenu {
+        id: outputMenu
+        anchors.fill: parent
+        menuWidth: 220
+        panelColor: root.popupBg
+        borderColor: root.cardBorder
+
+        ContextMenuAction {
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.label.set_as_default"]) || "Set as default")
+            actionEnabled: !(root.outputMenuSink.effective_default === true)
+            onTriggered: {
+                outputMenu.closeMenu()
+                root.setOutputAsDefault(root.outputMenuSink.name || "")
+            }
+        }
+
+        ContextMenuAction {
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.label.rename"]) || "Rename")
+            onTriggered: {
+                const sink = root.outputMenuSink || {}
+                outputMenu.closeMenu()
+                renamePopup.openRename(sink.name || "", sink.description || sink.name || "")
+            }
+        }
+
+        ContextMenuDivider {}
+
+        ContextMenuAction {
+            label: root.outputMenuSink.hidden === true ? "Show" : "Hide"
+            actionEnabled: !(root.outputMenuSink.effective_default === true && root.outputMenuSink.hidden !== true)
+            onTriggered: {
+                outputMenu.closeMenu()
+                if (root.outputMenuSink.hidden === true)
+                    root.showOutput(root.outputMenuSink.name || "")
+                else
+                    root.hideOutput(root.outputMenuSink.name || "")
+            }
         }
     }
 
@@ -523,7 +740,7 @@ Item {
             spacing: 16
             
             Text {
-                text: "Rename Audio Output"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.text.rename_audio_output"]) || "Rename Audio Output")
                 color: root.textPrimary
                 font.pixelSize: Theme.fontSizeLarge; font.weight: Font.Medium
             }
@@ -551,7 +768,7 @@ Item {
                     implicitWidth: 70; implicitHeight: 32; radius: 6
                     color: cancelMa.containsMouse ? Qt.rgba(1,1,1,0.08) : Qt.rgba(1,1,1,0.04)
                     border.width: 1; border.color: root.cardBorder
-                    Text { anchors.centerIn: parent; text: "Cancel"; color: root.textSecondary; font.pixelSize: Theme.fontSizeNormal }
+                    Text { anchors.centerIn: parent; text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.text.cancel"]) || "Cancel"); color: root.textSecondary; font.pixelSize: Theme.fontSizeNormal }
                     MouseArea {
                         id: cancelMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                         onClicked: renamePopup.close()
@@ -561,7 +778,7 @@ Item {
                 Rectangle {
                     implicitWidth: 70; implicitHeight: 32; radius: 6
                     color: saveMa.containsMouse ? Qt.lighter(root.accent, 1.1) : root.accent
-                    Text { anchors.centerIn: parent; text: "Save"; color: "#fff"; font.pixelSize: Theme.fontSizeNormal; font.weight: Font.Medium }
+                    Text { anchors.centerIn: parent; text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.text.save"]) || "Save"); color: "#fff"; font.pixelSize: Theme.fontSizeNormal; font.weight: Font.Medium }
                     MouseArea {
                         id: saveMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                         onClicked: renamePopup.apply()
@@ -570,7 +787,6 @@ Item {
             }
         }
         function apply() {
-            root.wpPending = true
             root._apply({ rename: nameInput.text, name: targetSink })
             close()
         }

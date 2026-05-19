@@ -39,7 +39,7 @@ The notification preference is persisted through [[Astrea - Weather Bridge]] at:
 - `ui/state/WeatherState.qml`
   - calls [[Astrea - Weather Bridge]].
 
-Weather consumes the shared Astrea theme through:
+Weather consumes shared Astrea components through:
 - `Apps/Weather/AstreaComponents -> Core/components`
 - `import "../AstreaComponents" as UI` from `ui/WeatherAppView.qml`
 
@@ -64,3 +64,8 @@ Weather icons live under:
 5. QML parses the payload.
 6. Section components render structured weather data.
 7. `astrea-weatherd` handles alert checks, deduplication, cache refresh, and desktop notifications outside the UI lifecycle.
+
+## Backend Missing Behavior
+`WeatherState.qml` treats missing `bin/weather-cli` as a backend installation problem and shows a recovery message that points to `astrea-services.sh doctor`.
+
+Do not restore direct QML calls to `Core/bridge/apps/weather.py`; that Python file is the compatibility fetcher behind the Rust CLI contract.

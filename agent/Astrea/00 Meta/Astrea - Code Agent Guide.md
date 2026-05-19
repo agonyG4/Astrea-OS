@@ -14,7 +14,12 @@ Use the live runtime tree for implementation:
 - `/home/agony/.local/share/Astrea`
 
 Use this vault for architecture context:
-- `/home/agony/Documentos/Astrea/Astrea`
+- `/home/agony/GitHub/Astrea-Dev/agent/Astrea`
+
+Current inspected runtime:
+- `/home/agony/.local/share/Astrea-Rolling`
+
+`~/.local/share/Astrea` currently resolves to Rolling. Keep app code pointed at `~/.local/share/Astrea` or `ASTREA_ROOT`; do not bake channel names into app logic.
 
 When documentation and inspected code disagree:
 1. Trust the inspected live code.
@@ -45,10 +50,11 @@ For broad context:
 2. [[Astrea - AI Project Brain]]
 3. [[Astrea - Agent Working Rules]]
 4. [[Astrea - Project Overview]]
-5. [[Astrea - Structure Breakdown]]
-6. [[Astrea - Entry Points]]
-7. [[Astrea - Data Flow]]
-8. [[Astrea - Patterns]]
+5. [[Astrea - Runtime Snapshot]]
+6. [[Astrea - Structure Breakdown]]
+7. [[Astrea - Entry Points]]
+8. [[Astrea - Data Flow]]
+9. [[Astrea - Patterns]]
 
 For a targeted bug or feature:
 1. Identify the domain from [[Astrea - Entry Points]].
@@ -72,17 +78,20 @@ For a targeted bug or feature:
 | Settings app | [[MOC - Apps]] | [[Astrea - Settings App]], [[Astrea - Core Components]] |
 | Explorer app | [[MOC - Apps]] | [[Astrea - Explorer App]], [[Astrea - Explorer Backend]] |
 | Weather app | [[MOC - Apps]] | [[Astrea - Weather App]], [[Astrea - Weather Bridge]] |
+| About app | [[MOC - Apps]] | [[Astrea - About App]], [[Astrea - Core Bridge]] |
 | Shared QML controls | [[MOC - Core]] | [[Astrea - Core Components]] |
 | Python bridge | [[MOC - Bridges and Backends]] | [[Astrea - Core Bridge]] |
 | Audio | [[MOC - Bridges and Backends]] | [[Astrea - Audio Bridge]] |
 | Display | [[MOC - Bridges and Backends]] | [[Astrea - Display Bridge]] |
 | Wallpaper | [[MOC - Bridges and Backends]] | [[Astrea - Wallpaper Bridge]] |
 | Bluetooth | [[MOC - System]] | [[Astrea - Bluetooth Manager]] |
+| Launch and latency | [[MOC - System]] | [[Astrea - Launcher and Latency]] |
 | Runtime state/data | [[MOC - Data]] | [[Astrea - Assets and Data]] |
 | External tools | [[MOC - Dependencies]] | [[Astrea - External Dependencies]] |
 
 ## Common Live Paths
 - Runtime root: `/home/agony/.local/share/Astrea`
+- Current Rolling tree: `/home/agony/.local/share/Astrea-Rolling`
 - Apps: `/home/agony/.local/share/Astrea/Apps`
 - Quickshell runtime: `/home/agony/.local/share/Astrea/Quickshell`
 - Shared QML components: `/home/agony/.local/share/Astrea/Core/components`
@@ -90,6 +99,8 @@ For a targeted bug or feature:
 - User config: `~/.config/AstreaOS`
 - Runtime state: `~/.local/state/Astrea`
 - Weather cache: `~/.cache/weather`
+- Launch history: `~/.local/state/Astrea/launch/history.jsonl`
+- Latency history: `~/.local/state/Astrea/latencyd/history.jsonl`
 
 ## Validation Commands
 Use the smallest command that proves the change.

@@ -6,9 +6,18 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../components"
+import "../AstreaI18n" as AstreaI18n
 
 ShellRoot {
     id: root
+    property bool performancePaused: false
+
+    onPerformancePausedChanged: {
+        if (performancePaused && weatherProc.running) {
+            weatherProc.running = false
+            spotlight.weatherLoading = false
+        }
+    }
 
     HyprlandFocusGrab {
         id: focusGrab
@@ -97,7 +106,7 @@ ShellRoot {
                             Layout.fillWidth: true
                             Layout.alignment: Qt.AlignVCenter
 
-                            placeholderText: "Spotlight Search"
+                            placeholderText: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["spotlight.placeholder"]) || "Spotlight Search"
                             font.family: spotlight.fontFamily
                             font.pixelSize: 22
                             font.weight: Font.Light
@@ -252,13 +261,15 @@ ShellRoot {
         property string pendingQuery: ""
         property var pendingLaunchEntry: null
         property string execArgvBuffer: ""
+        readonly property bool performancePaused: root.performancePaused
 
         function toggle() {
             if (open) {
                 close()
             } else {
                 open = true
-                maybeRefreshWeather()
+                if (!performancePaused)
+                    maybeRefreshWeather()
             }
         }
 
@@ -310,11 +321,11 @@ ShellRoot {
 
         function applyConfig(config) {
             weatherEnabled = config.weather === undefined || config.weather === null ? true : !!config.weather
-            if (weatherEnabled) maybeRefreshWeather()
+            if (weatherEnabled && !performancePaused) maybeRefreshWeather()
         }
 
         function maybeRefreshWeather() {
-            if (!weatherEnabled || weatherLoading) return
+            if (performancePaused || !weatherEnabled || weatherLoading) return
             const now = Date.now()
             if (!weatherReady || weatherLastRefreshMs <= 0 || now - weatherLastRefreshMs >= weatherStaleMs) {
                 refreshWeather()
@@ -322,7 +333,7 @@ ShellRoot {
         }
 
         function refreshWeather() {
-            if (!weatherEnabled || weatherLoading) return
+            if (performancePaused || !weatherEnabled || weatherLoading) return
             weatherLoading = true
             weatherStatusText = weatherReady ? "Atualizando" : "Carregando"
             weatherBuffer = ""
@@ -476,7 +487,7 @@ ShellRoot {
         property var weatherRefreshTimer: Timer {
             interval: 1800000
             repeat: true
-            running: spotlight.weatherEnabled && spotlight.open
+            running: !spotlight.performancePaused && spotlight.weatherEnabled && spotlight.open
             onTriggered: spotlight.maybeRefreshWeather()
         }
 

@@ -5,6 +5,7 @@ import "../../AstreaFiles/DragDropSupport.js" as DragDropSupport
 import "../.."
 import "../common" as Common
 import "../../AstreaFiles" as AstreaFiles
+import "../../AstreaI18n" as AstreaI18n
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Root transparente — serve apenas como âncora de posição na janela.
@@ -76,7 +77,7 @@ Item {
             Text {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.verticalCenter:   parent.verticalCenter
-                text:  "Finder"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.text.finder"]) || "Finder")
                 color: Theme.text
                 font { pixelSize: 22; weight: Font.Bold; letterSpacing: -0.5 }
             }
@@ -117,24 +118,24 @@ Item {
         Item { width: 1; height: 10 }
 
         // ── Pessoal ───────────────────────────────────────────────────
-        SidebarSection { label: "PESSOAL" }
-        SidebarItem { icon: "inode-directory";      label: "Pasta Pessoal"; path: AppState.homePath }
-        SidebarItem { icon: "document-open-recent"; label: "Recentes";      path: AppState.recentVirtualPath }
+        SidebarSection { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.pessoal"]) || "PERSONAL") }
+        SidebarItem { icon: "inode-directory";      label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.pasta_pessoal"]) || "Home Folder"); path: AppState.homePath }
+        SidebarItem { icon: "document-open-recent"; label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.recentes"]) || "Recents");      path: AppState.recentVirtualPath }
 
         Item { width: 1; height: 4 }
 
         // ── Favoritos ─────────────────────────────────────────────────
-        SidebarSection { label: "FAVORITOS" }
+        SidebarSection { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.favoritos"]) || "FAVORITES") }
         Repeater {
             model: [
-                { label: "Desktop",    icon: "user-desktop",      path: AppState.homePath + "/Área de trabalho" },
-                { label: "Documentos", icon: "folder-documents",  path: AppState.homePath + "/Documentos" },
-                { label: "Downloads",  icon: "folder-downloads",  path: AppState.homePath + "/Downloads" },
-                { label: "Imagens",    icon: "folder-pictures",   path: AppState.homePath + "/Imagens" },
-                { label: "Músicas",    icon: "folder-music",      path: AppState.homePath + "/Músicas" },
-                { label: "Vídeos",     icon: "folder-videos",     path: AppState.homePath + "/Vídeos" },
-                { label: "Público",    icon: "folder-publicshare",path: AppState.homePath + "/Público" },
-                { label: "Modelos",    icon: "folder-templates",  path: AppState.homePath + "/Modelos" }
+                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.desktop"]) || "Desktop"),    icon: "user-desktop",      path: AppState.homePath + "/Área de trabalho" },
+                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.documentos"]) || "Documents"), icon: "folder-documents",  path: AppState.homePath + "/Documentos" },
+                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.downloads"]) || "Downloads"),  icon: "folder-downloads",  path: AppState.homePath + "/Downloads" },
+                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.imagens"]) || "Pictures"),    icon: "folder-pictures",   path: AppState.homePath + "/Imagens" },
+                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.maosicas"]) || "Music"),    icon: "folder-music",      path: AppState.homePath + "/Músicas" },
+                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.vadeos"]) || "Videos"),     icon: "folder-videos",     path: AppState.homePath + "/Vídeos" },
+                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.paoblico"]) || "Public"),    icon: "folder-publicshare",path: AppState.homePath + "/Público" },
+                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.modelos"]) || "Templates"),    icon: "folder-templates",  path: AppState.homePath + "/Modelos" }
             ]
             SidebarItem { icon: modelData.icon; label: modelData.label; path: modelData.path }
         }
@@ -142,8 +143,8 @@ Item {
         Item { width: 1; height: 4 }
 
         // ── Dispositivos ──────────────────────────────────────────────
-        SidebarSection { label: "DISPOSITIVOS" }
-        SidebarItem { icon: "drive-harddisk"; label: "Sistema"; path: "/" }
+        SidebarSection { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.dispositivos"]) || "DEVICES") }
+        SidebarItem { icon: "drive-harddisk"; label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.sistema"]) || "System"); path: "/" }
         Repeater {
             model: AppState.deviceModel
             DeviceSidebarItem {
@@ -163,7 +164,7 @@ Item {
         }
         SidebarItem {
             icon:   "network-workgroup"
-            label:  "Rede"
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.rede"]) || "Network")
             action: "network"
             path:   AppState.networkRootPath
         }
@@ -180,10 +181,10 @@ Item {
         Item { width: 1; height: 4 }
 
         // ── Outro ─────────────────────────────────────────────────────
-        SidebarSection { label: "OUTRO" }
+        SidebarSection { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.outro"]) || "OTHER") }
         SidebarItem {
             icon:  "user-trash"
-            label: "Lixeira"
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.lixeira"]) || "Trash")
             path:  AppState.trashFilesPath
         }
 
@@ -224,7 +225,7 @@ Item {
             }
 
             Common.ContextMenuAction {
-                label: "Desmontar"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.desmontar"]) || "Unmount")
                 actionEnabled: !root.driveMenuBusy && root.driveMenuMounted && root.driveMenuCanUnmount
                 onTriggered: {
                     root.closeDriveMenu()
@@ -233,7 +234,7 @@ Item {
             }
 
             Common.ContextMenuAction {
-                label: "Remontar com nome"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.remontar_com_nome"]) || "Remount with name")
                 visible: root.driveMenuCanRemount
                 actionEnabled: !root.driveMenuBusy && root.driveMenuCanRemount
                 onTriggered: {

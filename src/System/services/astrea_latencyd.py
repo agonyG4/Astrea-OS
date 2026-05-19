@@ -530,7 +530,6 @@ def serve() -> int:
                                 [str(exc)],
                             )
             daemon.prune_expired()
-            daemon.write_state()
     finally:
         daemon.rollback()
         selector.close()

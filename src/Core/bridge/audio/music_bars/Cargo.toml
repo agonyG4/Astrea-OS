@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["ipc-socket", "ipc-stdout"]
+default = ["ipc-stdout"]
 ipc-socket = []
 ipc-stdout = []
 

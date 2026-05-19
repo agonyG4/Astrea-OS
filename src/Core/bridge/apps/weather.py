@@ -16,11 +16,15 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # ── Config ────────────────────────────────────────────────────────────────────
-CACHE_DIR  = os.path.expanduser("~/.cache/weather")
+CACHE_DIR  = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "weather")
 CACHE_TTL  = 30 * 60
 STALE_CACHE_TTL = 24 * 60 * 60
 COORDS_CACHE_TTL = 30 * 24 * 60 * 60
 HISTORY_CACHE_TTL = 24 * 60 * 60
+HISTORY_CACHE_RETENTION = 3 * 24 * 60 * 60
+FORECAST_CACHE_RETENTION = 2 * 24 * 60 * 60
+LOCK_CACHE_RETENTION = 24 * 60 * 60
+CACHE_PRUNE_INTERVAL = 6 * 60 * 60
 DEFAULT_CITY = "Itajaí"
 MAX_FORECAST_DAYS = 16
 CACHE_VERSION = 10
@@ -105,18 +109,54 @@ def cache_slug(city: str) -> str:
     return slug or "unknown"
 
 
-def cache_path(city: str, days: int) -> str:
+def ensure_cache_dir() -> None:
     os.makedirs(CACHE_DIR, exist_ok=True)
+    prune_weather_cache()
+
+
+def prune_weather_cache() -> None:
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    marker = os.path.join(CACHE_DIR, ".last-prune")
+    now = datetime.datetime.now().timestamp()
+    marker_age = file_age(marker)
+    if marker_age is not None and marker_age < CACHE_PRUNE_INTERVAL:
+        return
+
+    for name in os.listdir(CACHE_DIR):
+        path = os.path.join(CACHE_DIR, name)
+        if not os.path.isfile(path):
+            continue
+        age = now - os.path.getmtime(path)
+        should_remove = (
+            (name.startswith("history_") and age > HISTORY_CACHE_RETENTION)
+            or (re.match(r"^[a-z0-9_\-]+_\d+d\.json$", name) and age > FORECAST_CACHE_RETENTION)
+            or (name.startswith(".") and name.endswith(".lock") and age > LOCK_CACHE_RETENTION)
+        )
+        if should_remove:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    try:
+        with open(marker, "w", encoding="utf-8") as f:
+            f.write(str(int(now)))
+    except OSError:
+        pass
+
+
+def cache_path(city: str, days: int) -> str:
+    ensure_cache_dir()
     return os.path.join(CACHE_DIR, f"{cache_slug(city)}_{days}d.json")
 
 
 def lock_path(city: str, days: int) -> str:
-    os.makedirs(CACHE_DIR, exist_ok=True)
+    ensure_cache_dir()
     return os.path.join(CACHE_DIR, f".{cache_slug(city)}_{days}d.lock")
 
 
 def aux_cache_path(kind: str, key: str) -> str:
-    os.makedirs(CACHE_DIR, exist_ok=True)
+    ensure_cache_dir()
     return os.path.join(CACHE_DIR, f"{kind}_{cache_slug(key)}.json")
 
 

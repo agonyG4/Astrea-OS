@@ -3,6 +3,7 @@ import Quickshell.Io
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import "." as Finder
+import "AstreaI18n" as AstreaI18n
 
 ApplicationWindow {
     id: root
@@ -10,11 +11,12 @@ ApplicationWindow {
     width: 1080
     height: 720
     color: "transparent"
-    title: "Bench File Dialog"
+    title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.portal_dialog.title.bench_file_dialog"]) || "Bench File Dialog")
 
     property var options: ({})
     property string resultFile: ""
     property string pendingResultJson: ""
+    readonly property string stateJsonScript: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + "/Core/bridge/state_json.py"
 
     function parseOptions() {
         var raw = Quickshell.env("ASTREA_FILE_DIALOG_OPTIONS") || Quickshell.env("BENCH_FILE_DIALOG_OPTIONS") || ""
@@ -74,11 +76,11 @@ ApplicationWindow {
     Process {
         id: resultWriter
         command: [
-            "bash", "-lc",
-            "printf '%s' \"$1\" > \"$2\"",
-            "--",
-            root.pendingResultJson,
-            root.resultFile
+            "python3",
+            root.stateJsonScript,
+            "write",
+            root.resultFile,
+            root.pendingResultJson
         ]
         running: false
         stdout: StdioCollector {}

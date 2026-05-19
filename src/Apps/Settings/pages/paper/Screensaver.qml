@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import "../../AstreaComponents"
+import "../../AstreaI18n" as AstreaI18n
 
 ScrollPage {
     id: root
@@ -16,7 +17,7 @@ ScrollPage {
         spacing: 0
 
         SectionHeader {
-            text: "SCREENSAVER"
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.screensaver.text.screensaver"]) || "SCREENSAVER")
             textSecondary: root.textSecondary
             Layout.bottomMargin: 12
         }
@@ -36,14 +37,14 @@ ScrollPage {
                 spacing: 8
 
                 Text {
-                    text: "Screensaver page placeholder"
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.screensaver.text.screensaver_page_placeholder"]) || "Screensaver page placeholder")
                     color: root.textPrimary
                     font.pixelSize: 15
                     font.weight: Font.Medium
                 }
 
                 Text {
-                    text: "This route existed in navigation but not on disk. It now has a safe landing page while the feature is implemented."
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.screensaver.text.this_route_existed_in_navigation_but_not_on_disk"]) || "This route existed in navigation but not on disk. It now has a safe landing page while the feature is implemented.")
                     color: root.textSecondary
                     wrapMode: Text.Wrap
                     font.pixelSize: 12

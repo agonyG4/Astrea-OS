@@ -1,7 +1,8 @@
 import Quickshell
 import QtQuick
-import "../system" as SystemComponents
+import "../system/popups" as SystemComponents
 import "../../.."
+import "../../../../AstreaI18n" as AstreaI18n
 
 SystemComponents.TopbarPopup {
     id: root
@@ -24,8 +25,8 @@ SystemComponents.TopbarPopup {
 
         Repeater {
             model: [
-                { icon: "󰇚", label: "Download", value: root.downloadText },
-                { icon: "󰕒", label: "Upload",   value: root.uploadText   }
+                { icon: "󰇚", label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.network.network_popup.label.download"]) || "Download"), value: root.downloadText },
+                { icon: "󰕒", label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.network.network_popup.label.upload"]) || "Upload"),   value: root.uploadText   }
             ]
             delegate: Row {
                 spacing: Theme.spacing

@@ -5,7 +5,7 @@ import QtQuick
 // TODO(design-system): desktop temporarily imports the bar module only for Theme tokens;
 // move Quickshell surfaces to a shared shell theme module before removing this dependency.
 import "../bar"
-import "AstreaFiles" as AstreaFiles
+import "./components" as DesktopComponents
 
 Item {
     id: root
@@ -16,12 +16,15 @@ Item {
     readonly property int iconSize: iconPreset === "large" ? 66 : iconPreset === "small" ? 42 : 52
     readonly property int highlightWidth: iconPreset === "large" ? 106 : iconPreset === "small" ? 74 : 86
     readonly property int highlightHeight: iconPreset === "large" ? 112 : iconPreset === "small" ? 78 : 92
+    readonly property int labelWidth: iconPreset === "large" ? 110 : iconPreset === "small" ? 78 : 92
+    readonly property int labelHeight: iconPreset === "large" ? 38 : iconPreset === "small" ? 30 : 34
     property string selectedDesktop: ""
     property var contextApp: null
     property bool contextIsBackground: true
     property string sortMode: "name"
     property string iconPreset: "medium"
     property bool iconsHidden: false
+    property bool performancePaused: false
     property bool stateLoaded: false
     property var gridPositions: ({})
     property int layoutVersion: 0
@@ -71,8 +74,8 @@ Item {
                 av = a.desktop || ""
                 bv = b.desktop || ""
             } else if (sortMode === "kind") {
-                av = a.generic || ""
-                bv = b.generic || ""
+                av = a.kind || a.generic || ""
+                bv = b.kind || b.generic || ""
             } else {
                 av = a.name || ""
                 bv = b.name || ""
@@ -138,6 +141,83 @@ Item {
         return ""
     }
 
+    function occupiedSlotIn(positions, slot, exceptDesktop) {
+        return slotOwnerIn(positions, slot, exceptDesktop) !== ""
+    }
+
+    function nearestFreeSlotIn(positions, preferredSlot, exceptDesktop) {
+        var maxSlots = orderedApps().length + 80
+        var start = Math.max(0, preferredSlot)
+
+        for (var distance = 0; distance < maxSlots; distance++) {
+            var forward = start + distance
+            if (!occupiedSlotIn(positions, forward, exceptDesktop))
+                return forward
+
+            var backward = start - distance
+            if (backward >= 0 && !occupiedSlotIn(positions, backward, exceptDesktop))
+                return backward
+        }
+
+        return start
+    }
+
+    function currentGridPositions() {
+        var next = {}
+        var items = orderedApps()
+
+        for (var i = 0; i < items.length; i++) {
+            var itemDesktop = items[i].desktop
+            if (itemDesktop)
+                next[itemDesktop] = gridPositions[itemDesktop] !== undefined ? gridPositions[itemDesktop] : i
+        }
+
+        for (var key in gridPositions) {
+            if (next[key] === undefined)
+                next[key] = gridPositions[key]
+        }
+
+        return next
+    }
+
+    function defaultGridPositions() {
+        var next = {}
+        var items = orderedApps()
+
+        for (var i = 0; i < items.length; i++) {
+            var desktop = items[i].desktop
+            if (desktop)
+                next[desktop] = i
+        }
+
+        return next
+    }
+
+    function normalizedPositions(positions) {
+        var items = orderedApps()
+        var next = {}
+        var used = {}
+
+        for (var i = 0; i < items.length; i++) {
+            var desktop = items[i].desktop
+            if (!desktop)
+                continue
+
+            var desired = positions[desktop] !== undefined ? Number(positions[desktop]) : i
+            if (!isFinite(desired) || desired < 0)
+                desired = i
+
+            var slot = Math.max(0, Math.round(desired))
+            while (used[slot])
+                slot += 1
+
+            used[slot] = true
+            next[desktop] = slot
+        }
+
+        return next
+    }
+
     function nearestFreeSlot(preferredSlot, exceptDesktop) {
         var maxSlots = orderedApps().length + 80
         var start = Math.max(0, preferredSlot)
@@ -160,21 +240,7 @@ Item {
             return
 
         var targetSlot = Math.max(0, Math.round(Number(slot) || 0))
-        var next = {}
-        var items = orderedApps()
-
-        for (var i = 0; i < items.length; i++) {
-            var itemDesktop = items[i].desktop
-            if (itemDesktop)
-                next[itemDesktop] = gridPositions[itemDesktop] !== undefined ? gridPositions[itemDesktop] : i
-        }
-
-        for (var key in gridPositions) {
-            if (next[key] === undefined)
-                next[key] = gridPositions[key]
-        }
-
-        gridPositions = next
+        var next = currentGridPositions()
         var sourceSlot = next[desktop] !== undefined ? next[desktop] : indexForDesktop(desktop)
         var owner = slotOwnerIn(next, targetSlot, desktop)
 
@@ -182,18 +248,16 @@ Item {
             next[desktop] = targetSlot
             next[owner] = sourceSlot
         } else {
-            next[desktop] = nearestFreeSlot(targetSlot, desktop)
+            next[desktop] = nearestFreeSlotIn(next, targetSlot, desktop)
         }
 
-        gridPositions = next
-        normalizeGridPositions()
+        gridPositions = normalizedPositions(next)
         layoutVersion += 1
         saveState()
     }
 
     function clearGridPositions() {
-        gridPositions = ({})
-        normalizeGridPositions()
+        gridPositions = defaultGridPositions()
         layoutVersion += 1
         saveState()
     }
@@ -215,28 +279,7 @@ Item {
     }
 
     function normalizeGridPositions() {
-        var items = orderedApps()
-        var next = {}
-        var used = {}
-
-        for (var i = 0; i < items.length; i++) {
-            var desktop = items[i].desktop
-            if (!desktop)
-                continue
-
-            var desired = gridPositions[desktop] !== undefined ? Number(gridPositions[desktop]) : i
-            if (!isFinite(desired) || desired < 0)
-                desired = i
-
-            var slot = Math.max(0, Math.round(desired))
-            while (used[slot])
-                slot += 1
-
-            used[slot] = true
-            next[desktop] = slot
-        }
-
-        gridPositions = next
+        gridPositions = normalizedPositions(gridPositions)
     }
 
     function saveState() {
@@ -266,6 +309,13 @@ Item {
         }
     }
 
+    function refreshDesktopSignature() {
+        if (performancePaused)
+            return
+        if (!desktopSignatureProbe.running)
+            desktopSignatureProbe.running = true
+    }
+
     Timer {
         id: saveStateDebounce
         interval: 120
@@ -274,8 +324,8 @@ Item {
             stateSaveProcess.running = false
             stateSaveProcess.command = [
                 "python3",
-                "-c",
-                "import pathlib,sys; p=pathlib.Path(sys.argv[1]); p.parent.mkdir(parents=True, exist_ok=True); p.write_text(sys.argv[2], encoding='utf-8')",
+                root.scriptPath,
+                "--save-state",
                 root.statePath,
                 JSON.stringify({
                     "sortMode": root.sortMode,
@@ -298,8 +348,8 @@ Item {
         id: stateLoadProcess
         command: [
             "python3",
-            "-c",
-            "import pathlib,sys; paths=[pathlib.Path(p) for p in sys.argv[1:]]; print(next((p.read_text(encoding='utf-8') for p in paths if p.exists()), '{}'))",
+            root.scriptPath,
+            "--load-state",
             root.statePath,
             root.legacyStatePath
         ]
@@ -363,7 +413,7 @@ Item {
     Component.onCompleted: {
         stateLoadProcess.running = true
         refreshApps()
-        desktopSignatureWatcher.running = true
+        refreshDesktopSignature()
     }
 
     function launchDesktop(path) {
@@ -373,6 +423,15 @@ Item {
         launcher.running = false
         launcher.command = [astreaLaunch, "--desktop", expandHomePath(path)]
         launcher.running = true
+    }
+
+    function openDesktopItem(item) {
+        if (!item || !item.desktop)
+            return
+        if (item.kind === "folder")
+            openPath(item.desktop)
+        else
+            launchDesktop(item.desktop)
     }
 
     Process {
@@ -423,6 +482,23 @@ Item {
         }
     }
 
+    function createDesktopFolder() {
+        createFolderProcess.running = false
+        createFolderProcess.command = ["python3", scriptPath, "--create-folder"]
+        createFolderProcess.running = true
+    }
+
+    Process {
+        id: createFolderProcess
+        command: []
+        running: false
+        onExited: function(exitCode) {
+            running = false
+            if (exitCode === 0)
+                root.refreshApps()
+        }
+    }
+
     Timer {
         id: refreshDebounce
         interval: 120
@@ -430,41 +506,30 @@ Item {
         onTriggered: root.refreshApps()
     }
 
-    Timer {
-        id: desktopSignatureRestartTimer
-        interval: 2000
-        repeat: false
-        onTriggered: {
-            if (root.stateLoaded && !desktopSignatureWatcher.running)
-                desktopSignatureWatcher.running = true
-        }
-    }
-
     Process {
-        id: desktopSignatureWatcher
-        command: ["python3", root.scriptPath, "--watch-signature"]
+        id: desktopSignatureProbe
+        command: ["python3", root.scriptPath, "--signature"]
         running: false
         stdout: SplitParser {
             splitMarker: "\n"
             onRead: data => root.applyDesktopSignature(data.trim())
         }
-        onExited: function() {
-            if (root.stateLoaded)
-                desktopSignatureRestartTimer.restart()
-        }
     }
 
-    TextEdit {
-        id: clipboardProxy
-        visible: false
+    Timer {
+        interval: 5000
+        repeat: true
+        running: root.stateLoaded && !root.performancePaused
+        onTriggered: root.refreshDesktopSignature()
+    }
 
-        function copyText(value) {
-            text = value || ""
-            forceActiveFocus()
-            select(0, text.length)
-            copy()
-            text = ""
-        }
+    onPerformancePausedChanged: {
+        if (!performancePaused)
+            refreshDesktopSignature()
+    }
+
+    DesktopComponents.ClipboardProxy {
+        id: clipboardProxy
     }
 
     Variants {
@@ -581,7 +646,7 @@ Item {
                             }
 
                             root.selectedDesktop = ""
-                            desktopWindow.openContextAt(mouse.x + 6, mouse.y + 6, null, true)
+                            desktopWindow.openContextAt(mouse.x, mouse.y, null, true)
                         } else if (mouse.button === Qt.LeftButton) {
                             root.selectedDesktop = ""
                             desktopWindow.closeContext()
@@ -602,409 +667,24 @@ Item {
                             return root.visibleApps()
                         }
 
-                        delegate: Item {
-                            id: tile
-                            required property var modelData
-                            readonly property var appData: modelData
-                            readonly property int effectiveSlot: tile.appData && root.gridPositions[tile.appData.desktop] !== undefined
-                                ? root.gridPositions[tile.appData.desktop]
-                                : root.indexForDesktop(tile.appData ? tile.appData.desktop : "")
-                            readonly property point targetPosition: desktopWindow.defaultPosition(effectiveSlot)
-
-                            width: root.cellWidth
-                            height: root.cellHeight
-                            z: tile.dragging ? 20 : tile.selected ? 10 : 1
-
-                            property bool dragging: false
-                            property bool suppressClick: false
-                            property real pressTileX: 0
-                            property real pressTileY: 0
-                            property real pressMouseX: 0
-                            property real pressMouseY: 0
-                            readonly property bool selected: tile.appData && root.selectedDesktop === tile.appData.desktop
-                            readonly property bool hovered: tileHover.hovered
-
-                            Binding {
-                                target: tile
-                                property: "x"
-                                value: tile.targetPosition.x
-                                when: !tile.dragging
-                                restoreMode: Binding.RestoreNone
-                            }
-
-                            Binding {
-                                target: tile
-                                property: "y"
-                                value: tile.targetPosition.y
-                                when: !tile.dragging
-                                restoreMode: Binding.RestoreNone
-                            }
-
-                            Behavior on x {
-                                enabled: !tile.dragging
-                                NumberAnimation { duration: Theme.animationQuick; easing.type: Easing.OutCubic }
-                            }
-
-                            Behavior on y {
-                                enabled: !tile.dragging
-                                NumberAnimation { duration: Theme.animationQuick; easing.type: Easing.OutCubic }
-                            }
-
-                            Connections {
-                                target: contextHost
-                                function onWidthChanged() { if (!tile.dragging) desktopWindow.clampTile(tile) }
-                                function onHeightChanged() { if (!tile.dragging) desktopWindow.clampTile(tile) }
-                            }
-
-                            Rectangle {
-                                id: hl
-                                width: root.highlightWidth
-                                height: root.highlightHeight
-                                x: Math.round((parent.width - width) / 2)
-                                y: 3
-                                radius: Theme.cornerRadius
-                                color: tile.selected ? "#3a3a3c" : tile.hovered ? "#2e2e30" : "transparent"
-
-                                Behavior on color {
-                                    ColorAnimation { duration: Theme.animationInstant }
-                                }
-                            }
-
-                            Image {
-                                id: appIcon
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                y: hl.y + 8
-                                width: root.iconSize
-                                height: root.iconSize
-                                source: tile.appData && tile.appData.icon ? "image://icon/" + tile.appData.icon : "image://icon/application-x-executable"
-                                asynchronous: true
-                                cache: true
-                                fillMode: Image.PreserveAspectFit
-                                smooth: true
-                                mipmap: true
-                            }
-                            Text {
-                                id: appLabel
-                                anchors.top: appIcon.bottom
-                                anchors.topMargin: Theme.spacingSmall
-                                width: root.cellWidth + 20
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                text: tile.appData ? tile.appData.name : ""
-                                color: "#f8f8f8"
-                                font.family: Theme.fontFamily
-                                font.pixelSize: iconPreset === "large" ? 13 : iconPreset === "small" ? 12 : 12
-                                font.weight: Font.Normal
-                                font.hintingPreference: Font.PreferVerticalHinting
-                                antialiasing: true
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignTop
-                                wrapMode: Text.Wrap
-                                maximumLineCount: 2
-                                elide: Text.ElideRight
-                                textFormat: Text.PlainText
-                                style: Text.Raised
-                                styleColor: "#99000000"
-                            }
-
-                            HoverHandler {
-                                id: tileHover
-                            }
-
-                            MouseArea {
-                                id: pointer
-                                anchors.fill: parent
-                                z: 1
-                                hoverEnabled: true
-                                acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                cursorShape: tile.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
-                                propagateComposedEvents: false
-
-                                function beginDrag() {
-                                    if (tile.dragging || !tile.appData)
-                                        return
-
-                                    tile.dragging = true
-                                    tile.suppressClick = true
-                                    desktopWindow.closeContext()
-                                }
-
-                                function updateTileFromMouse(mouse) {
-                                    const pt = pointer.mapToItem(contextHost, mouse.x, mouse.y)
-                                    tile.x = tile.pressTileX + pt.x - tile.pressMouseX
-                                    tile.y = tile.pressTileY + pt.y - tile.pressMouseY
-                                    desktopWindow.clampTile(tile)
-                                }
-
-                                function finishDrag(mouse) {
-                                    if (tile.dragging && tile.appData) {
-                                        if (mouse)
-                                            updateTileFromMouse(mouse)
-                                        const center = appIcon.mapToItem(contextHost, appIcon.width / 2, appIcon.height / 2)
-                                        const target = desktopWindow.dropTargetForPoint(center.x, center.y, tile.appData.desktop)
-                                        root.setDesktopSlot(tile.appData.desktop, target.slot, target.swap)
-                                    }
-
-                                    tile.dragging = false
-                                    desktopWindow.clampTile(tile)
-                                }
-
-                                onPressed: function(mouse) {
-                                    if (tile.appData)
-                                        root.selectedDesktop = tile.appData.desktop
-                                    if (mouse.button === Qt.LeftButton) {
-                                        const pt = pointer.mapToItem(contextHost, mouse.x, mouse.y)
-                                        tile.pressTileX = tile.x
-                                        tile.pressTileY = tile.y
-                                        tile.pressMouseX = pt.x
-                                        tile.pressMouseY = pt.y
-                                        tile.suppressClick = false
-                                    }
-                                }
-
-                                onPositionChanged: function(mouse) {
-                                    if (!(pressedButtons & Qt.LeftButton))
-                                        return
-
-                                    const pt = pointer.mapToItem(contextHost, mouse.x, mouse.y)
-                                    const dx = pt.x - tile.pressMouseX
-                                    const dy = pt.y - tile.pressMouseY
-                                    const threshold = 8
-
-                                    if (!tile.dragging && Math.sqrt(dx * dx + dy * dy) >= threshold)
-                                        beginDrag()
-
-                                    if (tile.dragging)
-                                        updateTileFromMouse(mouse)
-                                }
-
-                                onClicked: function(mouse) {
-                                    mouse.accepted = true
-                                    if (tile.suppressClick) {
-                                        tile.suppressClick = false
-                                        return
-                                    }
-                                    if (!tile.appData)
-                                        return
-                                    root.selectedDesktop = tile.appData.desktop
-                                    if (mouse.button === Qt.RightButton) {
-                                        const pt = pointer.mapToItem(contextHost, mouse.x, mouse.y)
-                                        desktopWindow.openContextAt(pt.x + 6, pt.y + 6, tile.appData, false)
-                                    } else {
-                                        desktopWindow.closeContext()
-                                    }
-                                }
-
-                                onDoubleClicked: function(mouse) {
-                                    mouse.accepted = true
-                                    if (!tile.appData)
-                                        return
-                                    root.selectedDesktop = tile.appData.desktop
-                                    desktopWindow.closeContext()
-                                    root.launchDesktop(tile.appData.desktop)
-                                }
-
-                                onReleased: function(mouse) {
-                                    finishDrag(mouse)
-                                }
-
-                                onCanceled: {
-                                    finishDrag(null)
-                                    tile.suppressClick = false
-                                }
-                            }
+                        delegate: DesktopComponents.DesktopIconTile {
+                            entry: modelData
+                            desktopState: root
+                            hostWindow: desktopWindow
+                            hostItem: contextHost
                         }
                     }
                 }
 
-                AstreaFiles.FileContextMenu {
+                DesktopComponents.DesktopContextMenu {
                     id: contextMenu
                     anchors.fill: parent
                     z: 1000
-                    menuWidth: 216
-                    menuOpen: menuVisible
-
-                    property bool menuVisible: false
-
-                    onMenuOpenChanged: menuVisible = menuOpen
-                    onMenuVisibleChanged: {
-                        if (menuVisible !== menuOpen)
-                            menuOpen = menuVisible
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Abrir"
-                        visible: !root.contextIsBackground
-                        actionEnabled: root.contextApp !== null
-                        onTriggered: {
-                            root.launchDesktop(root.contextApp.desktop)
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Copiar Nome"
-                        visible: !root.contextIsBackground
-                        actionEnabled: root.contextApp !== null
-                        onTriggered: {
-                            clipboardProxy.copyText(root.contextApp.name)
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Copiar Caminho"
-                        visible: !root.contextIsBackground
-                        actionEnabled: root.contextApp !== null
-                        onTriggered: {
-                            clipboardProxy.copyText(root.contextApp.desktop)
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Abrir Pasta"
-                        visible: !root.contextIsBackground
-                        actionEnabled: root.contextApp !== null
-                        onTriggered: {
-                            root.openPath(root.directoryForPath(root.contextApp.desktop))
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Abrir Arquivo"
-                        visible: !root.contextIsBackground
-                        actionEnabled: root.contextApp !== null
-                        onTriggered: {
-                            root.openPath(root.contextApp.desktop)
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Excluir da Area de Trabalho"
-                        visible: !root.contextIsBackground
-                        actionEnabled: root.contextApp !== null
-                        onTriggered: {
-                            root.deleteDesktopShortcut(root.contextApp.desktop)
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuDivider {
-                        visible: !root.contextIsBackground
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: root.iconsHidden ? "Mostrar Icones" : "Ocultar Icones"
-                        visible: root.contextIsBackground
-                        actionEnabled: true
-                        onTriggered: {
-                            root.setIconsHidden(!root.iconsHidden)
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Atualizar Apps"
-                        visible: root.contextIsBackground && !root.iconsHidden
-                        actionEnabled: !appLoadProcess.running
-                        onTriggered: {
-                            root.refreshApps()
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuDivider {
-                        visible: root.contextIsBackground
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Ordenar por Nome"
-                        visible: root.contextIsBackground && !root.iconsHidden
-                        actionEnabled: root.sortMode !== "name"
-                        onTriggered: {
-                            root.setSortMode("name")
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Ordenar por Tipo"
-                        visible: root.contextIsBackground && !root.iconsHidden
-                        actionEnabled: root.sortMode !== "kind"
-                        onTriggered: {
-                            root.setSortMode("kind")
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Ordenar por Caminho"
-                        visible: root.contextIsBackground && !root.iconsHidden
-                        actionEnabled: root.sortMode !== "path"
-                        onTriggered: {
-                            root.setSortMode("path")
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuDivider {
-                        visible: root.contextIsBackground && !root.iconsHidden
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Icones Pequenos"
-                        visible: root.contextIsBackground && !root.iconsHidden
-                        actionEnabled: root.iconPreset !== "small"
-                        onTriggered: {
-                            root.setIconPreset("small")
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Icones Medios"
-                        visible: root.contextIsBackground && !root.iconsHidden
-                        actionEnabled: root.iconPreset !== "medium"
-                        onTriggered: {
-                            root.setIconPreset("medium")
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Icones Grandes"
-                        visible: root.contextIsBackground && !root.iconsHidden
-                        actionEnabled: root.iconPreset !== "large"
-                        onTriggered: {
-                            root.setIconPreset("large")
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuDivider {
-                        visible: root.contextIsBackground && !root.iconsHidden
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Reorganizar Grade"
-                        visible: (root.contextIsBackground && !root.iconsHidden) || root.hasGridPositions()
-                        actionEnabled: true
-                        onTriggered: {
-                            root.clearGridPositions()
-                            desktopWindow.closeContext()
-                        }
-                    }
-
-                    AstreaFiles.ContextMenuAction {
-                        label: "Limpar Selecao"
-                        actionEnabled: root.selectedDesktop !== ""
-                        onTriggered: {
-                            root.selectedDesktop = ""
-                            desktopWindow.closeContext()
-                        }
-                    }
+                    desktopRoot: root
+                    desktopWindow: desktopWindow
+                    clipboardProxy: clipboardProxy
+                    appLoadRunning: appLoadProcess.running
+                    createFolderRunning: createFolderProcess.running
                 }
             }
         }

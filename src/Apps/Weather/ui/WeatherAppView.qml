@@ -5,14 +5,15 @@ import "../AstreaComponents" as UI
 import "components/common" as WeatherCommon
 import "components/sections" as Sections
 import "state" as State
+import "../AstreaI18n" as AstreaI18n
 
 FloatingWindow {
     id: root
-    title: "WeatherApp"
+    title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.title.weatherapp"]) || "WeatherApp")
     implicitWidth: 430
     implicitHeight: 740
     visible: true
-    color: "#151517"
+    color: "#1C1C1E"
     property var selectedDay: null
     property var selectedAlert: null
     property bool settingsOpen: false
@@ -49,134 +50,140 @@ FloatingWindow {
     }
 
     Rectangle {
+        id: appSurface
         anchors.fill: parent
-        color: "#151517"
+        color: "#1C1C1E"
         radius: 0
 
         Behavior on color {
             ColorAnimation { duration: 220; easing.type: Easing.OutCubic }
         }
 
-        Sections.LoadingState {
-            visible: weather.loading
-            colors: root.colors
-        }
-
-        Sections.ErrorState {
-            visible: !weather.loading && weather.errorMsg !== ""
-            text: weather.errorMsg
-            colors: root.colors
-        }
-
-        Flickable {
-            id: mainFlick
+        Item {
+            id: contentSurface
             anchors.fill: parent
-            contentHeight: mainLayout.implicitHeight + 64
-            clip: true
-            visible: !weather.loading && weather.errorMsg === "" && weather.weatherData !== null
-            boundsBehavior: Flickable.StopAtBounds
 
-            ColumnLayout {
-                id: mainLayout
-                width: parent.width - 36
-                anchors.top: parent.top
-                anchors.topMargin: 20
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: 12
-
-                Sections.CurrentSummary {
-                    weatherData: weather.weatherData
-                    colors: root.colors
-                }
-
-                Sections.WeatherAlerts {
-                    weatherData: weather.weatherData
-                    colors: root.colors
-                    onAlertSelected: function(alert) {
-                        root.selectedAlert = alert
-                    }
-                }
-
-                Sections.HourlyForecast {
-                    weatherData: weather.weatherData
-                    colors: root.colors
-                }
-
-                Sections.WeeklyForecast {
-                    weatherData: weather.weatherData
-                    colors: root.colors
-                    onDaySelected: function(day) {
-                        root.selectedDay = day
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 12
-                    
-                    Sections.AirQuality {
-                        Layout.fillWidth: true
-                        Layout.preferredWidth: 1
-                        weatherData: weather.weatherData
-                        colors: root.colors
-                    }
-                    
-                    Sections.TemperatureTrend {
-                        Layout.fillWidth: true
-                        Layout.preferredWidth: 1
-                        weatherData: weather.weatherData
-                        colors: root.colors
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 12
-                    
-                    Sections.FeelsLike {
-                        Layout.fillWidth: true
-                        Layout.preferredWidth: 1
-                        weatherData: weather.weatherData
-                        colors: root.colors
-                    }
-                    
-                    Item {
-                        Layout.fillWidth: true
-                        Layout.preferredWidth: 1
-                    }
-                }
-
-                Item { Layout.fillHeight: true }
-            }
-        }
-
-        Rectangle {
-            id: settingsButton
-            width: 34
-            height: 34
-            radius: 17
-            anchors.top: parent.top
-            anchors.topMargin: 16
-            anchors.right: parent.right
-            anchors.rightMargin: 16
-            z: 45
-            color: settingsButtonArea.containsMouse ? "#3A3A40" : "#2B2B30"
-            border.color: "#45454C"
-            border.width: 1
-
-            UI.TextLabel {
-                anchors.centerIn: parent
-                text: "⚙"
-                font.pixelSize: 16
-                textColor: UI.Theme.textPrimary
+            Sections.LoadingState {
+                visible: weather.loading
+                colors: root.colors
             }
 
-            MouseArea {
-                id: settingsButtonArea
+            Sections.ErrorState {
+                visible: !weather.loading && weather.errorMsg !== ""
+                text: weather.errorMsg
+                colors: root.colors
+            }
+
+            Flickable {
+                id: mainFlick
                 anchors.fill: parent
-                hoverEnabled: true
-                cursorShape: Qt.PointingHandCursor
-                onClicked: root.settingsOpen = true
+                contentHeight: mainLayout.implicitHeight + 64
+                clip: true
+                visible: !weather.loading && weather.errorMsg === "" && weather.weatherData !== null
+                boundsBehavior: Flickable.StopAtBounds
+
+                ColumnLayout {
+                    id: mainLayout
+                    width: parent.width - 32
+                    anchors.top: parent.top
+                    anchors.topMargin: 16
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    spacing: 12
+
+                    Sections.CurrentSummary {
+                        weatherData: weather.weatherData
+                        colors: root.colors
+                    }
+
+                    Sections.WeatherAlerts {
+                        weatherData: weather.weatherData
+                        colors: root.colors
+                        onAlertSelected: function(alert) {
+                            root.selectedAlert = alert
+                        }
+                    }
+
+                    Sections.HourlyForecast {
+                        weatherData: weather.weatherData
+                        colors: root.colors
+                    }
+
+                    Sections.WeeklyForecast {
+                        weatherData: weather.weatherData
+                        colors: root.colors
+                        onDaySelected: function(day) {
+                            root.selectedDay = day
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+
+                        Sections.AirQuality {
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            weatherData: weather.weatherData
+                            colors: root.colors
+                        }
+
+                        Sections.TemperatureTrend {
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            weatherData: weather.weatherData
+                            colors: root.colors
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+
+                        Sections.FeelsLike {
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            weatherData: weather.weatherData
+                            colors: root.colors
+                        }
+
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                        }
+                    }
+
+                    Item { Layout.fillHeight: true }
+                }
+            }
+
+            Rectangle {
+                id: settingsButton
+                width: 34
+                height: 34
+                radius: 17
+                anchors.top: parent.top
+                anchors.topMargin: 16
+                anchors.right: parent.right
+                anchors.rightMargin: 16
+                z: 45
+                color: settingsButtonArea.containsMouse ? "#3A3A40" : "#2B2B30"
+                border.color: "#43434A"
+                border.width: 1
+
+                UI.TextLabel {
+                    anchors.centerIn: parent
+                    text: "⚙"
+                    font.pixelSize: 16
+                    textColor: UI.Theme.textPrimary
+                }
+
+                MouseArea {
+                    id: settingsButtonArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.settingsOpen = true
+                }
             }
         }
 
@@ -187,8 +194,7 @@ FloatingWindow {
 
             Rectangle {
                 anchors.fill: parent
-                color: "#000000"
-                opacity: 0.36
+                color: "transparent"
             }
 
             MouseArea {
@@ -203,8 +209,9 @@ FloatingWindow {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 0
                 radius: 26
-                color: UI.Theme.cardBg
-                border.color: "#45454C"
+                color: "#252529"
+                opacity: 1
+                border.color: UI.Theme.cardBorder
                 border.width: 1
 
                 MouseArea {
@@ -222,7 +229,7 @@ FloatingWindow {
 
                         UI.DisplayLabel {
                             Layout.fillWidth: true
-                            text: "Settings"
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.settings"]) || "Settings")
                             font.pixelSize: UI.Theme.fontSizeIconLarge
                             font.weight: 500
                             textColor: UI.Theme.textPrimary
@@ -264,14 +271,14 @@ FloatingWindow {
                             spacing: 3
 
                             UI.TextLabel {
-                                text: "Notifications"
+                                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.notifications"]) || "Notifications")
                                 font.pixelSize: UI.Theme.fontSizeTitle
                                 font.weight: 500
                                 textColor: UI.Theme.textPrimary
                             }
 
                             UI.TextLabel {
-                                text: "INMET alerts"
+                                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.inmet_alerts"]) || "INMET alerts")
                                 font.pixelSize: UI.Theme.fontSizeLarge
                                 textColor: UI.Theme.textTertiary
                             }
@@ -297,8 +304,7 @@ FloatingWindow {
 
             Rectangle {
                 anchors.fill: parent
-                color: "#000000"
-                opacity: 0.36
+                color: "transparent"
             }
 
             MouseArea {
@@ -308,15 +314,32 @@ FloatingWindow {
 
             Rectangle {
                 id: detailSheet
+                property real dragOffset: 0
+
+                function settleDrag() {
+                    if (dragOffset > 110) {
+                        root.selectedDay = null
+                        dragOffset = 0
+                    } else {
+                        dragOffset = 0
+                    }
+                }
+
                 width: parent.width
                 height: 650
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
-                anchors.bottomMargin: 0
+                anchors.bottomMargin: -dragOffset
                 radius: 26
-                color: UI.Theme.cardBg
-                border.color: "#45454C"
+                color: "#252529"
+                opacity: 1
+                border.color: UI.Theme.cardBorder
                 border.width: 1
+
+                Behavior on anchors.bottomMargin {
+                    enabled: !detailDragArea.pressed
+                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                }
 
                 MouseArea {
                     anchors.fill: parent
@@ -411,7 +434,7 @@ FloatingWindow {
                     }
 
                     UI.TextLabel {
-                        text: "Horários com chance de chuva"
+                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.horarios_com_chance_de_chuva"]) || "Times with chance of rain")
                         font.pixelSize: 12
                         font.weight: 500
                         textColor: UI.Theme.textTertiary
@@ -464,11 +487,48 @@ FloatingWindow {
                     UI.TextLabel {
                         Layout.fillWidth: true
                         visible: root.rainHours(root.selectedDay).length === 0
-                        text: "Sem horários de chuva nos dados disponíveis."
+                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.sem_horarios_de_chuva_nos_dados_disponaveis"]) || "No rain times in the available data.")
                         font.pixelSize: UI.Theme.fontSizeLarge
                         horizontalAlignment: Text.AlignHCenter
                         textColor: "#C9CAD2"
                     }
+                }
+
+                Rectangle {
+                    id: detailGrabber
+                    width: 42
+                    height: 5
+                    radius: 3
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.top
+                    anchors.topMargin: 9
+                    color: "#6A6A72"
+                    opacity: detailDragArea.pressed ? 0.95 : 0.65
+                    z: 8
+                }
+
+                MouseArea {
+                    id: detailDragArea
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: 96
+                    z: 9
+                    hoverEnabled: true
+                    cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                    property real pressRootY: 0
+
+                    onPressed: function(mouse) {
+                        pressRootY = mapToItem(contentSurface, mouse.x, mouse.y).y
+                    }
+
+                    onPositionChanged: function(mouse) {
+                        if (pressed)
+                            detailSheet.dragOffset = Math.max(0, mapToItem(contentSurface, mouse.x, mouse.y).y - pressRootY)
+                    }
+
+                    onReleased: detailSheet.settleDrag()
+                    onCanceled: detailSheet.settleDrag()
                 }
             }
         }
@@ -480,8 +540,7 @@ FloatingWindow {
 
             Rectangle {
                 anchors.fill: parent
-                color: "#000000"
-                opacity: 0.36
+                color: "transparent"
             }
 
             MouseArea {
@@ -490,15 +549,33 @@ FloatingWindow {
             }
 
             Rectangle {
+                id: alertSheet
+                property real dragOffset: 0
+
+                function settleDrag() {
+                    if (dragOffset > 96) {
+                        root.selectedAlert = null
+                        dragOffset = 0
+                    } else {
+                        dragOffset = 0
+                    }
+                }
+
                 width: parent.width
                 height: Math.min(parent.height - 80, Math.max(260, alertContent.implicitHeight + 36))
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
-                anchors.bottomMargin: 0
+                anchors.bottomMargin: -dragOffset
                 radius: 26
-                color: UI.Theme.cardBg
+                color: "#252529"
+                opacity: 1
                 border.color: root.selectedAlert ? (root.selectedAlert.color || "#F96602") : "#F96602"
                 border.width: 1
+
+                Behavior on anchors.bottomMargin {
+                    enabled: !alertDragArea.pressed
+                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                }
 
                 MouseArea {
                     anchors.fill: parent
@@ -533,7 +610,7 @@ FloatingWindow {
                                 spacing: 2
 
                                 UI.TextLabel {
-                                    text: "INMET"
+                                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.inmet"]) || "INMET")
                                     font.pixelSize: 10
                                     font.weight: 600
                                     textColor: root.selectedAlert ? (root.selectedAlert.color || "#F96602") : "#F96602"
@@ -572,7 +649,7 @@ FloatingWindow {
                         }
 
                         UI.TextLabel {
-                            text: "Riscos"
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.riscos"]) || "Risks")
                             font.pixelSize: 12
                             font.weight: 500
                             textColor: UI.Theme.textTertiary
@@ -592,7 +669,7 @@ FloatingWindow {
                         }
 
                         UI.TextLabel {
-                            text: "O que fazer"
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.o_que_fazer"]) || "What to do")
                             font.pixelSize: 12
                             font.weight: 500
                             textColor: UI.Theme.textTertiary
@@ -611,6 +688,42 @@ FloatingWindow {
                             }
                         }
                     }
+                }
+
+                Rectangle {
+                    width: 42
+                    height: 5
+                    radius: 3
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.top
+                    anchors.topMargin: 9
+                    color: "#6A6A72"
+                    opacity: alertDragArea.pressed ? 0.95 : 0.65
+                    z: 8
+                }
+
+                MouseArea {
+                    id: alertDragArea
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: 88
+                    z: 9
+                    hoverEnabled: true
+                    cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+                    property real pressRootY: 0
+
+                    onPressed: function(mouse) {
+                        pressRootY = mapToItem(contentSurface, mouse.x, mouse.y).y
+                    }
+
+                    onPositionChanged: function(mouse) {
+                        if (pressed)
+                            alertSheet.dragOffset = Math.max(0, mapToItem(contentSurface, mouse.x, mouse.y).y - pressRootY)
+                    }
+
+                    onReleased: alertSheet.settleDrag()
+                    onCanceled: alertSheet.settleDrag()
                 }
             }
         }

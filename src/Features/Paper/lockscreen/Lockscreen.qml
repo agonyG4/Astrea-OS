@@ -5,6 +5,7 @@ import Quickshell.Wayland
 import Quickshell.Io
 import Qt5Compat.GraphicalEffects
 import QtQuick.Effects
+import "AstreaI18n" as AstreaI18n
 
 ShellRoot {
     id: root
@@ -195,7 +196,7 @@ ShellRoot {
                 color: "#ccffffff"
                 font.pixelSize: 13
                 font.family: "Inter"
-                text: "Pressione espaço para desbloquear"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["features.paper.lockscreen.lockscreen.text.pressione_espaao_para_desbloquear"]) || "Pressione espaço para desbloquear")
                 visible: !passwordSection.visible
                 layer.enabled: true
                 layer.effect: MultiEffect {
@@ -329,7 +330,7 @@ ShellRoot {
 
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "Senha..."
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["features.paper.lockscreen.lockscreen.text.senha"]) || "Senha...")
                             color: "#80000000"
                             font.pixelSize: 14
                             font.family: "Inter"

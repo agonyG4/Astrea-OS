@@ -3,6 +3,7 @@ import QtQuick.Layouts 1.15
 import "../../../AstreaComponents" as UI
 import "../common" as WeatherCommon
 import "../utils/WeatherFormat.js" as WeatherFormat
+import "../../../AstreaI18n" as AstreaI18n
 
 ColumnLayout {
     property var weatherData
@@ -13,29 +14,30 @@ ColumnLayout {
 
     Rectangle {
         Layout.fillWidth: true
-        implicitHeight: hourlyContent.implicitHeight + 24
-        radius: UI.Theme.cardRadius
-        color: UI.Theme.cardBg
-        opacity: 0.92
+        implicitHeight: hourlyContent.implicitHeight + 26
+        radius: 20
+        color: "#252529"
+        border.color: "#34343A"
+        border.width: 1
 
         ColumnLayout {
             id: hourlyContent
             anchors.fill: parent
-            anchors.margins: 12
-            spacing: 10
+            anchors.margins: 13
+            spacing: 11
 
             UI.TextLabel {
                 Layout.fillWidth: true
                 text: weatherData ? weatherData.condition + ". Sensação térmica de " + WeatherFormat.temp(weatherData.feels_like) + ". Vento de " + WeatherFormat.wind(weatherData.wind) + "." : ""
                 wrapMode: Text.WordWrap
-                font.pixelSize: 12
+                font.pixelSize: 13
                 font.weight: 400
-                lineHeight: 1.12
+                lineHeight: 1.16
                 textColor: "#F2F2F7"
             }
 
             UI.Divider {
-                lineColor: "#4A4A50"
+                lineColor: "#3A3A40"
             }
 
             RowLayout {
@@ -43,8 +45,8 @@ ColumnLayout {
                 spacing: 0
 
                 UI.TextLabel {
-                    text: "Próximas horas"
-                    font.pixelSize: UI.Theme.fontSizeSmall
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.components.sections.hourly_forecast.text.previsao_por_hora"]) || "PREVISÃO POR HORA")
+                    font.pixelSize: 10
                     font.weight: 600
                     textColor: UI.Theme.textTertiary
                     Layout.fillWidth: true
@@ -52,7 +54,8 @@ ColumnLayout {
 
                 UI.TextLabel {
                     text: weatherData ? weatherData.hourly.length + "h" : ""
-                    font.pixelSize: UI.Theme.fontSizeSmall
+                    font.pixelSize: 10
+                    font.weight: 600
                     textColor: UI.Theme.textTertiary
                 }
             }
@@ -60,32 +63,32 @@ ColumnLayout {
             ListView {
                 id: hourlyList
                 Layout.fillWidth: true
-                Layout.preferredHeight: 100
+                Layout.preferredHeight: 106
                 orientation: ListView.Horizontal
-                spacing: 18
+                spacing: 14
                 clip: true
                 boundsBehavior: Flickable.StopAtBounds
                 model: weatherData ? weatherData.hourly.slice(0, 24) : []
 
                 delegate: Item {
-                    width: 48
-                    height: 96
+                    width: 52
+                    height: 104
                     ColumnLayout {
                         anchors.fill: parent
-                        spacing: 5
+                        spacing: 6
 
                         UI.TextLabel {
                             text: index === 0 ? "Agora" : modelData.time
-                            font.pixelSize: UI.Theme.fontSizeSmall
+                            font.pixelSize: 11
                             font.weight: 500
-                            textColor: "#BFC0C8"
+                            textColor: "#C7C7CF"
                             Layout.alignment: Qt.AlignHCenter
                         }
 
                         WeatherCommon.WeatherIcon {
                             condition: modelData.cond
                             isoTime: modelData.iso_time || ""
-                            iconSize: 24
+                            iconSize: 26
                             Layout.alignment: Qt.AlignHCenter
                         }
 
@@ -100,7 +103,7 @@ ColumnLayout {
 
                         UI.TextLabel {
                             text: WeatherFormat.temp(modelData.temp)
-                            font.pixelSize: 16
+                            font.pixelSize: 17
                             font.weight: 600
                             textColor: UI.Theme.textPrimary
                             Layout.alignment: Qt.AlignHCenter

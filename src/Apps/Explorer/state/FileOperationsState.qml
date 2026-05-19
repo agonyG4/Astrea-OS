@@ -76,9 +76,9 @@ QtObject {
         if (!files || files.length === 0)
             return
         systemClipboardWrite.command = [
-            "bash", "-lc",
-            "for f in \"$@\"; do printf 'file://%s\\n' \"$f\"; done | wl-copy --type text/uri-list",
-            "_"
+            "python3",
+            app.helperPath,
+            "copy-uri-list"
         ].concat(files)
         systemClipboardWrite.running = false
         systemClipboardWrite.running = true
@@ -382,13 +382,10 @@ QtObject {
             return
         var resolvedDestination = destinationPath || app.currentPath
         conflictScanProcess.command = [
-            "bash", "-lc",
-            "dest=\"$1\"; shift; " +
-            "for f in \"$@\"; do " +
-            "name=$(basename -- \"$f\"); target=\"$dest/$name\"; " +
-            "if [ \"$f\" != \"$target\" ] && [ -e \"$target\" ]; then printf '%s\\n' \"$name\"; fi; " +
-            "done",
-            "_", resolvedDestination
+            "python3",
+            app.helperPath,
+            "scan-conflicts",
+            resolvedDestination
         ].concat(files)
         pendingPasteFiles = files.slice()
         pendingPasteMode = mode || "copy"

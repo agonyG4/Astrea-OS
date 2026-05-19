@@ -9,6 +9,7 @@ Item {
 
     required property var   model
     required property int   selectedIndex
+    property var translationMessages: ({})
     signal selectIndex(int index)
     signal openUserProfile()
 
@@ -126,7 +127,7 @@ Item {
                 height: 40
                 Components.NavItem {
                     anchors.fill: parent
-                    label:      model.label
+                    label:      model.labelKey !== undefined && model.labelKey.length > 0 ? ((root.translationMessages && root.translationMessages[model.labelKey]) || model.label) : model.label
                     sym:        model.sym !== undefined ? model.sym : ""
                     iconSource: model.iconSource !== undefined ? model.iconSource : ""
                     iconKey:    model.iconKey !== undefined ? model.iconKey : ""

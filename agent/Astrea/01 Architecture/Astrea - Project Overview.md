@@ -1,6 +1,6 @@
 # Astrea - Project Overview
 
-Source analyzed: `/home/agony/.local/share/Astrea`
+Source analyzed: `/home/agony/.local/share/Astrea-Rolling`
 
 Related notes: [[Astrea]], [[Astrea - Structure Breakdown]], [[Astrea - Entry Points]], [[Astrea - Data Flow]]
 
@@ -11,7 +11,10 @@ Live runtime path:
 - `/home/agony/.local/share/Astrea`
 
 Documentation vault:
-- `/home/agony/Documentos/Astrea/Astrea`
+- `/home/agony/GitHub/Astrea-Dev/agent/Astrea`
+
+Current path relationship:
+- `/home/agony/.local/share/Astrea` resolves to `/home/agony/.local/share/Astrea-Rolling`
 
 It provides:
 - persistent shell surfaces
@@ -20,6 +23,7 @@ It provides:
 - system configuration pages
 - wallpaper and lockscreen features
 - notification handling
+- app launch routing and temporary latency burst
 - command bridges to Linux desktop services
 
 ## Tech Stack
@@ -27,7 +31,7 @@ It provides:
 - Quickshell for shell surfaces and standalone desktop windows.
 - Python for bridge scripts and JSON-producing backends.
 - Bash for system service wrappers.
-- Native executables for Explorer and music bars.
+- Rust native executables for Explorer, Weather, app launch, and music bars.
 - Hyprland, PipeWire/WirePlumber, bluetoothctl, playerctl, systemd user units, DBus, gsettings, hyprsunset, and nvibrant.
 
 ## Architecture Style

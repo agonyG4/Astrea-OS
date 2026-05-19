@@ -1,7 +1,10 @@
-Clock               1.0 Clock.qml
-IndicatorButton     1.0 IndicatorButton.qml
-PopupHeader         1.0 PopupHeader.qml
-TopbarPopup         1.0 TopbarPopup.qml
-Tray                1.0 Tray.qml
-TrayContextMenu     1.0 TrayContextMenu.qml
-Workspaces          1.0 Workspaces.qml
+BarSegment      1.0 base/BarSegment.qml
+Clock           1.0 base/Clock.qml
+IndicatorButton 1.0 base/IndicatorButton.qml
+TopbarIndicator 1.0 base/TopbarIndicator.qml
+PopupHeader     1.0 popups/PopupHeader.qml
+PopupHost       1.0 popups/PopupHost.qml
+TopbarPopup     1.0 popups/TopbarPopup.qml
+Tray            1.0 tray/Tray.qml
+TrayContextMenu 1.0 tray/TrayContextMenu.qml
+Workspaces      1.0 workspaces/Workspaces.qml

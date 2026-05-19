@@ -11,7 +11,7 @@ set -euo pipefail
 
 # ─── Configuração ────────────────────────────────────────────
 GITHUB_REPO="https://github.com/aritsuyu/Astrea-OS.git"
-BRANCH="Alpha"
+BRANCH="Stable"
 REAL_USER="${SUDO_USER:-$USER}"
 REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
 SCRIPT_DIR="$(dirname "$(realpath "$0")")"

@@ -7,6 +7,8 @@ Item {
     property string label: ""
     property string sublabel: ""
     property bool   isLast:  false
+    property bool   clickable: false
+    property bool   controlBlocksRowClick: true
     
     // Theme colors
     property color textPrimary: Components.Theme.textPrimary
@@ -79,7 +81,8 @@ Item {
         color: sr.cardBorder
     }
 
-    signal rightClicked()
+    signal rightClicked(real x, real y)
+    signal clicked()
 
     MouseArea {
         id: rowArea
@@ -87,8 +90,19 @@ Item {
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         propagateComposedEvents: true
+        cursorShape: sr.clickable ? Qt.PointingHandCursor : Qt.ArrowCursor
+        function isOverControl(mouse) {
+            if (!sr.controlBlocksRowClick)
+                return false
+            const p = mapToItem(slot, mouse.x, mouse.y)
+            return p.x >= 0 && p.x <= slot.width && p.y >= 0 && p.y <= slot.height
+        }
         onPressed: (mouse) => {
             if (mouse.button === Qt.RightButton) {
+                mouse.accepted = true
+            } else if (rowArea.isOverControl(mouse)) {
+                mouse.accepted = false
+            } else if (sr.clickable) {
                 mouse.accepted = true
             } else {
                 mouse.accepted = false
@@ -96,13 +110,17 @@ Item {
         }
         onClicked: (mouse) => {
             if (mouse.button === Qt.RightButton) {
-                sr.rightClicked()
+                sr.rightClicked(mouse.x, mouse.y)
+            } else if (rowArea.isOverControl(mouse)) {
+                mouse.accepted = false
+            } else if (sr.clickable) {
+                sr.clicked()
             } else {
                 mouse.accepted = false
             }
         }
         onReleased: (mouse) => {
-            if (mouse.button !== Qt.RightButton) {
+            if (mouse.button !== Qt.RightButton && (!sr.clickable || rowArea.isOverControl(mouse))) {
                 mouse.accepted = false
             }
         }

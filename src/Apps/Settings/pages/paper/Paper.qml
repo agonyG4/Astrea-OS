@@ -5,6 +5,7 @@ import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
 import QtQuick.Effects
+import "../../AstreaI18n" as AstreaI18n
 
 Item {
     id: root
@@ -327,7 +328,7 @@ Item {
                 anchors { left: parent.left; right: parent.right; top: parent.top; margins: 20 }
                 spacing: 16
 
-                Text { text: "Name this wallpaper"; font.pixelSize: 15; font.weight: Font.Medium; color: root.textPrimary }
+                Text { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.text.name_this_wallpaper"]) || "Name this wallpaper"); font.pixelSize: 15; font.weight: Font.Medium; color: root.textPrimary }
 
                 Rectangle {
                     Layout.fillWidth: true; height: 36; radius: 8
@@ -357,13 +358,13 @@ Item {
                             required property var modelData
                             Layout.fillWidth: true; height: 34; radius: 8
                             color: modelData.accent
-                                ? (bma.containsMouse ? Qt.rgba(10/255,132/255,255/255,0.8) : root.accent)
+                                ? (bma.containsMouse ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.82) : root.accent)
                                 : (bma.containsMouse ? Qt.rgba(1,1,1,0.08) : Qt.rgba(1,1,1,0.04))
                             border.width: modelData.accent ? 0 : 1; border.color: root.cardBorder
                             Behavior on color { ColorAnimation { duration: 120 } }
                             Text { anchors.centerIn: parent; text: modelData.t; font.pixelSize: 13
                                 font.weight: modelData.accent ? Font.Medium : Font.Normal
-                                color: modelData.accent ? "#fff" : root.textSecondary }
+                                color: modelData.accent ? Theme.accentForeground : root.textSecondary }
                             MouseArea { id: bma; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
                                 onClicked: modelData.accent ? dlg._ok() : (dlg.visible=false) }
                         }
@@ -463,7 +464,7 @@ Item {
             }
             spacing: 0
 
-            SectionHeader { text: "CURRENT"; Layout.bottomMargin: 12; textSecondary: root.textSecondary }
+            SectionHeader { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.text.current"]) || "CURRENT"); Layout.bottomMargin: 12; textSecondary: root.textSecondary }
 
             Rectangle {
                 Layout.fillWidth: true; Layout.bottomMargin: 8
@@ -519,7 +520,7 @@ Item {
                                 }
                                 Text {
                                     Layout.alignment: Qt.AlignCenter
-                                    text: "Preview Fail"; font.pixelSize: 10; font.weight: Font.Medium; color: root.textSecondary
+                                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.text.preview_fail"]) || "Preview Fail"); font.pixelSize: 10; font.weight: Font.Medium; color: root.textSecondary
                                 }
                             }
                         }
@@ -536,7 +537,7 @@ Item {
                                     font.family: "JetBrainsMono Nerd Font"; font.pixelSize: 22; color: "#fff"
                                 }
                                 Text {
-                                    anchors.horizontalCenter: parent.horizontalCenter; text: "Change"
+                                    anchors.horizontalCenter: parent.horizontalCenter; text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.text.change"]) || "Change")
                                     font.pixelSize: 11; font.weight: Font.Medium; color: "#fff"
                                 }
                             }
@@ -556,7 +557,7 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true
-                            Text { text: "Show on all workspaces"; font.pixelSize: 13; color: root.textPrimary; Layout.fillWidth: true }
+                            Text { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.text.show_on_all_workspaces"]) || "Show on all workspaces"); font.pixelSize: 13; color: root.textPrimary; Layout.fillWidth: true }
                             ToggleSwitch {
                                 id: wsToggle
                                 checked: true
@@ -599,7 +600,7 @@ Item {
                 implicitHeight: tRow.implicitHeight
                 SettingRow {
                     id: tRow; anchors.left: parent.left; anchors.right: parent.right
-                    label: "Transition"; sublabel: "awww wallpaper animation"; isLast: true
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.label.transition"]) || "Transition"); sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.sublabel.awww_wallpaper_animation"]) || "awww wallpaper animation"); isLast: true
                     textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
                     SelectButton {
                         implicitWidth: 140; label: root.transitions[root.selTrans].l
@@ -619,7 +620,7 @@ Item {
                 color: root.cardBorder
             }
 
-            SectionHeader { text: "WALLPAPER LIBRARY"; Layout.bottomMargin: 12; textSecondary: root.textSecondary }
+            SectionHeader { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.text.wallpaper_library"]) || "WALLPAPER LIBRARY"); Layout.bottomMargin: 12; textSecondary: root.textSecondary }
 
             Rectangle {
                 Layout.fillWidth: true
@@ -638,7 +639,7 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true; Layout.margins: 16; Layout.topMargin: 12; Layout.bottomMargin: 12; spacing: 8
-                            Text { text: "Dynamic Wallpapers"; font.pixelSize: 13; font.weight: Font.Medium; color: root.textPrimary; Layout.fillWidth: true }
+                            Text { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.text.dynamic_wallpapers"]) || "Dynamic Wallpapers"); font.pixelSize: 13; font.weight: Font.Medium; color: root.textPrimary; Layout.fillWidth: true }
                             Item { width: 16; height: 26
                                 Text { anchors.centerIn: parent; text: dynamicSect.open?"▾":"▸"; font.pixelSize: 11; color: root.textSecondary }
                                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: dynamicSect.open=!dynamicSect.open }
@@ -651,7 +652,7 @@ Item {
                             implicitHeight: dynamicModel.count ? dynGrid.implicitHeight : dynEmpty.implicitHeight
 
                             Text { id: dynEmpty; anchors.horizontalCenter: parent.horizontalCenter
-                                text: "No wallpapers found"; font.pixelSize: 12; color: root.textSecondary
+                                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.text.no_wallpapers_found"]) || "No wallpapers found"); font.pixelSize: 12; color: root.textSecondary
                                 visible: !dynamicModel.count }
 
                             WallpaperGrid {
@@ -670,10 +671,10 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true; Layout.margins: 16; Layout.topMargin: 12; Layout.bottomMargin: 12; spacing: 8
-                            Text { text: "User Wallpapers"; font.pixelSize: 13; font.weight: Font.Medium; color: root.textPrimary; Layout.fillWidth: true }
+                            Text { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.text.user_wallpapers"]) || "User Wallpapers"); font.pixelSize: 13; font.weight: Font.Medium; color: root.textPrimary; Layout.fillWidth: true }
                             Rectangle {
                                 width: 26; height: 26; radius: 8
-                                color: addMa.containsMouse ? Qt.rgba(10/255,132/255,255/255,0.15) : Qt.rgba(1,1,1,0.06)
+                                color: addMa.containsMouse ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.15) : Qt.rgba(1,1,1,0.06)
                                 border.width: 1; border.color: addMa.containsMouse ? root.accent : root.cardBorder
                                 Behavior on color { ColorAnimation { duration: 120 } }
                                 Text { anchors.centerIn: parent; text: "+"; font.pixelSize: 16; font.weight: Font.Light
@@ -696,7 +697,7 @@ Item {
                             implicitHeight: userModel.count ? ugrid.implicitHeight : emptyLbl.implicitHeight
 
                             Text { id: emptyLbl; anchors.horizontalCenter: parent.horizontalCenter
-                                text: "No wallpapers found"; font.pixelSize: 12; color: root.textSecondary
+                                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.text.no_wallpapers_found"]) || "No wallpapers found"); font.pixelSize: 12; color: root.textSecondary
                                 visible: !userModel.count }
 
                             WallpaperGrid {
@@ -715,7 +716,7 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth: true; Layout.margins: 16; Layout.topMargin: 12; Layout.bottomMargin: 12; spacing: 8
-                            Text { text: "Landscapes"; font.pixelSize: 13; font.weight: Font.Medium; color: root.textPrimary; Layout.fillWidth: true }
+                            Text { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.text.landscapes"]) || "Landscapes"); font.pixelSize: 13; font.weight: Font.Medium; color: root.textPrimary; Layout.fillWidth: true }
                             Item { width: 16; height: 26
                                 Text { anchors.centerIn: parent; text: landscapeSect.open?"▾":"▸"; font.pixelSize: 11; color: root.textSecondary }
                                 MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: landscapeSect.open=!landscapeSect.open }
@@ -728,7 +729,7 @@ Item {
                             implicitHeight: landscapeModel.count ? lsGrid.implicitHeight : lsEmpty.implicitHeight
 
                             Text { id: lsEmpty; anchors.horizontalCenter: parent.horizontalCenter
-                                text: "No wallpapers found"; font.pixelSize: 12; color: root.textSecondary
+                                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.paper.paper.text.no_wallpapers_found"]) || "No wallpapers found"); font.pixelSize: 12; color: root.textSecondary
                                 visible: !landscapeModel.count }
 
                             WallpaperGrid {

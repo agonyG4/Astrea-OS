@@ -3,6 +3,10 @@ import sys
 import numpy as np
 from PIL import Image
 
+def _format_rgb(rgb):
+    values = np.clip(np.round(rgb), 0, 255).astype(int)
+    return f"{values[0]} {values[1]} {values[2]}"
+
 def get_vibrant_color(image_path):
     try:
         img = Image.open(image_path).convert("RGB").resize((64, 64), Image.BOX)
@@ -18,7 +22,16 @@ def get_vibrant_color(image_path):
         vibrant_pixels = pixels[mask]
 
         if len(vibrant_pixels) == 0:
-            return "255 255 255"
+            usable = pixels[(v > 0.06) & (v < 0.98)]
+            if len(usable) == 0:
+                usable = pixels
+            average = usable.mean(axis=0)
+            luminance = float(np.dot(average, [0.2126, 0.7152, 0.0722]))
+            if luminance < 0.42:
+                average = average + (0.42 - luminance)
+            elif luminance > 0.82:
+                average = average * (0.82 / max(luminance, 0.001))
+            return _format_rgb(average * 255)
 
         buckets = (vibrant_pixels * 16).astype(int)
         unique_buckets, counts = np.unique(buckets, axis=0, return_counts=True)
@@ -32,11 +45,12 @@ def get_vibrant_color(image_path):
         scores = np.log1p(counts) * (bucket_s ** 2.5) * bucket_v
 
         if scores.max() < 0.05:
-            return "255 255 255"
+            weights = np.maximum(s[mask], 0.08) * (0.35 + v[mask])
+            weighted = (vibrant_pixels * weights[:, None]).sum(axis=0) / weights.sum()
+            return _format_rgb(weighted * 255)
 
         best = rgb_vals[scores.argmax()]
-        rgb = (best * 255).astype(int)
-        return f"{rgb[0]} {rgb[1]} {rgb[2]}"
+        return _format_rgb(best * 255)
 
     except Exception:
         return "255 255 255"

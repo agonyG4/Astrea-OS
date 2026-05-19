@@ -42,6 +42,21 @@ QtObject {
     property var statusRefreshProc: Process {
         command: ["systemctl", "--user", "kill", "-s", "SIGUSR1", "astrea-status.service"]
         running: false
+        onExited: exitCode => {
+            if (exitCode === 0)
+                statusFile.reload()
+            else {
+                statusStartProc.running = false
+                statusStartProc.running = true
+            }
+        }
+    }
+
+    property var statusStartProc: Process {
+        command: ["systemctl", "--user", "start", "astrea-status.service"]
+        running: false
         onExited: statusFile.reload()
     }
+
+    Component.onCompleted: root.refresh()
 }

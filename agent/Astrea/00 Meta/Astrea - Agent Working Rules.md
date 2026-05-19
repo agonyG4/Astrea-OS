@@ -19,7 +19,10 @@ Implementation work starts in:
 - `/home/agony/.local/share/Astrea`
 
 Documentation lives in:
-- `/home/agony/Documentos/Astrea/Astrea`
+- `/home/agony/GitHub/Astrea-Dev/agent/Astrea`
+
+Current inspected runtime source:
+- `/home/agony/.local/share/Astrea-Rolling`
 
 Repo mirrors are not the live runtime unless the user explicitly says so.
 
@@ -47,6 +50,7 @@ Keep the existing app style untouched.
 Examples:
 - Settings pages should use `Apps/Settings/AstreaComponents -> Core/components`.
 - Explorer file UI should use `Apps/Explorer/AstreaFiles -> Features/Files`.
+- Weather UI should use `Apps/Weather/AstreaComponents -> Core/components` plus Weather-local section components.
 - Explorer context menus should wrap `AstreaFiles.FileContextMenu` and add app-specific actions inside it.
 - Settings controls should prefer `SectionHeader`, `SettingRow`, `SelectButton`, `ToggleSwitch`, `FormCard`, and other exported core controls.
 
@@ -79,6 +83,8 @@ If the feature is app-only, keep it app-local.
 
 `System` owns local services, system config, auth helpers, scripts, cache, and metadata.
 
+`System/launch`, `bin/astrea-launch`, and `System/services/astrea_latencyd.py` own Astrea app-launch routing and temporary launch bursts.
+
 ## Import Rules
 Use local module links already present in the app.
 
@@ -87,6 +93,7 @@ Do:
 - `import "../../AstreaComponents"` from Settings pages.
 - `import "AstreaFiles" as AstreaFiles` from Explorer entrypoints.
 - `import "../../AstreaFiles" as AstreaFiles` from nested Explorer components.
+- `import "../AstreaComponents" as UI` from Weather UI files.
 
 Avoid:
 - new absolute QML imports to `/home/agony/.local/share/Astrea/...`
@@ -102,6 +109,8 @@ Prefer JSON stdout for state reads.
 Prefer explicit command names for side effects.
 
 Keep bridge output stable for existing consumers.
+
+Astrea-owned app launch calls should use `bin/astrea-launch` so launcher history and latency burst behavior stay centralized.
 
 When changing a JSON contract, update:
 - the bridge note

@@ -9,7 +9,12 @@ Default to useful, narrow changes in:
 - `/home/agony/.local/share/Astrea`
 
 Use this vault as context:
-- `/home/agony/Documentos/Astrea/Astrea`
+- `/home/agony/GitHub/Astrea-Dev/agent/Astrea`
+
+Current snapshot source:
+- `/home/agony/.local/share/Astrea-Rolling`
+
+`/home/agony/.local/share/Astrea` currently resolves to the Rolling tree on this machine. Apps should still target the canonical `~/.local/share/Astrea` path; channel names are runtime-management detail.
 
 Do not treat GitHub mirrors, old `.config/quickshell` trees, or Bench copies as live unless the user says so or runtime inspection proves it.
 
@@ -31,12 +36,14 @@ Do not treat GitHub mirrors, old `.config/quickshell` trees, or Bench copies as 
 | island and music | `Quickshell/island` | [[Astrea - Island]] |
 | spotlight | `Quickshell/spotlight` | [[Astrea - Spotlight]] |
 | notifications | `Quickshell/notifications` | [[Astrea - Notifications]] |
+| About | `Apps/About` | [[Astrea - About App]] |
 | Settings | `Apps/Settings` | [[Astrea - Settings App]] |
 | Explorer | `Apps/Explorer` | [[Astrea - Explorer App]] |
 | Weather | `Apps/Weather` | [[Astrea - Weather App]] |
 | shared controls | `Core/components` | [[Astrea - Core Components]] |
 | reusable file UI | `Features/Files` | [[Astrea - Features]] |
 | system bridges | `Core/bridge`, `System` | [[Astrea - Core Bridge]], [[Astrea - System Layer]] |
+| launch and latency | `System/launch`, `bin/astrea-launch`, `System/services/astrea_latencyd.py` | [[Astrea - Launcher and Latency]] |
 | file chooser portal | `System/portal` + `Apps/Explorer/PortalDialog.qml` | [[Astrea - FileChooser Portal]] |
 
 ## Design DNA
@@ -71,7 +78,8 @@ Explorer:
 Weather:
 - keep it compact and information-first
 - use existing section components and bottom sheets
-- data and alert behavior belongs in `Core/bridge/apps/weather.py`
+- QML calls `bin/weather-cli`; the Rust backend delegates compatibility fetching to `Core/bridge/apps/weather.py`
+- alert monitoring belongs to `astrea-weatherd`, not the Weather window lifecycle
 
 Shell:
 - use resident popup patterns
@@ -120,6 +128,7 @@ Prefer:
 - backend service writes stable JSON only when state changes
 - QML reads with `FileView`
 - QML sends `SIGUSR1` or calls a focused command for manual refresh
+- app launches go through `bin/astrea-launch` when the caller is an Astrea launcher surface
 
 Do not change command names or JSON fields without updating every consumer and the matching docs.
 

@@ -4,6 +4,7 @@ import os
 import signal
 import shutil
 import subprocess
+import importlib.util
 import time
 from pathlib import Path
 
@@ -23,13 +24,22 @@ BLUETOOTH_PATH = STATE_DIR / "bluetooth.json"
 HEALTH_PATH = STATE_DIR / "health.json"
 
 REFRESH_AUDIO_SEC = 10
-REFRESH_NETWORK_SEC = 30
+REFRESH_NETWORK_SEC = 2
 REFRESH_BLUETOOTH_SEC = 45
+REFRESH_HEALTH_SEC = 300
 AUTOCONNECT_SEC = 120
 MAX_SLEEP_SEC = 5.0
+COMMAND_CACHE_SEC = 300
+NETWORK_ROUTE_CACHE_SEC = 30
 
 refresh_requested = False
 running = True
+command_cache: dict[str, tuple[float, bool]] = {}
+json_cache: dict[Path, str] = {}
+bluetooth_module = None
+network_sample: dict[str, tuple[float, int, int]] = {}
+network_route_iface = ""
+network_route_time = 0.0
 
 
 def dependency_payload(name: str, *, kind: str = "dependency_missing") -> dict:
@@ -42,7 +52,13 @@ def dependency_payload(name: str, *, kind: str = "dependency_missing") -> dict:
 
 
 def command_available(name: str) -> bool:
-    return shutil.which(name) is not None
+    now = time.monotonic()
+    cached = command_cache.get(name)
+    if cached and now - cached[0] < COMMAND_CACHE_SEC:
+        return cached[1]
+    available = shutil.which(name) is not None
+    command_cache[name] = (now, available)
+    return available
 
 
 def run_cmd(args, timeout=6):
@@ -63,14 +79,36 @@ def write_json_if_changed(path, payload):
         json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         + "\n"
     )
+    if json_cache.get(path) == data and path.exists():
+        return
     try:
         if path.exists() and path.read_text(encoding="utf-8") == data:
+            json_cache[path] = data
             return
     except OSError:
         pass
     tmp = path.with_name(f".{path.name}.tmp")
     tmp.write_text(data, encoding="utf-8")
     tmp.replace(path)
+    json_cache[path] = data
+
+
+def load_bluetooth_module():
+    global bluetooth_module
+    if bluetooth_module is not None:
+        return bluetooth_module
+    if not BLUETOOTH_HELPER.exists():
+        return None
+    spec = importlib.util.spec_from_file_location("astrea_bluetooth_manager", BLUETOOTH_HELPER)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        return None
+    bluetooth_module = module
+    return module
 
 
 def audio_status():
@@ -99,6 +137,70 @@ def audio_status():
     return payload
 
 
+def format_rate(bytes_per_second: float) -> str:
+    value = max(0.0, float(bytes_per_second))
+    units = ("B/s", "KB/s", "MB/s", "GB/s")
+    unit_index = 0
+    while value >= 1000.0 and unit_index < len(units) - 1:
+        value /= 1000.0
+        unit_index += 1
+    if unit_index == 0:
+        return f"{int(round(value))} {units[unit_index]}"
+    return f"{value:.1f} {units[unit_index]}"
+
+
+def interface_counters(iface: str) -> tuple[int, int] | None:
+    stats_dir = Path("/sys/class/net") / iface / "statistics"
+    try:
+        rx = int((stats_dir / "rx_bytes").read_text(encoding="utf-8").strip())
+        tx = int((stats_dir / "tx_bytes").read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return rx, tx
+
+
+def interface_rates(iface: str) -> tuple[str, str]:
+    global network_sample
+
+    counters = interface_counters(iface)
+    if counters is None:
+        return "0 B/s", "0 B/s"
+
+    now = time.monotonic()
+    rx, tx = counters
+    previous = network_sample.get(iface)
+    network_sample[iface] = (now, rx, tx)
+
+    if previous is None:
+        return "0 B/s", "0 B/s"
+
+    previous_time, previous_rx, previous_tx = previous
+    elapsed = max(0.001, now - previous_time)
+    return (
+        format_rate((rx - previous_rx) / elapsed),
+        format_rate((tx - previous_tx) / elapsed),
+    )
+
+
+def active_network_iface() -> str:
+    global network_route_iface, network_route_time
+
+    now = time.monotonic()
+    if now - network_route_time < NETWORK_ROUTE_CACHE_SEC:
+        return network_route_iface
+
+    route = run_cmd(["ip", "route", "get", "1.1.1.1"], timeout=3).stdout.split()
+    iface = ""
+    for index, token in enumerate(route):
+        if token == "dev" and index + 1 < len(route):
+            iface = route[index + 1]
+            break
+
+    network_route_iface = iface
+    network_route_time = now
+    return iface
+
+
 def network_status():
     if not command_available("ip"):
         payload = dependency_payload("ip")
@@ -112,13 +214,17 @@ def network_status():
             }
         )
         return payload
-    route = run_cmd(["ip", "route", "get", "1.1.1.1"], timeout=3).stdout.split()
-    iface = ""
-    for index, token in enumerate(route):
-        if token == "dev" and index + 1 < len(route):
-            iface = route[index + 1]
-            break
+    iface = active_network_iface()
     if not iface:
+        return {
+            "connected": False,
+            "type": "none",
+            "ssid": "",
+            "download": "0 B/s",
+            "upload": "0 B/s",
+        }
+
+    if not (Path("/sys/class/net") / iface).exists():
         return {
             "connected": False,
             "type": "none",
@@ -132,22 +238,22 @@ def network_status():
         ssid = ""
         if command_available("nmcli"):
             wifi = run_cmd(
-                ["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"], timeout=4
+                ["nmcli", "-t", "-g", "GENERAL.CONNECTION", "device", "show", iface],
+                timeout=3,
             ).stdout
-            for line in wifi.splitlines():
-                if line.startswith("yes:"):
-                    ssid = line.split(":", 1)[1]
-                    break
+            ssid = wifi.strip().splitlines()[0] if wifi.strip() else ""
     else:
         net_type = "wired"
         ssid = "Ethernet"
+
+    download, upload = interface_rates(iface)
 
     return {
         "connected": True,
         "type": net_type,
         "ssid": ssid,
-        "download": "--",
-        "upload": "--",
+        "download": download,
+        "upload": upload,
     }
 
 
@@ -160,6 +266,18 @@ def bluetooth_status():
         payload = dependency_payload(str(BLUETOOTH_HELPER), kind="helper_missing")
         payload.update({"powered": False, "connected_name": "", "paired_devices": []})
         return payload
+    module = load_bluetooth_module()
+    if module is not None and hasattr(module, "get_status_payload"):
+        try:
+            payload = module.get_status_payload()
+        except Exception as exc:
+            payload = {"success": False, "error": str(exc)}
+        payload.setdefault("powered", False)
+        payload.setdefault("connected_name", "")
+        payload.setdefault("paired_devices", [])
+        payload["ok"] = bool(payload.get("success", True))
+        return payload
+
     proc = run_cmd(["python3", str(BLUETOOTH_HELPER), "status"], timeout=8)
     try:
         payload = json.loads(proc.stdout or "{}")
@@ -173,7 +291,16 @@ def bluetooth_status():
 
 
 def bluetooth_autoconnect():
-    if command_available("python3") and BLUETOOTH_HELPER.exists():
+    if not BLUETOOTH_HELPER.exists():
+        return
+    module = load_bluetooth_module()
+    if module is not None and hasattr(module, "run_autoconnect"):
+        try:
+            module.run_autoconnect(False)
+            return
+        except Exception:
+            pass
+    if command_available("python3"):
         run_cmd(["python3", str(BLUETOOTH_HELPER), "autoconnect"], timeout=20)
 
 
@@ -204,39 +331,47 @@ def handle_stop(_signum, _frame):
 
 
 def main():
-    global refresh_requested
+    global refresh_requested, network_route_time
     signal.signal(signal.SIGUSR1, handle_refresh)
     signal.signal(signal.SIGTERM, handle_stop)
     signal.signal(signal.SIGINT, handle_stop)
 
-    next_audio = next_network = next_bluetooth = next_autoconnect = 0.0
+    next_audio = next_network = next_bluetooth = next_health = next_autoconnect = 0.0
+    bluetooth_powered = False
 
     while running:
         now = time.monotonic()
 
         if refresh_requested:
-            next_audio = next_network = next_bluetooth = 0.0
+            next_audio = next_network = next_bluetooth = next_health = 0.0
+            network_route_time = 0.0
             refresh_requested = False
 
         if now >= next_audio:
-            write_json_if_changed(HEALTH_PATH, health_payload())
             write_json_if_changed(AUDIO_PATH, audio_status())
             next_audio = now + REFRESH_AUDIO_SEC
+
+        if now >= next_health:
+            write_json_if_changed(HEALTH_PATH, health_payload())
+            next_health = now + REFRESH_HEALTH_SEC
 
         if now >= next_network:
             write_json_if_changed(NETWORK_PATH, network_status())
             next_network = now + REFRESH_NETWORK_SEC
 
         if now >= next_bluetooth:
-            write_json_if_changed(BLUETOOTH_PATH, bluetooth_status())
+            payload = bluetooth_status()
+            bluetooth_powered = payload.get("powered") is True
+            write_json_if_changed(BLUETOOTH_PATH, payload)
             next_bluetooth = now + REFRESH_BLUETOOTH_SEC
 
         if now >= next_autoconnect:
-            bluetooth_autoconnect()
+            if bluetooth_powered:
+                bluetooth_autoconnect()
+                next_bluetooth = 0.0
             next_autoconnect = now + AUTOCONNECT_SEC
-            next_bluetooth = 0.0
 
-        next_due = min(next_audio, next_network, next_bluetooth, next_autoconnect)
+        next_due = min(next_audio, next_network, next_bluetooth, next_health, next_autoconnect)
         sleep_for = max(0.2, min(MAX_SLEEP_SEC, next_due - time.monotonic()))
         time.sleep(sleep_for)
 

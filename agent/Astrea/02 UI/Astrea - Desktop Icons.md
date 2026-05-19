@@ -1,6 +1,6 @@
 # Astrea - Desktop Icons
 
-Related notes: [[Astrea - Quickshell Runtime]], [[Astrea - Features]], [[Astrea - Assets and Data]]
+Related notes: [[Astrea - Quickshell Runtime]], [[Astrea - Features]], [[Astrea - Assets and Data]], [[Astrea - Launcher and Latency]]
 
 ## Folder
 `Quickshell/desktop/`
@@ -73,6 +73,9 @@ On this machine that is:
 - `~/Área de trabalho`
 
 It returns JSON for QML and writes local `apps.js` / `apps.json` only as generated cache files.
+
+## Launching
+Desktop Icons launches entries through `bin/astrea-launch`, so desktop launches share the same launcher daemon, history, and latency behavior as Spotlight and Explorer.
 
 ## Background Work
 Desktop Icons must not keep a long-lived shell watcher process.

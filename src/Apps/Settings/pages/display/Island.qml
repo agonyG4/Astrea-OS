@@ -4,6 +4,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
+import "../../AstreaI18n" as AstreaI18n
 
 Item {
     id: root
@@ -30,18 +31,18 @@ Item {
     // ── Configuration Setup ───────────────────────────────────────────────
     readonly property string configPath: Quickshell.env("HOME") + "/.local/state/Astrea/island/island.json"
     readonly property string legacyConfigPath: Quickshell.env("HOME") + "/.config/quickshell/island/config/island.json"
+    readonly property string stateJsonScript: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/state_json.py"
+    readonly property string defaultConfigJson: JSON.stringify({
+        "enabled": true,
+        "always_on_top": true,
+        "music": true,
+        "show_gamemode_notify": false,
+        "style": "Notch"
+    }, null, 4)
+
     Process {
         id: loadConfigProc
-        command: ["bash", "-c",
-            "FILE=\"$1\"; LEGACY=\"$2\";" +
-            "mkdir -p \"$(dirname \"$FILE\")\";" +
-            "if [ ! -f \"$FILE\" ]; then " +
-            "  if [ -f \"$LEGACY\" ]; then cp \"$LEGACY\" \"$FILE\"; " +
-            "  else printf '%s\n' '{' '    \"enabled\": true,' '    \"always_on_top\": true,' '    \"music\": true,' '    \"show_gamemode_notify\": false,' '    \"style\": \"Notch\"' '}' > \"$FILE\"; " +
-            "  fi; " +
-            "fi;" +
-            "cat \"$FILE\"",
-            "--", root.configPath, root.legacyConfigPath]
+        command: ["python3", root.stateJsonScript, "read-or-init", root.configPath, root.defaultConfigJson, root.legacyConfigPath]
         property string outData: ""
         
         stdout: SplitParser {
@@ -83,9 +84,7 @@ Item {
             
             jsonData = JSON.stringify(nCfg, null, 4)
             
-            command = ["bash", "-c",
-                "mkdir -p \"$(dirname \"$1\")\"; cat <<'EOF' > \"$1\"\n" + jsonData + "\nEOF\n",
-                "--", root.configPath]
+            command = ["python3", root.stateJsonScript, "write", root.configPath, jsonData]
             running = false
             running = true
         }
@@ -141,7 +140,7 @@ Item {
             spacing: 0
 
             SectionHeader { 
-                text: "SYSTEM"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.island.text.system"]) || "SYSTEM")
                 Layout.bottomMargin: 12 
                 textSecondary: root.textSecondary
             }
@@ -161,8 +160,8 @@ Item {
                     spacing: 0
 
                     SettingRow {
-                        label: "Enable Island"
-                        sublabel: "Start with system and display the Island"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.island.label.enable_island"]) || "Enable Island")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.island.sublabel.start_with_system_and_display_the_island"]) || "Start with system and display the Island")
                         textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
                         ToggleSwitch {
                             checked: root.islandEnabled
@@ -174,8 +173,8 @@ Item {
                     }
 
                     SettingRow {
-                        label: "Always on Top"
-                        sublabel: "Keep the Island above all windows"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.island.label.always_on_top"]) || "Always on Top")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.island.sublabel.keep_the_island_above_all_windows"]) || "Keep the Island above all windows")
                         textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
                         isLast: true
                         ToggleSwitch {
@@ -191,7 +190,7 @@ Item {
             }
 
             SectionHeader { 
-                text: "ISLAND LOOK & FEEL"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.island.text.island_look_feel"]) || "ISLAND LOOK & FEEL")
                 Layout.bottomMargin: 12 
                 textSecondary: root.textSecondary
             }
@@ -211,8 +210,8 @@ Item {
                     spacing: 0
 
                     SettingRow {
-                        label: "Style"
-                        sublabel: "Overall visual shape of the Island"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.island.label.style"]) || "Style")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.island.sublabel.overall_visual_shape_of_the_island"]) || "Overall visual shape of the Island")
                         textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
                         isLast: true
                         SelectButton {
@@ -231,7 +230,7 @@ Item {
             }
             
             SectionHeader { 
-                text: "FEATURES"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.island.text.features"]) || "FEATURES")
                 Layout.bottomMargin: 12 
                 textSecondary: root.textSecondary
             }
@@ -251,8 +250,8 @@ Item {
                     spacing: 0
 
                     SettingRow {
-                        label: "Music"
-                        sublabel: "Display now playing information"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.island.label.music"]) || "Music")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.island.sublabel.display_now_playing_information"]) || "Display now playing information")
                         textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
                         ToggleSwitch {
                             checked: root.musicEnabled
@@ -264,8 +263,8 @@ Item {
                     }
 
                     SettingRow {
-                        label: "Gamemode Notify"
-                        sublabel: "Show alerts when entering or exiting game mode"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.island.label.gamemode_notify"]) || "Gamemode Notify")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.island.sublabel.show_alerts_when_entering_or_exiting_game_mode"]) || "Show alerts when entering or exiting game mode")
                         textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
                         isLast: true
                         ToggleSwitch {

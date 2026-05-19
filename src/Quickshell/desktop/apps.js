@@ -1,20 +1,30 @@
 var APPS = [
   {
+    "name": "PGPatcher",
+    "generic": "Folder",
+    "icon": "folder",
+    "desktop": "$HOME/Área de trabalho/PGPatcher",
+    "kind": "folder"
+  },
+  {
     "name": "Steam",
     "generic": "",
     "icon": "steam",
-    "desktop": "$HOME/Área de trabalho/steam.desktop"
+    "desktop": "$HOME/Área de trabalho/steam.desktop",
+    "kind": "app"
   },
   {
     "name": "The Elder Scrolls V: Skyrim Special Edition",
     "generic": "",
     "icon": "steam_icon_489830",
-    "desktop": "$HOME/Área de trabalho/The Elder Scrolls V Skyrim Special Edition.desktop"
+    "desktop": "$HOME/Área de trabalho/The Elder Scrolls V Skyrim Special Edition.desktop",
+    "kind": "app"
   },
   {
     "name": "YouTube",
     "generic": "",
     "icon": "brave-agimnkijcaahngcdmfeangaknmldooml-Default",
-    "desktop": "$HOME/Área de trabalho/brave-agimnkijcaahngcdmfeangaknmldooml-Default.desktop"
+    "desktop": "$HOME/Área de trabalho/brave-agimnkijcaahngcdmfeangaknmldooml-Default.desktop",
+    "kind": "app"
   }
 ];

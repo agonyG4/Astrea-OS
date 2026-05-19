@@ -4,6 +4,7 @@ import QtQuick.Layouts 1.15
 import "components/layout" as LayoutComponents
 import "components/views" as ViewComponents
 import "."
+import "AstreaI18n" as AstreaI18n
 
 Dialog {
     id: dialog
@@ -20,8 +21,16 @@ Dialog {
 
     property string mode: "open_file" // open_file | save_file | select_folder
     property string startFolder: AppState.currentPath || AppState.homePath
-    property string acceptLabel: mode === "save_file" ? "Salvar" : mode === "select_folder" ? "Selecionar pasta" : "Abrir"
-    property string dialogTitle: mode === "save_file" ? "Salvar arquivo" : mode === "select_folder" ? "Selecionar pasta" : "Abrir arquivo"
+    property string acceptLabel: mode === "save_file"
+        ? ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.accept.save"]) || "Save")
+        : mode === "select_folder"
+            ? ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.accept.select_folder"]) || "Select folder")
+            : ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.accept.open"]) || "Open")
+    property string dialogTitle: mode === "save_file"
+        ? ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.title.save"]) || "Save file")
+        : mode === "select_folder"
+            ? ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.title.select_folder"]) || "Select folder")
+            : ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.title.open"]) || "Open file")
     property string initialViewMode: "icon"
     property string selectedName: ""
     property var nameFilters: []
@@ -245,7 +254,7 @@ Dialog {
 
                         Text {
                             anchors.centerIn: parent
-                            text: "Pasta vazia"
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.text.pasta_vazia"]) || "Empty folder")
                             color: Theme.textTer
                             font.pixelSize: 15
                             visible: !AppState.loadingDir && AppState.fileModel.count === 0 && AppState.loadError === ""
@@ -253,7 +262,7 @@ Dialog {
 
                         Text {
                             anchors.centerIn: parent
-                            text: "Carregando..."
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.text.carregando"]) || "Loading...")
                             color: Theme.textTer
                             font.pixelSize: 15
                             visible: AppState.loadingDir
@@ -282,7 +291,7 @@ Dialog {
                     spacing: 10
 
                     Text {
-                        text: "Nome:"
+                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.text.nome"]) || "Name:")
                         color: Theme.textTer
                         font.pixelSize: 12
                     }
@@ -291,7 +300,7 @@ Dialog {
                         id: saveNameField
                         Layout.fillWidth: true
                         text: dialog.selectedName
-                        placeholderText: "arquivo"
+                        placeholderText: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.placeholderText.arquivo"]) || "file")
                         onTextEdited: dialog.selectedName = text
                         onAccepted: if (dialog.canAccept()) dialog.chooseCurrentSelection()
                     }
@@ -312,7 +321,7 @@ Dialog {
                     }
 
                     Button {
-                        text: "Cancelar"
+                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.text.cancelar"]) || "Cancel")
                         onClicked: dialog.reject()
                     }
 

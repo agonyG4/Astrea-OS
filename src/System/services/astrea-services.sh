@@ -54,7 +54,7 @@ ExecStart=/usr/bin/python3 ${astrea_root}/System/portal/astrea_filechooser_porta
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=3
-KillMode=mixed
+KillMode=process
 
 [Install]
 WantedBy=default.target
@@ -103,10 +103,10 @@ ExecStart=/usr/bin/python3 ${astrea_root}/System/services/astrea_statusd.py
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=3
-KillMode=mixed
+KillMode=process
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target
 EOF
 }
 

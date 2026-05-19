@@ -6,11 +6,14 @@ Related notes: [[Astrea]], [[Astrea - Project Overview]], [[Astrea - Entry Point
 All folders below resolve under:
 - `/home/agony/.local/share/Astrea`
 
+Current inspected source:
+- `/home/agony/.local/share/Astrea-Rolling`
+
 ## Top-Level Folders
 - `Apps/`
   - standalone applications and app-specific workflows.
   - Put app-only UI state, pages, delegates, and process calls here.
-  - See [[Astrea - Settings App]], [[Astrea - Explorer App]], [[Astrea - Weather App]].
+  - See [[Astrea - About App]], [[Astrea - Settings App]], [[Astrea - Explorer App]], [[Astrea - Weather App]].
 - `Core/`
   - shared components and bridge scripts.
   - Put generic reusable controls and command wrappers here.
@@ -38,6 +41,7 @@ All folders below resolve under:
 | Need | Add it here |
 | --- | --- |
 | Settings page action or field | `Apps/Settings/pages/...` |
+| About system overview | `Apps/About/main.qml` and `Core/bridge/system/info.py` |
 | Settings shared control | `Core/components` and `Core/components/qmldir` |
 | Shared menu, button, card, or progress visual | `Core/components` and `Core/components/qmldir` |
 | Explorer file action | `Apps/Explorer` state/component plus [[Astrea - Explorer Backend]] when needed |
@@ -46,6 +50,7 @@ All folders below resolve under:
 | Weather data display | `Apps/Weather/ui/state/WeatherState.qml` plus `Apps/Weather/backend/weather-cli` |
 | Weather notifications | `Apps/Weather/backend/weatherd` |
 | Shell bar/island/spotlight behavior | `Quickshell/...` |
+| App launch routing or startup burst | `System/launch`, `bin/astrea-launch`, `System/services/astrea_latencyd.py` |
 | System read/write command | `Core/bridge` or `System` |
 | Persistent user config | `~/.config/AstreaOS` |
 | Runtime app state | `~/.local/state/Astrea` |

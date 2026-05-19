@@ -14,6 +14,7 @@ QtObject {
     property string activePreviewRefreshPath: ""
     property var startupWarmQueue: []
     property bool quickLookCooldown: false
+    property bool startupWorkEnabled: false
     property real zoomLevel: 1.0
     property int currentFolderWarmOffset: -1
     property int currentFolderWarmChunkSize: 24
@@ -24,7 +25,7 @@ QtObject {
     }
 
     function beginCurrentFolderWarm() {
-        if (!app.currentPath || app.loadingDir || app.searchActive || app.isRecentPath(app.currentPath) || app.fileModel.count <= 0)
+        if (!startupWorkEnabled || !app.currentPath || app.loadingDir || app.searchActive || app.isRecentPath(app.currentPath) || app.fileModel.count <= 0)
             return
         var initialLimit = viewMode === "icon" ? 18 : 24
         requestThumbnailWarm(app.currentPath, 0, initialLimit)
@@ -80,7 +81,7 @@ QtObject {
 
 
     function refreshPreviewMetadata() {
-        if (!app.currentPath || previewRefreshProcess.running || app.searchActive || app.isRecentPath(app.currentPath))
+        if (!startupWorkEnabled || !app.currentPath || previewRefreshProcess.running || app.searchActive || app.isRecentPath(app.currentPath))
             return
 
         activePreviewRefreshPath = app.currentPath
@@ -109,22 +110,12 @@ QtObject {
         quickLookCooldownTimer.restart()
 
         quickLookProcess.command = [
-            "bash", "-lc",
-            "pathfile=\"$2\"; pidfile=\"$3\"; selected=\"$1\"; " +
-            "if [ -f \"$pidfile\" ] && kill -0 \"$(cat \"$pidfile\" 2>/dev/null)\" >/dev/null 2>&1; then " +
-            "  current=$(cat \"$pathfile\" 2>/dev/null); " +
-            "  if [ \"$current\" = \"$selected\" ]; then " +
-            "    kill \"$(cat \"$pidfile\" 2>/dev/null)\" >/dev/null 2>&1; " +
-            "    rm -f \"$pathfile\" \"$pidfile\"; " +
-            "  else " +
-            "    printf '%s' \"$selected\" > \"$pathfile\"; " +
-            "  fi; " +
-            "else " +
-            "  printf '%s' \"$selected\" > \"$pathfile\"; " +
-            "  rm -f \"$pidfile\"; " +
-            "  quicklook=\"${ASTREA_QUICKLOOK_QML:-$HOME/GitHub/Bench/Look/quicklook.qml}\"; qs -p \"$quicklook\" >/dev/null 2>&1 & echo $! > \"$pidfile\"; " +
-            "fi",
-            "--", item.filePath, app.quickLookPathFile, app.quickLookPidFile
+            "python3",
+            app.helperPath,
+            "quicklook",
+            item.filePath,
+            app.quickLookPathFile,
+            app.quickLookPidFile
         ]
         quickLookProcess.running = false
         quickLookProcess.running = true
@@ -136,13 +127,12 @@ QtObject {
             return
 
         quickLookSyncProcess.command = [
-            "bash", "-lc",
-            "selected=\"$1\"; pidfile=\"$2\"; pathfile=\"$3\"; " +
-            "if [ -f \"$pidfile\" ] && kill -0 \"$(cat \"$pidfile\" 2>/dev/null)\" >/dev/null 2>&1; then " +
-            "  current=$(cat \"$pathfile\" 2>/dev/null); " +
-            "  [ \"$current\" != \"$selected\" ] && printf '%s' \"$selected\" > \"$pathfile\" || true; " +
-            "fi",
-            "--", item.filePath, app.quickLookPidFile, app.quickLookPathFile
+            "python3",
+            app.helperPath,
+            "quicklook-sync",
+            item.filePath,
+            app.quickLookPidFile,
+            app.quickLookPathFile
         ]
         quickLookSyncProcess.running = false
         quickLookSyncProcess.running = true
@@ -546,13 +536,13 @@ QtObject {
     }
 
     function warmCurrentDirectoryThumbnails() {
-        if (!app.currentPath || app.searchActive || app.isRecentPath(app.currentPath))
+        if (!startupWorkEnabled || !app.currentPath || app.searchActive || app.isRecentPath(app.currentPath))
             return
         requestThumbnailWarm(app.currentPath, 0, viewMode === "icon" ? 18 : 24)
     }
 
     function scheduleVisibleThumbnailWarm(firstIndex, lastIndex) {
-        if (!app.currentPath || app.loadingDir || app.isRecentPath(app.currentPath))
+        if (!startupWorkEnabled || !app.currentPath || app.loadingDir || app.isRecentPath(app.currentPath))
             return
         if (firstIndex < 0 || lastIndex < firstIndex)
             return
@@ -567,7 +557,7 @@ QtObject {
                 return
         }
         startupWarmQueue.push({ path: path, limit: String(limit) })
-        if (!startupWarmTimer.running)
+        if (startupWorkEnabled && !startupWarmTimer.running)
             startupWarmTimer.start()
     }
 
@@ -577,6 +567,16 @@ QtObject {
         enqueueStartupWarm(app.homePath + "/Downloads", 10)
         enqueueStartupWarm(app.homePath + "/Imagens", 10)
         enqueueStartupWarm(app.homePath + "/Documentos", 6)
+    }
+
+    function enableStartupWork() {
+        if (startupWorkEnabled)
+            return
+        startupWorkEnabled = true
+        if (app.currentPath && !app.loadingDir && !app.searchActive)
+            beginCurrentFolderWarm()
+        if (!startupWarmTimer.running && startupWarmQueue.length > 0)
+            startupWarmTimer.start()
     }
 
     function formatSize(bytes) {
@@ -765,7 +765,7 @@ QtObject {
                 preview.thumbnailWarmDebounce.restart()
             else if (preview.currentFolderWarmOffset >= 0)
                 preview.currentFolderWarmTimer.restart()
-            if (!preview.startupWarmTimer.running && preview.startupWarmQueue.length > 0)
+            if (preview.startupWorkEnabled && !preview.startupWarmTimer.running && preview.startupWarmQueue.length > 0)
                 preview.startupWarmTimer.start()
         }
     }

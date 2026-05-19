@@ -4,6 +4,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
+import "../../AstreaI18n" as AstreaI18n
 
 Item {
     id: root
@@ -22,7 +23,8 @@ Item {
     readonly property string confPath:    home + "/.local/share/Astrea/System/config/display/monitor-settings.conf"
     readonly property string applyScript: home + "/.local/share/Astrea/System/services/display_apply.sh"
     readonly property string nightShiftScript: home + "/.local/share/Astrea/System/services/display_night_shift_color.sh"
-    readonly property string displayIconPath: home + "/.local/share/Astrea/Assets/icons/display/"
+    readonly property string wallpaperThumbPath: home + "/.config/AstreaOS/user/paper/wallpaper/wallpaper_thumb.jpg"
+    readonly property string wallpaperPreviewSource: "file://" + wallpaperThumbPath + "?t=" + Date.now()
 
     // ── Monitor state ─────────────────────────────────────────────────────
     property var    monitors:      []
@@ -30,7 +32,7 @@ Item {
     property string errorMessage:  ""
     property bool   loading:       true
 
-    readonly property var mon: monitors[activeMonitor] ?? null
+    readonly property var mon: activeMonitor >= 0 && activeMonitor < monitors.length ? monitors[activeMonitor] : null
 
     // ── Settings state ────────────────────────────────────────────────────
     property int  selectedResolution: 0
@@ -48,6 +50,7 @@ Item {
     property bool savedVisible:       false
     property bool suppressLiveColorApply: true
     property string pendingLiveApplyMode: ""
+    property bool previewReady: false
 
     onSelectedResolutionChanged: selectedHz = 0
     onSelectedSaturationChanged: queueLiveColorApply("saturation-only")
@@ -58,12 +61,14 @@ Item {
 
     // ── Computed ──────────────────────────────────────────────────────────
     readonly property var currentHzList:
-        (mon?.refreshRates[mon.resolutions[selectedResolution]]) ?? []
+        mon && mon.refreshRates && mon.resolutions && mon.resolutions.length > selectedResolution
+            ? (mon.refreshRates[mon.resolutions[selectedResolution]] || [])
+            : []
 
     readonly property var vrrModeOptions: [
-        { label: "Off", value: 0 },
-        { label: "On", value: 1 },
-        { label: "Fullscreen only", value: 2 }
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.label.off"]) || "Off"), value: 0 },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.label.on"]) || "On"), value: 1 },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.label.fullscreen_only"]) || "Fullscreen only"), value: 2 }
     ]
     readonly property var hourOptions: Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"))
     readonly property var minuteOptions: ["00", "15", "30", "45"]
@@ -99,17 +104,17 @@ Item {
         suppressLiveColorApply = true
         const cur = mon.current
         selectedResolution = _idx(mon.resolutions, cur.resolution)
-        const hzList = mon.refreshRates[cur.resolution] ?? []
+        const hzList = mon.refreshRates[cur.resolution] || []
         selectedHz         = Math.max(0, hzList.indexOf(cur.refreshRate))
         selectedBitdepth   = _idx(mon.bitdepths, cur.bitdepth)
         selectedScale      = _idx(mon.scales, cur.scale)
-        selectedVrrMode    = _idx(vrrModeOptions.map(option => option.value), cur.vrrMode ?? 0)
-        selectedSaturation = cur.saturation ?? 93
-        nightShiftEnabled  = cur.nightShift ?? false
-        nightShiftStrength = cur.nightShiftStrength ?? 35
-        nightShiftScheduleEnabled = cur.nightShiftSchedule ?? false
-        nightShiftStart = cur.nightShiftStart ?? "20:00"
-        nightShiftEnd = cur.nightShiftEnd ?? "07:00"
+        selectedVrrMode    = _idx(vrrModeOptions.map(option => option.value), cur.vrrMode !== undefined ? cur.vrrMode : 0)
+        selectedSaturation = cur.saturation !== undefined ? cur.saturation : 93
+        nightShiftEnabled  = cur.nightShift !== undefined ? cur.nightShift : false
+        nightShiftStrength = cur.nightShiftStrength !== undefined ? cur.nightShiftStrength : 35
+        nightShiftScheduleEnabled = cur.nightShiftSchedule !== undefined ? cur.nightShiftSchedule : false
+        nightShiftStart = cur.nightShiftStart !== undefined ? cur.nightShiftStart : "20:00"
+        nightShiftEnd = cur.nightShiftEnd !== undefined ? cur.nightShiftEnd : "07:00"
         showAllResolutions = false
         suppressLiveColorApply = false
     }
@@ -117,15 +122,15 @@ Item {
     function _monitorLabel(m) {
         if (!m)
             return ""
-        const model = (m.model ?? "").trim()
-        const make = (m.make ?? "").trim()
+        const model = ((m && m.model) ? m.model : "").trim()
+        const make = ((m && m.make) ? m.make : "").trim()
         const shortName = model !== "" ? model : (make !== "" ? make : m.name)
         return m.name + " — " + shortName
     }
 
     function _monitorType(m) {
-        const name = (m?.name ?? "").toLowerCase()
-        const desc = (m?.description ?? "").toLowerCase()
+        const name = (m && m.name ? m.name : "").toLowerCase()
+        const desc = (m && m.description ? m.description : "").toLowerCase()
         if (name.indexOf("edp") !== -1 || name.indexOf("lvds") !== -1 ||
             desc.indexOf("built-in") !== -1 || desc.indexOf("internal") !== -1)
             return "laptop"
@@ -133,7 +138,7 @@ Item {
     }
 
     function _screenAspectRatio(m) {
-        const res = m?.current?.resolution ?? ""
+        const res = (m && m.current && m.current.resolution) ? m.current.resolution : ""
         const parts = res.split("x")
         if (parts.length !== 2)
             return 16 / 10
@@ -142,12 +147,60 @@ Item {
         return w / h
     }
 
+    function _resolutionSize(resolution, rotated) {
+        const parts = String(resolution || "").split("x")
+        let w = parts.length === 2 ? Math.max(1, parseInt(parts[0])) : 1920
+        let h = parts.length === 2 ? Math.max(1, parseInt(parts[1])) : 1080
+        if (rotated) {
+            const tmp = w
+            w = h
+            h = tmp
+        }
+        return { width: w, height: h }
+    }
+
+    function _monitorRotated(m) {
+        const transform = m && m.geometry && m.geometry.transform !== undefined
+            ? m.geometry.transform
+            : (m && m.current && m.current.transform !== undefined ? m.current.transform : 0)
+        return transform === 1 || transform === 3 || transform === 5 || transform === 7
+    }
+
+    function _previewSizeForMonitor(m, monitorIndex) {
+        const selected = monitorIndex === activeMonitor
+        const resolution = selected && mon
+            ? mon.resolutions[selectedResolution]
+            : (m && m.current && m.current.resolution ? m.current.resolution : "")
+        return _resolutionSize(resolution, _monitorRotated(m))
+    }
+
+    function _monitorBounds() {
+        if (!monitors || monitors.length === 0)
+            return { minX: 0, minY: 0, maxX: 1920, maxY: 1080, width: 1920, height: 1080 }
+        let minX = 999999
+        let minY = 999999
+        let maxX = -999999
+        let maxY = -999999
+        monitors.forEach((m, i) => {
+            const size = _previewSizeForMonitor(m, i)
+            const x = m && m.geometry && m.geometry.x !== undefined ? m.geometry.x : 0
+            const y = m && m.geometry && m.geometry.y !== undefined ? m.geometry.y : 0
+            minX = Math.min(minX, x)
+            minY = Math.min(minY, y)
+            maxX = Math.max(maxX, x + size.width)
+            maxY = Math.max(maxY, y + size.height)
+        })
+        const width = Math.max(1, maxX - minX)
+        const height = Math.max(1, maxY - minY)
+        return { minX: minX, minY: minY, maxX: maxX, maxY: maxY, width: width, height: height }
+    }
+
     function _displayTitle(m) {
         if (!m)
             return ""
         if (_monitorType(m) === "laptop")
             return "Laptop Display"
-        const model = (m.model ?? "").trim()
+        const model = ((m && m.model) ? m.model : "").trim()
         return model !== "" ? model : m.name
     }
 
@@ -158,14 +211,15 @@ Item {
         return typeLabel + " • " + m.name
     }
 
-    function _displayIconSource(m) {
-        const iconName = _monitorType(m) === "laptop" ? "computer-laptop.svg" : "computer.svg"
-        return "file://" + displayIconPath + iconName
-    }
-
     function _currentRefreshLabel() {
         const hz = root.currentHzList[root.selectedHz]
         return hz ? hz + " Hz" : "—"
+    }
+
+    function _selectedResolutionLabel() {
+        if (!mon || !mon.resolutions || selectedResolution < 0 || selectedResolution >= mon.resolutions.length)
+            return mon && mon.current && mon.current.resolution ? mon.current.resolution : ""
+        return mon.resolutions[selectedResolution]
     }
 
     function _currentVrrLabel() {
@@ -213,12 +267,12 @@ Item {
         const safe = s => String(s).replace(/'/g, "'\\''")
         const content = [
             "monitor="     + mon.name,
-            "monitor_id="  + (mon.id ?? 0),
+            "monitor_id="  + (mon.id !== undefined ? mon.id : 0),
             "resolution="  + mon.resolutions[selectedResolution],
-            "refreshrate=" + (currentHzList[selectedHz] ?? mon.current.refreshRate),
+            "refreshrate=" + (currentHzList[selectedHz] !== undefined ? currentHzList[selectedHz] : mon.current.refreshRate),
             "bitdepth="    + mon.bitdepths[selectedBitdepth],
             "scale="       + mon.scales[selectedScale],
-            "vrr="         + (vrrModeOptions[selectedVrrMode]?.value ?? 0),
+            "vrr="         + (vrrModeOptions[selectedVrrMode] ? vrrModeOptions[selectedVrrMode].value : 0),
             "saturation="  + selectedSaturation,
             "night_shift=" + (nightShiftEnabled ? 1 : 0),
             "night_shift_strength=" + nightShiftStrength,
@@ -262,6 +316,8 @@ Item {
                 const ai           = data.monitors.findIndex(m => m.name === data.activeMonitor)
                 root.activeMonitor = ai >= 0 ? ai : 0
                 root._applyCurrentValues()
+                root.previewReady = false
+                previewReadyTimer.restart()
             } catch (e) {
                 root.errorMessage = "JSON parse error: " + e
             }
@@ -349,6 +405,13 @@ Item {
 
     Component.onCompleted: fetchProc.running = true
 
+    Timer {
+        id: previewReadyTimer
+        interval: 160
+        repeat: false
+        onTriggered: root.previewReady = true
+    }
+
     component ValueSlider: Item {
         id: sliderRoot
         implicitWidth: 220
@@ -414,11 +477,178 @@ Item {
         }
     }
 
+    component DisplayPreview: Item {
+        id: preview
+        implicitHeight: 252
+
+        readonly property int resolutionVersion: root.selectedResolution
+        readonly property var bounds: {
+            resolutionVersion
+            return root._monitorBounds()
+        }
+        readonly property real previewScale: Math.min(
+            width / Math.max(1, bounds.width),
+            height / Math.max(1, bounds.height)
+        ) * 0.78
+
+        Repeater {
+            model: root.monitors
+
+            delegate: Item {
+                id: monitorItem
+                readonly property var monitor: modelData
+                readonly property var displaySize: {
+                    preview.resolutionVersion
+                    return root._previewSizeForMonitor(monitor, index)
+                }
+                readonly property bool active: index === root.activeMonitor
+                readonly property bool laptop: root._monitorType(monitor) === "laptop"
+                readonly property real screenW: Math.max(56, displaySize.width * preview.previewScale)
+                readonly property real screenH: Math.max(36, displaySize.height * preview.previewScale)
+                readonly property real chrome: laptop ? 12 : 10
+                readonly property real footH: laptop ? 16 : 38
+
+                width: screenW + chrome * 2
+                height: screenH + chrome * 2 + footH
+                x: (preview.width - preview.bounds.width * preview.previewScale) / 2
+                    + (((monitor && monitor.geometry && monitor.geometry.x !== undefined ? monitor.geometry.x : 0) - preview.bounds.minX) * preview.previewScale)
+                    - chrome
+                y: (preview.height - preview.bounds.height * preview.previewScale) / 2
+                    + (((monitor && monitor.geometry && monitor.geometry.y !== undefined ? monitor.geometry.y : 0) - preview.bounds.minY) * preview.previewScale)
+                    - chrome
+
+                Behavior on x { enabled: root.previewReady; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Behavior on y { enabled: root.previewReady; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Behavior on width { enabled: root.previewReady; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Behavior on height { enabled: root.previewReady; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+
+                Rectangle {
+                    id: screenFrame
+                    x: chrome
+                    y: chrome
+                    width: monitorItem.screenW
+                    height: monitorItem.screenH
+                    radius: laptop ? 10 : 9
+                    color: Qt.rgba(0.045, 0.047, 0.052, 1)
+                    border.width: 1
+                    border.color: active ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.72) : Qt.rgba(1, 1, 1, 0.22)
+                    Behavior on width { enabled: root.previewReady; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                    Behavior on height { enabled: root.previewReady; NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        anchors.margins: -3
+                        radius: parent.radius + 3
+                        color: "transparent"
+                        border.width: active ? 1 : 0
+                        border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.28)
+                    }
+
+                    Rectangle {
+                        id: screenSurface
+                        anchors.fill: parent
+                        anchors.margins: laptop ? 8 : 7
+                        radius: Math.max(4, parent.radius - 4)
+                        color: Qt.rgba(0.12, 0.14, 0.17, 1)
+                        clip: true
+
+                        Image {
+                            anchors.fill: parent
+                            source: root.wallpaperPreviewSource
+                            fillMode: Image.PreserveAspectCrop
+                            smooth: true
+                            asynchronous: true
+                            mipmap: true
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: screenSurface.radius
+                            color: Qt.rgba(0, 0, 0, 0.03)
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: screenSurface.radius
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.13) }
+                                GradientStop { position: 0.45; color: "transparent" }
+                                GradientStop { position: 1.0; color: Qt.rgba(0, 0, 0, 0.18) }
+                            }
+                        }
+
+                        Text {
+                            anchors { left: parent.left; top: parent.top; margins: 7 }
+                            text: monitor.name
+                            color: Qt.rgba(1, 1, 1, 0.88)
+                            font.pixelSize: 10
+                            font.weight: Font.Medium
+                            font.letterSpacing: 0
+                        }
+                    }
+                }
+
+                Rectangle {
+                    visible: !laptop
+                    anchors.horizontalCenter: screenFrame.horizontalCenter
+                    y: screenFrame.y + screenFrame.height + 1
+                    width: Math.max(13, screenFrame.width * 0.075)
+                    height: 22
+                    radius: 4
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.22) }
+                        GradientStop { position: 1.0; color: Qt.rgba(1, 1, 1, 0.08) }
+                    }
+                }
+
+                Rectangle {
+                    visible: !laptop
+                    anchors.horizontalCenter: screenFrame.horizontalCenter
+                    y: screenFrame.y + screenFrame.height + 23
+                    width: Math.max(64, screenFrame.width * 0.34)
+                    height: 6
+                    radius: 4
+                    color: Qt.rgba(1, 1, 1, 0.16)
+                }
+
+                Rectangle {
+                    visible: laptop
+                    anchors.horizontalCenter: screenFrame.horizontalCenter
+                    y: screenFrame.y + screenFrame.height + 3
+                    width: screenFrame.width + 24
+                    height: 10
+                    radius: 5
+                    color: Qt.rgba(1, 1, 1, 0.17)
+
+                    Rectangle {
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: Math.max(24, parent.width * 0.18)
+                        height: 3
+                        radius: 2
+                        color: Qt.rgba(0, 0, 0, 0.24)
+                    }
+                }
+
+                Text {
+                    anchors.horizontalCenter: screenFrame.horizontalCenter
+                    y: screenFrame.y + screenFrame.height + monitorItem.footH + 4
+                    width: Math.max(96, screenFrame.width + 20)
+                    horizontalAlignment: Text.AlignHCenter
+                    text: monitor.name
+                    color: active ? root.textPrimary : root.textSecondary
+                    font.pixelSize: 10
+                    elide: Text.ElideRight
+                }
+
+            }
+        }
+    }
+
     // ── Estados de carregamento / erro ────────────────────────────────────
     Text {
         anchors.centerIn: parent
         visible: root.loading
-        text: "Loading monitor info…"
+        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.text.loading_monitor_infoa"]) || "Loading monitor info…")
         color: root.textSecondary
         font.pixelSize: Theme.fontSizeNormal
     }
@@ -453,7 +683,7 @@ Item {
 
                 SectionHeader {
                     Layout.fillWidth: true
-                    text: "DISPLAY PREVIEW"
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.text.display_preview"]) || "DISPLAY PREVIEW")
                 }
 
                 Item {
@@ -466,33 +696,20 @@ Item {
                         anchors.top: parent.top
                         spacing: 14
 
-                        Item {
-                            width: 340
-                            height: root._monitorType(root.mon) === "laptop" ? 188 : 174
-
-                            Image {
-                                anchors.centerIn: parent
-                                width: root._monitorType(root.mon) === "laptop" ? 260 : 300
-                                height: parent.height
-                                source: root._displayIconSource(root.mon)
-                                fillMode: Image.PreserveAspectFit
-                                smooth: true
-                                mipmap: true
-                                sourceSize.width: width * 2
-                                sourceSize.height: height * 2
-                            }
+                        DisplayPreview {
+                            width: Math.min(620, previewColumn.width)
                         }
 
                         Column {
-                            width: 340
-                            spacing: 4
+                            width: Math.min(620, previewColumn.width)
+                            spacing: 5
 
                             Text {
                                 width: parent.width
                                 horizontalAlignment: Text.AlignHCenter
                                 text: root._displayTitle(root.mon)
                                 color: root.textPrimary
-                                font { pixelSize: 24; weight: Font.DemiBold }
+                                font { pixelSize: 22; weight: Font.DemiBold; letterSpacing: 0 }
                                 elide: Text.ElideRight
                             }
 
@@ -501,15 +718,15 @@ Item {
                                 horizontalAlignment: Text.AlignHCenter
                                 text: root._displaySubtitle(root.mon)
                                 color: root.textSecondary
-                                font.pixelSize: 13
+                                font.pixelSize: 12
                                 elide: Text.ElideRight
                             }
 
                             Text {
                                 width: parent.width
                                 horizontalAlignment: Text.AlignHCenter
-                                text: root.mon
-                                    ? root.mon.current.resolution.replace("x", "×") + " • " + root._currentRefreshLabel()
+                                text: root.mon && root._selectedResolutionLabel() !== ""
+                                    ? root._selectedResolutionLabel().replace("x", "×") + " • " + root._currentRefreshLabel()
                                     : ""
                                 color: Qt.rgba(1, 1, 1, 0.45)
                                 font.pixelSize: 11
@@ -526,7 +743,7 @@ Item {
                 spacing: 6
                 Layout.bottomMargin: 24
 
-                SectionHeader { text: "MONITOR" }
+                SectionHeader { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.text.monitor"]) || "MONITOR") }
                 SelectButton {
                     Layout.fillWidth: true
                     label: root.mon ? _monitorLabel(root.mon) : ""
@@ -542,7 +759,7 @@ Item {
                 spacing: 0
                 Layout.bottomMargin: 24
 
-                SectionHeader { text: "RESOLUTION"; Layout.bottomMargin: 8 }
+                SectionHeader { text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.text.resolution"]) || "RESOLUTION"); Layout.bottomMargin: 8 }
 
                 ColumnLayout {
                     Layout.fillWidth: true
@@ -550,20 +767,20 @@ Item {
 
                     Repeater {
                         model: root.showAllResolutions
-                            ? Array.from({ length: root.mon?.resolutions.length ?? 0 }, (_, i) => root.mon.resolutions.length - 1 - i)
+                            ? Array.from({ length: root.mon && root.mon.resolutions ? root.mon.resolutions.length : 0 }, (_, i) => root.mon.resolutions.length - 1 - i)
                             : root.defaultResolutionIndices
 
                         delegate: Rectangle {
                             readonly property int    realIndex: modelData
                             readonly property bool   active:    realIndex === root.selectedResolution
-                            readonly property bool   isNative:  realIndex === ((root.mon?.resolutions.length ?? 0) - 1)
-                            readonly property string resText:   root.mon?.resolutions[realIndex].replace("x", "×") ?? ""
+                            readonly property bool   isNative:  realIndex === ((root.mon && root.mon.resolutions ? root.mon.resolutions.length : 0) - 1)
+                            readonly property string resText:   root.mon && root.mon.resolutions && root.mon.resolutions[realIndex] ? root.mon.resolutions[realIndex].replace("x", "×") : ""
 
                             Layout.fillWidth: true
                             implicitHeight: 36
                             radius: 8
                             color: active
-                                ? Qt.rgba(10/255, 132/255, 1, 0.12)
+                                ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.12)
                                 : rowHover.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
                             border.width: active ? 1 : 0
                             border.color: root.accent
@@ -587,11 +804,11 @@ Item {
                                     implicitWidth:  nativeLbl.implicitWidth + 10
                                     implicitHeight: 16
                                     radius: 4
-                                    color: active ? Qt.rgba(10/255, 132/255, 1, 0.25) : Qt.rgba(1, 1, 1, 0.08)
+                                    color: active ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : Qt.rgba(1, 1, 1, 0.08)
                                     Text {
                                         id: nativeLbl
                                         anchors.centerIn: parent
-                                        text: "Default"
+                                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.text.default"]) || "Default")
                                         color: active ? root.accent : root.textSecondary
                                         font { pixelSize: 10; weight: Font.Medium; letterSpacing: 0 }
                                     }
@@ -645,7 +862,7 @@ Item {
                     spacing: 0
 
                     SettingRow {
-                        label: "Refresh rate"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.label.refresh_rate"]) || "Refresh rate")
                         isLast: false
                         SelectButton {
                             implicitWidth: 130
@@ -657,22 +874,22 @@ Item {
                     }
 
                     SettingRow {
-                        label: "Color depth"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.label.color_depth"]) || "Color depth")
                         isLast: false
                         SelectButton {
                             implicitWidth: 130
                             label: root.mon ? root.mon.bitdepths[root.selectedBitdepth] + " bpc" : "—"
-                            options: root.mon?.bitdepths.map(b => b + " bpc") ?? []
+                            options: root.mon && root.mon.bitdepths ? root.mon.bitdepths.map(b => b + " bpc") : []
                             selectedIndex: root.selectedBitdepth
                             onSelected: (i) => root.selectedBitdepth = i
                         }
                     }
 
                     SettingRow {
-                        label: "Variable Refresh Rate"
-                        sublabel: "VRR / FreeSync / G-Sync mode when supported by the display"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.label.variable_refresh_rate"]) || "Variable Refresh Rate")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.sublabel.vrr_freesync_g_sync_mode_when_supported_by_the_d"]) || "VRR / FreeSync / G-Sync mode when supported by the display")
                         isLast: false
-                        visible: root.mon?.vrrSupported ?? false
+                        visible: root.mon && root.mon.vrrSupported ? true : false
 
                         SelectButton {
                             implicitWidth: 160
@@ -684,12 +901,12 @@ Item {
                     }
 
                     SettingRow {
-                        label: "Display scale"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.label.display_scale"]) || "Display scale")
                         isLast: true
                         SelectButton {
                             implicitWidth: 130
                             label: root.mon ? root.mon.scales[root.selectedScale] + "×" : "—"
-                            options: root.mon?.scales.map(s => s + "×") ?? []
+                            options: root.mon && root.mon.scales ? root.mon.scales.map(s => s + "×") : []
                             selectedIndex: root.selectedScale
                             onSelected: (i) => root.selectedScale = i
                         }
@@ -698,7 +915,7 @@ Item {
             }
 
             SectionHeader {
-                text: "COLOR & NIGHT SHIFT"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.text.color_night_shift"]) || "COLOR & NIGHT SHIFT")
                 Layout.bottomMargin: 12
             }
 
@@ -716,8 +933,8 @@ Item {
                     spacing: 0
 
                     SettingRow {
-                        label: "Night Shift"
-                        sublabel: "Warm screen colors to reduce blue light at night"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.label.night_shift"]) || "Night Shift")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.sublabel.warm_screen_colors_to_reduce_blue_light_at_night"]) || "Warm screen colors to reduce blue light at night")
                         isLast: false
 
                         ToggleSwitch {
@@ -727,8 +944,8 @@ Item {
                     }
 
                     SettingRow {
-                        label: "Night Shift strength"
-                        sublabel: "How warm the image should look when enabled"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.label.night_shift_strength"]) || "Night Shift strength")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.sublabel.how_warm_the_image_should_look_when_enabled"]) || "How warm the image should look when enabled")
                         isLast: false
 
                         Row {
@@ -758,8 +975,8 @@ Item {
                     }
 
                     SettingRow {
-                        label: "Schedule"
-                        sublabel: "Turn Night Shift on and off automatically"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.label.schedule"]) || "Schedule")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.sublabel.turn_night_shift_on_and_off_automatically"]) || "Turn Night Shift on and off automatically")
                         isLast: false
 
                         ToggleSwitch {
@@ -769,8 +986,8 @@ Item {
                     }
 
                     SettingRow {
-                        label: "Start"
-                        sublabel: "When Night Shift should turn on"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.label.start"]) || "Start")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.sublabel.when_night_shift_should_turn_on"]) || "When Night Shift should turn on")
                         isLast: false
                         visible: root.nightShiftScheduleEnabled
 
@@ -803,8 +1020,8 @@ Item {
                     }
 
                     SettingRow {
-                        label: "End"
-                        sublabel: "When Night Shift should turn off"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.label.end"]) || "End")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.sublabel.when_night_shift_should_turn_off"]) || "When Night Shift should turn off")
                         isLast: false
                         visible: root.nightShiftScheduleEnabled
 
@@ -837,8 +1054,8 @@ Item {
                     }
 
                     SettingRow {
-                        label: "Saturation"
-                        sublabel: "Display vibrance powered by nvibrant"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.label.saturation"]) || "Saturation")
+                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.sublabel.display_vibrance_powered_by_nvibrant"]) || "Display vibrance powered by nvibrant")
                         isLast: true
 
                         Row {
@@ -876,7 +1093,7 @@ Item {
                 Item { Layout.fillWidth: true }
 
                 Text {
-                    text: "✓ Applied"
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.text.a_applied"]) || "✓ Applied")
                     color: root.accent
                     font { pixelSize: Theme.fontSizeNormal; weight: Font.Medium }
                     opacity: root.savedVisible ? 1 : 0
@@ -892,8 +1109,8 @@ Item {
                     Text {
                         id: applyLbl
                         anchors.centerIn: parent
-                        text: "Apply"
-                        color: "#ffffff"
+                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.display.text.apply"]) || "Apply")
+                        color: Theme.accentForeground
                         font { pixelSize: Theme.fontSizeNormal; weight: Font.Medium }
                     }
                     MouseArea {

@@ -37,7 +37,7 @@ impl WeatherAlert {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub struct AlertState {
     #[serde(default)]
     pub schema_version: u8,
@@ -398,6 +398,7 @@ pub fn check_and_notify(data: &Value, dry_run: bool) -> CheckResult {
     }
 
     let mut state = load_alert_state();
+    let previous_state = state.clone();
     let new_alerts = filter_new_alerts(&mut state, &alerts, now_unix());
     let mut notified = 0;
     let mut failed = 0;
@@ -411,7 +412,9 @@ pub fn check_and_notify(data: &Value, dry_run: bool) -> CheckResult {
         }
     }
 
-    let _ = save_alert_state(&state);
+    if state != previous_state {
+        let _ = save_alert_state(&state);
+    }
     CheckResult {
         skipped: alerts.len().saturating_sub(new_alerts.len()),
         alerts,

@@ -29,6 +29,8 @@ Item {
     function resolveIconName(value) {
         if (!value) return ""
         if (value.icon) return value.icon
+        if (value.iconPath) return value.iconPath
+        if (value.icon_path) return value.icon_path
 
         const cls = String(value.className || value.class || value.initialClass || "").toLowerCase()
         const text = String((value.title || value.name || "") + " " + cls).toLowerCase()
@@ -46,11 +48,19 @@ Item {
         return cls
     }
 
+    function iconSource(name) {
+        const text = String(name || "")
+        if (text.length === 0) return ""
+        if (text.indexOf("://") >= 0) return text
+        if (text.indexOf("/") >= 0) return "file://" + text
+        return "image://icon/" + text
+    }
+
     Image {
         id: image
         anchors.fill: parent
         sourceSize: Qt.size(root.width, root.height)
-        source: root.iconName.length > 0 ? "image://icon/" + root.iconName : ""
+        source: root.iconSource(root.iconName)
         fillMode: Image.PreserveAspectFit
         smooth: true
         mipmap: true

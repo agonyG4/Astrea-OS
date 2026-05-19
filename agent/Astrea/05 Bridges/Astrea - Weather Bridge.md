@@ -6,6 +6,7 @@ Related notes: [[Astrea - Weather App]], [[Astrea - Spotlight]], [[Astrea - Core
 - `Apps/Weather/backend/weather-core`
 - `Apps/Weather/backend/weather-cli`
 - `Apps/Weather/backend/weatherd`
+- installed binaries: `bin/weather-cli`, `bin/astrea-weatherd`
 - legacy compatibility fetcher: `Core/bridge/apps/weather.py`
 
 ## Responsibility
@@ -30,6 +31,11 @@ Observed output modes:
 - `Apps/Weather/ui/state/WeatherState.qml`
 - `Quickshell/spotlight/Spotlight.qml`
 - `astrea-weatherd.service`
+
+## Install And Verify
+`System/services/astrea-services.sh install` builds the Weather workspace and installs `weather-cli` plus `astrea-weatherd` into `bin`.
+
+`System/services/astrea-services.sh doctor weather` runs the Weather verification path, including Cargo checks when available.
 
 ## Notification Behavior
 `astrea-weatherd` periodically fetches weather data and evaluates alert rules

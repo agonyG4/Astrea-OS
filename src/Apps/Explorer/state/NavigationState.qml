@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import Quickshell
 import Quickshell.Io
+import "../AstreaI18n" as AstreaI18n
 
 QtObject {
     id: navigation
@@ -27,6 +28,7 @@ QtObject {
     property ListModel fileModel: ListModel {}
     property int fileModelRevision: 0
     property bool fileModelFilling: false
+    property string watchedDirectoryPath: ""
     property string _pendingParseMode: ""
     property WorkerScript jsonWorker: WorkerScript {
         id: jsonWorker
@@ -141,7 +143,7 @@ QtObject {
 
     function rebuildBreadcrumbs() {
         if (app.isRecentPath(currentPath)) {
-            breadcrumbParts = [{ label: "Recentes", path: app.recentVirtualPath }]
+            breadcrumbParts = [{ label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.navigation_state.label.recentes"]) || "Recents"), path: app.recentVirtualPath }]
             return
         }
 
@@ -151,7 +153,7 @@ QtObject {
         var startIndex = 0
 
         if (app.homePath && currentPath.indexOf(app.homePath) === 0) {
-            result.push({ label: "Pasta pessoal", path: app.homePath })
+            result.push({ label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.navigation_state.label.pasta_pessoal"]) || "Home folder"), path: app.homePath })
             acc = app.homePath
             var homeParts = app.homePath.split("/").filter(Boolean)
             startIndex = homeParts.length
@@ -174,6 +176,25 @@ QtObject {
         if (!currentPath)
             return
         loadDirectory()
+    }
+
+    function stopDirectoryWatch() {
+        watchedDirectoryPath = ""
+        directoryWatchProcess.running = false
+        directoryRefreshDebounce.stop()
+    }
+
+    function startDirectoryWatch(path) {
+        if (!path || app.isRecentPath(path) || searchActive) {
+            stopDirectoryWatch()
+            return
+        }
+        if (watchedDirectoryPath === path && directoryWatchProcess.running)
+            return
+        watchedDirectoryPath = path
+        directoryWatchProcess.running = false
+        directoryWatchProcess.command = ["python3", app.helperPath, "monitor-dir", path]
+        directoryWatchProcess.running = true
     }
 
     function _resetSearchState() {
@@ -249,11 +270,13 @@ QtObject {
             return
 
         if (searchActive) {
+            stopDirectoryWatch()
             submitSearch(searchQuery)
             return
         }
 
         if (app.isRecentPath(currentPath)) {
+            stopDirectoryWatch()
             loadingDir = false
             loadError = ""
             app.previewsEnabled = true
@@ -270,6 +293,7 @@ QtObject {
         activeRequestMode = "list"
         activeDirectoryRequestPath = currentPath
         app.activePreviewRefreshPath = ""
+        startDirectoryWatch(currentPath)
         fileModel.clear()
         searchProcess.running = false
         dirListProcess.command = [
@@ -504,6 +528,50 @@ QtObject {
                 navigation.loadingDir = false
                 app.previewsEnabled = false
             }
+        }
+    }
+
+    property Timer directoryRefreshDebounce: Timer {
+        interval: 260
+        repeat: false
+        onTriggered: {
+            if (!navigation.currentPath
+                    || navigation.currentPath !== navigation.watchedDirectoryPath
+                    || navigation.loadingDir
+                    || navigation.searchActive
+                    || app.isRecentPath(navigation.currentPath))
+                return
+            navigation.loadDirectory()
+        }
+    }
+
+    property Process directoryWatchProcess: Process {
+        command: []
+        running: false
+        stdout: SplitParser {
+            onRead: line => {
+                if (line.trim() === "changed")
+                    navigation.directoryRefreshDebounce.restart()
+            }
+        }
+        onExited: function() {
+            if (navigation.watchedDirectoryPath === navigation.currentPath
+                    && !navigation.searchActive
+                    && !app.isRecentPath(navigation.currentPath))
+                directoryWatchRestartTimer.restart()
+        }
+    }
+
+    property Timer directoryWatchRestartTimer: Timer {
+        interval: 1000
+        repeat: false
+        onTriggered: {
+            if (navigation.currentPath
+                    && navigation.watchedDirectoryPath === navigation.currentPath
+                    && !navigation.directoryWatchProcess.running
+                    && !navigation.searchActive
+                    && !app.isRecentPath(navigation.currentPath))
+                navigation.startDirectoryWatch(navigation.currentPath)
         }
     }
 }

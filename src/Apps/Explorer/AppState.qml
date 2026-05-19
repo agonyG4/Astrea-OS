@@ -13,6 +13,7 @@ QtObject {
     readonly property string quickLookPathFile: "/tmp/explorer-quicklook-path"
     readonly property string quickLookPidFile: "/tmp/explorer-quicklook.pid"
     readonly property string backendPath: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/apps/explorer_backend"
+    readonly property string helperPath: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Apps/Explorer/explorer_helper.py"
     readonly property string astreaLaunch: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/bin/astrea-launch"
     readonly property string networkRootPath: (Quickshell.env("XDG_RUNTIME_DIR") || ("/run/user/" + Quickshell.env("UID"))) + "/gvfs"
     readonly property string trashFilesPath: homePath + "/.local/share/Trash/files"
@@ -159,8 +160,18 @@ QtObject {
 
     Component.onCompleted: {
         navigation.initialize()
-        deviceNet.loadSavedAutoMounts()
-        deviceNet.scheduleStartupDeviceRefresh()
+        deferredStartupTimer.restart()
+    }
+
+    property Timer deferredStartupTimer: Timer {
+        interval: 650
+        repeat: false
+        onTriggered: {
+            recent.load()
+            deviceNet.loadSavedAutoMounts()
+            deviceNet.scheduleStartupDeviceRefresh()
+            preview.enableStartupWork()
+        }
     }
 
     function isSelected(name) { return selection.isSelected(name) }

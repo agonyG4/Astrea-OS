@@ -12,6 +12,7 @@ Bridge notes describe how QML reaches system state, native helpers, and external
 - [[Astrea - Audio Bridge]]
 - [[Astrea - Display Bridge]]
 - [[Astrea - FileChooser Portal]]
+- [[Astrea - Launcher and Latency]]
 - [[Astrea - Weather Bridge]]
 - [[Astrea - Wallpaper Bridge]]
 

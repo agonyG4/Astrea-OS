@@ -45,9 +45,10 @@ QtObject {
     function openNetworkBrowser() {
         networkError = ""
         networkProbeProcess.command = [
-            "bash", "-lc",
-            "dir=\"$1\"; [ -d \"$dir\" ] || exit 2; find \"$dir\" -mindepth 1 -maxdepth 1 2>/dev/null | head -n 1",
-            "--", app.networkRootPath
+            "python3",
+            app.helperPath,
+            "network-mount-probe",
+            app.networkRootPath
         ]
         networkProbeProcess.running = false
         networkProbeProcess.running = true
@@ -291,13 +292,17 @@ QtObject {
     property Timer deviceRefreshTimer: Timer {
         interval: 5000
         repeat: true
-        running: true
+        running: false
         onTriggered: deviceNet.refreshDevices()
     }
 
     property Timer startupDeviceRefreshTimer: Timer {
         interval: 900
         repeat: false
-        onTriggered: deviceNet.refreshDevices()
+        onTriggered: {
+            deviceNet.refreshDevices()
+            if (!deviceNet.deviceRefreshTimer.running)
+                deviceNet.deviceRefreshTimer.start()
+        }
     }
 }

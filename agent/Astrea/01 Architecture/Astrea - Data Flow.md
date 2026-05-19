@@ -9,7 +9,8 @@ Related notes: [[Astrea]], [[Astrea - Patterns]], [[Astrea - Core Bridge]]
 4. It creates one [[Astrea - Top Bar]] per screen.
 5. It creates one [[Astrea - Island]] per screen.
 6. It creates resident [[Astrea - Spotlight]].
-7. It creates resident [[Astrea - Notifications]].
+7. It creates resident [[Astrea - Alt Tab]].
+8. It creates resident [[Astrea - Notifications]].
 
 ## Shell Status Flow
 1. `astrea-status.service` runs `System/services/astrea_statusd.py`.
@@ -65,6 +66,14 @@ Related notes: [[Astrea]], [[Astrea - Patterns]], [[Astrea - Core Bridge]]
 7. `astrea-weatherd` independently checks Weather data on a low-frequency loop.
 8. `astrea-weatherd` deduplicates Weather alerts and sends them through `System/services/astrea_notify.py`.
 9. Astrea's central `org.freedesktop.Notifications` service owns notification delivery and rendering.
+
+## Launch Flow
+1. Astrea launcher surfaces call `bin/astrea-launch`.
+2. The CLI forwards requests to `astrea-launchd` over `/run/user/1000/Astrea/astrea-launchd.sock`.
+3. `astrea-launchd` resolves desktop IDs, commands, files, URLs, Steam URIs, or argv JSON.
+4. When configured, it asks `astrea-latencyd` for a temporary launch burst.
+5. `astrea-latencyd` snapshots state, applies the burst through its narrow helper path, then rolls back.
+6. Launch records are written under `~/.local/state/Astrea/launch/history.jsonl`.
 
 ## Music Flow
 1. `MusicMonitor.qml` starts `playerctl` and `music_bars.sh`.

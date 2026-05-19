@@ -128,11 +128,14 @@ def build_monitor_info(raw: dict, saved: dict) -> dict:
     mon_id        = raw.get("id", 0)
     current_scale = raw.get("scale", 1.0)
     transform     = raw.get("transform", 0)
+    position_x    = raw.get("x", 0)
+    position_y    = raw.get("y", 0)
 
     raw_w = round(raw["width"]  * current_scale)
     raw_h = round(raw["height"] * current_scale)
 
-    if transform in (1, 3, 5, 7):
+    rotated = transform in (1, 3, 5, 7)
+    if rotated:
         raw_w, raw_h = raw_h, raw_w
 
     current_res = f"{raw_w}x{raw_h}"
@@ -210,6 +213,17 @@ def build_monitor_info(raw: dict, saved: dict) -> dict:
             "nightShiftSchedule": current_night_shift_schedule,
             "nightShiftStart": current_night_shift_start,
             "nightShiftEnd": current_night_shift_end,
+        },
+        "geometry": {
+            "x": position_x,
+            "y": position_y,
+            "width": raw_w,
+            "height": raw_h,
+            "transform": transform,
+            "rotated": rotated,
+            "scale": current_scale,
+            "physicalWidth": raw.get("physicalWidth", 0),
+            "physicalHeight": raw.get("physicalHeight", 0),
         },
         "resolutions":  sorted_resolutions,
         "refreshRates": res_hz_map,

@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import "../../../AstreaComponents" as UI
 import "../common" as WeatherCommon
+import "../../../AstreaI18n" as AstreaI18n
 
 ColumnLayout {
     property var colors
@@ -18,7 +19,7 @@ ColumnLayout {
 
     UI.TextLabel {
         Layout.alignment: Qt.AlignHCenter
-        text: "Carregando..."
+        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.components.sections.loading_state.text.carregando"]) || "Loading...")
         font.pixelSize: 14
         textColor: colors.secondary
     }

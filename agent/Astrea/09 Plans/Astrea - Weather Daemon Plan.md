@@ -12,10 +12,10 @@
 
 ### Tasks
 
-- [ ] Create `weather-core` with alert rules, settings, cache paths, atomic JSON writes, and duplicate tracking.
-- [ ] Create `weather-cli` with reusable `get`, `summary`, `settings`, `notify-test`, and `check-alerts` commands.
-- [ ] Create `weatherd` with a low-frequency loop, cache refresh, alert evaluation, notification delivery, and duplicate state.
-- [ ] Update `Apps/Weather/ui/state/WeatherState.qml` so QML only fetches/displays data and writes settings.
-- [ ] Register `astrea-weatherd.service` in `System/services/astrea-services.sh`.
-- [ ] Update Weather docs to describe the service-owned monitoring model.
-- [ ] Verify with Rust tests, `cargo check`, service verification, QML smoke load, and CLI commands.
+- [x] Create `weather-core` with alert rules, settings, cache paths, atomic JSON writes, and duplicate tracking.
+- [x] Create `weather-cli` with reusable `get`, `summary`, `settings`, `notify-test`, and `check-alerts` commands.
+- [x] Create `weatherd` with a low-frequency loop, cache refresh, alert evaluation, notification delivery, and duplicate state.
+- [x] Update `Apps/Weather/ui/state/WeatherState.qml` so QML only fetches/displays data and writes settings.
+- [x] Register `astrea-weatherd.service` in `System/services/astrea-services.sh`.
+- [x] Update Weather docs to describe the service-owned monitoring model.
+- [ ] Revalidate with Rust tests, `cargo check`, service verification, QML smoke load, and CLI commands after future Weather changes.

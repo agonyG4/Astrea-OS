@@ -4,6 +4,7 @@ import Quickshell.Io
 import "../.."
 import "." as Common
 import "../../AstreaFiles" as AstreaFiles
+import "../../AstreaI18n" as AstreaI18n
 
 Item {
     id: menuRoot
@@ -201,31 +202,31 @@ Item {
         anchors.fill: parent
 
         Common.ContextMenuAction {
-            label: "Abrir"
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.abrir"]) || "Open")
             actionEnabled: true
             visible: !menuRoot.isBackgroundTarget
             onTriggered: menuRoot.runOpen()
         }
         Common.ContextMenuAction {
-            label: "Nova Pasta"
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.nova_pasta"]) || "New Folder")
             actionEnabled: true
             onTriggered: menuRoot.runCreateFolder()
         }
         Common.ContextMenuDivider {}
         Common.ContextMenuAction {
-            label: "Copiar Caminho"
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.copiar_caminho"]) || "Copy Path")
             actionEnabled: true
             onTriggered: menuRoot.runCopyPath()
         }
         Common.ContextMenuAction {
-            label: "Renomear"
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.renomear"]) || "Rename")
             actionEnabled: true
             visible: !menuRoot.isBackgroundTarget
             onTriggered: menuRoot.runRename()
         }
         Common.ContextMenuAction {
             id: compressAction
-            label: "Compactar"
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.compactar"]) || "Compress")
             actionEnabled: true
             hasSubmenu: true
             visible: menuRoot.canCompressTarget
@@ -238,31 +239,31 @@ Item {
             onTriggered: menuRoot.openCompressionSubmenu(compressAction)
         }
         Common.ContextMenuAction {
-            label: "Extrair"
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.extrair"]) || "Extract")
             actionEnabled: true
             visible: menuRoot.isArchiveTarget
             onTriggered: menuRoot.runExtract()
         }
         Common.ContextMenuAction {
-            label: "Install"
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.install"]) || "Install")
             actionEnabled: !AppState.appImageInstallRunning
             visible: menuRoot.isAppImageTarget
             onTriggered: menuRoot.runInstallAppImage()
         }
         Common.ContextMenuAction {
-            label: "Restaurar"
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.restaurar"]) || "Restore")
             actionEnabled: true
             visible: AppState.inTrashView && !menuRoot.isBackgroundTarget
             onTriggered: menuRoot.runRestore()
         }
         Common.ContextMenuAction {
-            label: "Propriedades"
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.propriedades"]) || "Properties")
             actionEnabled: true
             onTriggered: menuRoot.runShowProperties()
         }
         Common.ContextMenuDivider { visible: !menuRoot.isBackgroundTarget }
         Common.ContextMenuAction {
-            label: "Mover para Lixeira"
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.mover_para_lixeira"]) || "Move to Trash")
             actionEnabled: true
             visible: !menuRoot.isBackgroundTarget && !AppState.inTrashView
             destructive: true
@@ -327,7 +328,7 @@ Item {
 
     Process {
         id: rarProbe
-        command: ["bash", "-lc", "command -v rar >/dev/null 2>&1"]
+        command: ["python3", AppState.helperPath, "which", "rar"]
         running: false
         onExited: function(exitCode) {
             menuRoot.rarAvailable = exitCode === 0
@@ -336,7 +337,7 @@ Item {
 
     Window {
         id: propertiesWin
-        title: "Propriedades"
+        title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.propriedades"]) || "Properties")
         width: 440
         minimumWidth: 380
         minimumHeight: 300
@@ -542,7 +543,7 @@ Item {
 
                 Text {
                     anchors.centerIn: parent
-                    text: "Fechar"
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.text.fechar"]) || "Close")
                     color: "#f2f2f7"
                     font.pixelSize: 13
                 }
@@ -627,7 +628,7 @@ Item {
                 spacing: 12
 
                 Text {
-                    text: "Nova Pasta"
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.nova_pasta"]) || "New Folder")
                     color: "#f2f2f7"
                     font { pixelSize: 14; weight: Font.DemiBold }
                 }
@@ -637,7 +638,7 @@ Item {
                     width: parent.width
                     text: menuRoot.pendingFolderName
                     color: "#f2f2f7"
-                    placeholderText: "Nome da pasta"
+                    placeholderText: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.placeholderText.nome_da_pasta"]) || "Folder name")
                     placeholderTextColor: "#636366"
                     selectByMouse: true
                     font.pixelSize: 13
@@ -651,8 +652,8 @@ Item {
 
                 Row {
                     spacing: 8
-                    FlatButton { id: cancelCreate; label: "Cancelar"; onClicked: menuRoot.creatingFolder = false }
-                    FlatButton { label: "Criar"; primary: true; onClicked: menuRoot.confirmCreateFolder() }
+                    FlatButton { id: cancelCreate; label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.cancelar"]) || "Cancel"); onClicked: menuRoot.creatingFolder = false }
+                    FlatButton { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.criar"]) || "Create"); primary: true; onClicked: menuRoot.confirmCreateFolder() }
                 }
             }
         }
@@ -686,7 +687,7 @@ Item {
                 spacing: 12
 
                 Text {
-                    text: "Renomear"
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.renomear"]) || "Rename")
                     color: "#f2f2f7"
                     font { pixelSize: 14; weight: Font.DemiBold }
                 }
@@ -696,7 +697,7 @@ Item {
                     width: parent.width
                     text: menuRoot.pendingRenameName
                     color: "#f2f2f7"
-                    placeholderText: "Novo nome"
+                    placeholderText: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.placeholderText.novo_nome"]) || "New name")
                     placeholderTextColor: "#636366"
                     selectByMouse: true
                     font.pixelSize: 13
@@ -710,8 +711,8 @@ Item {
 
                 Row {
                     spacing: 8
-                    FlatButton { label: "Cancelar"; onClicked: menuRoot.renamingItem = false }
-                    FlatButton { label: "Renomear"; primary: true; onClicked: menuRoot.confirmRename() }
+                    FlatButton { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.cancelar"]) || "Cancel"); onClicked: menuRoot.renamingItem = false }
+                    FlatButton { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.renomear"]) || "Rename"); primary: true; onClicked: menuRoot.confirmRename() }
                 }
             }
         }
@@ -719,11 +720,7 @@ Item {
 
     Process {
         id: createFolderProcess
-        command: [
-            "bash", "-lc",
-            "base=\"$1\"; name=\"$2\"; target=\"$base/$name\"; n=2; while [ -e \"$target\" ]; do target=\"$base/$name $n\"; n=$((n+1)); done; mkdir -- \"$target\"",
-            "_", AppState.currentPath, pendingFolderName
-        ]
+        command: ["python3", AppState.helperPath, "create-folder", AppState.currentPath, pendingFolderName]
         running: false
         onExited: function(exitCode) {
             if (exitCode === 0) AppState.refreshCurrentFolder()
@@ -732,11 +729,7 @@ Item {
 
     Process {
         id: renameProcess
-        command: [
-            "bash", "-lc",
-            "source=\"$1\"; new_name=\"$2\"; base=$(dirname -- \"$source\"); target=\"$base/$new_name\"; [ \"$source\" = \"$target\" ] && exit 0; [ -e \"$target\" ] && exit 1; mv -- \"$source\" \"$target\"",
-            "_", itemPath, pendingRenameName
-        ]
+        command: ["python3", AppState.helperPath, "rename", itemPath, pendingRenameName]
         running: false
         onExited: function(exitCode) {
             if (exitCode === 0) {

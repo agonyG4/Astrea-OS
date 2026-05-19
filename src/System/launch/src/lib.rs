@@ -5,6 +5,7 @@ use std::io::{Read, Write};
 use std::net::Shutdown;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -683,15 +684,9 @@ fn spawn_command(command: &CommandSpec) -> Result<u32, String> {
     let Some(program) = command.argv.first() else {
         return Err("empty command".into());
     };
-    let mut process = if command_available("setsid") {
-        let mut process = Command::new("setsid");
-        process.arg("--").arg(program).args(&command.argv[1..]);
-        process
-    } else {
-        let mut process = Command::new(program);
-        process.args(&command.argv[1..]);
-        process
-    };
+    let mut process = Command::new(program);
+    process.args(&command.argv[1..]);
+    process.process_group(0);
     if let Some(dir) = &command.working_dir {
         process.current_dir(dir);
     }
@@ -701,7 +696,13 @@ fn spawn_command(command: &CommandSpec) -> Result<u32, String> {
         .stderr(Stdio::null());
     process
         .spawn()
-        .map(|child| child.id())
+        .map(|mut child| {
+            let pid = child.id();
+            thread::spawn(move || {
+                let _ = child.wait();
+            });
+            pid
+        })
         .map_err(|err| format!("spawn failed: {err}"))
 }
 
