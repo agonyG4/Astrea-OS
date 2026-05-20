@@ -394,7 +394,7 @@ def trash_items(trash_files_text: str, trash_info_text: str, paths: list[str]) -
         if not source.exists():
             continue
         destination = _unique_target(trash_files, source.name)
-        os.rename(source, destination)
+        shutil.move(str(source), str(destination))
         info_path = trash_info / f"{destination.name}.trashinfo"
         info_path.write_text(
             "[Trash Info]\n"
@@ -433,7 +433,7 @@ def restore_trash_items(trash_info_text: str, fallback_dir_text: str, paths: lis
             parent = fallback_dir
 
         final_target = _unique_target(parent, target.name)
-        os.rename(trashed, final_target)
+        shutil.move(str(trashed), str(final_target))
         info_path.unlink(missing_ok=True)
 
 
