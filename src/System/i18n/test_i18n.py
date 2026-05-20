@@ -7,7 +7,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import i18n
+import importlib.util
+import sys
+
+I18N_PATH = Path(__file__).with_name("i18n.py")
+spec = importlib.util.spec_from_file_location("i18n_under_test", I18N_PATH)
+i18n = importlib.util.module_from_spec(spec)
+sys.modules["i18n_under_test"] = i18n
+assert spec and spec.loader
+spec.loader.exec_module(i18n)
 
 
 class I18nTests(unittest.TestCase):
@@ -72,6 +80,14 @@ class I18nTests(unittest.TestCase):
 
         self.assertEqual(bundle.translate("shared.only_en"), "Only English")
         self.assertEqual(bundle.translate("missing.key"), "missing.key")
+
+    def test_list_languages_sorted(self) -> None:
+        self.assertEqual(i18n.available_languages(self.catalog_dir), ["en_US", "pt_BR"])
+
+    def test_translate_params_and_fallback(self) -> None:
+        self.write_config("settings.json", {"language": "pt_BR"})
+        bundle = i18n.load_bundle(self.catalog_dir, self.config_dir)
+        self.assertEqual(bundle.translate("missing", "Version {version}", {"version": "1.0"}), "Version 1.0")
 
 
 if __name__ == "__main__":

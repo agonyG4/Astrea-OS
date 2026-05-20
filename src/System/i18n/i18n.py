@@ -21,12 +21,12 @@ class I18nBundle:
     strings: dict[str, str]
     fallback_strings: dict[str, str]
 
-    def translate(self, key: str) -> str:
-        if key in self.strings:
-            return self.strings[key]
-        if key in self.fallback_strings:
-            return self.fallback_strings[key]
-        return key
+    def translate(self, key: str, fallback: str | None = None, params: dict[str, Any] | None = None) -> str:
+        value = self.strings.get(key) or self.fallback_strings.get(key) or fallback or key
+        if params:
+            for name, raw in params.items():
+                value = value.replace("{" + str(name) + "}", str(raw))
+        return value
 
     def as_payload(self) -> dict[str, Any]:
         return {
@@ -64,14 +64,14 @@ def read_catalog(catalog_dir: Path, language: str) -> dict[str, str]:
     return {str(key): str(value) for key, value in payload.items()}
 
 
-def available_languages(catalog_dir: Path) -> set[str]:
+def available_languages(catalog_dir: Path) -> list[str]:
     try:
-        return {path.stem for path in catalog_dir.glob("*.json") if path.is_file()}
+        return sorted({path.stem for path in catalog_dir.glob("*.json") if path.is_file()})
     except OSError:
-        return set()
+        return []
 
 
-def normalize_language(language: str, supported: set[str]) -> str:
+def normalize_language(language: str, supported: list[str]) -> str:
     candidate = (language or "").strip().replace("-", "_")
     if not candidate:
         return DEFAULT_LANGUAGE
@@ -118,6 +118,9 @@ def parse_args() -> argparse.Namespace:
     sub.add_parser("dump", help="print the active language bundle as JSON")
     tr_parser = sub.add_parser("tr", help="print a single translated key")
     tr_parser.add_argument("key")
+    tr_parser.add_argument("fallback", nargs="?", default=None)
+    tr_parser.add_argument("--params", default="{}")
+    sub.add_parser("list-languages", help="list available language catalogs")
     return parser.parse_args()
 
 
@@ -128,7 +131,11 @@ def main() -> None:
         print(json.dumps(bundle.as_payload(), ensure_ascii=False, sort_keys=True))
         return
     if args.command == "tr":
-        print(bundle.translate(args.key))
+        params = json.loads(args.params or "{}")
+        print(bundle.translate(args.key, args.fallback, params if isinstance(params, dict) else None))
+        return
+    if args.command == "list-languages":
+        print(json.dumps(available_languages(args.catalog_dir or default_catalog_dir()), ensure_ascii=False))
 
 
 if __name__ == "__main__":

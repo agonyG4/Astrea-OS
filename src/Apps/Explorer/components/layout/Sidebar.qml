@@ -132,9 +132,9 @@ Item {
                 { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.documentos"]) || "Documents"), icon: "folder-documents",  path: AppState.homePath + "/Documentos" },
                 { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.downloads"]) || "Downloads"),  icon: "folder-downloads",  path: AppState.homePath + "/Downloads" },
                 { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.imagens"]) || "Pictures"),    icon: "folder-pictures",   path: AppState.homePath + "/Imagens" },
-                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.maosicas"]) || "Music"),    icon: "folder-music",      path: AppState.homePath + "/Músicas" },
-                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.vadeos"]) || "Videos"),     icon: "folder-videos",     path: AppState.homePath + "/Vídeos" },
-                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.paoblico"]) || "Public"),    icon: "folder-publicshare",path: AppState.homePath + "/Público" },
+                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.sidebar.music"]) || "Music"),    icon: "folder-music",      path: AppState.homePath + "/Músicas" },
+                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.sidebar.videos"]) || "Videos"),     icon: "folder-videos",     path: AppState.homePath + "/Vídeos" },
+                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.sidebar.public"]) || "Public"),    icon: "folder-publicshare",path: AppState.homePath + "/Público" },
                 { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.modelos"]) || "Templates"),    icon: "folder-templates",  path: AppState.homePath + "/Modelos" }
             ]
             SidebarItem { icon: modelData.icon; label: modelData.label; path: modelData.path }

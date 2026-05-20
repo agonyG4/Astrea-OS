@@ -22,11 +22,8 @@ ScrollPage {
     readonly property string stateJsonScript: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + "/Core/bridge/state_json.py"
     readonly property string configPath: (Quickshell.env("HOME") || "") + "/.config/AstreaOS/system/settings.json"
     readonly property string defaultConfigJson: JSON.stringify({ "language": "en_US" }, null, 4)
-    readonly property var languageValues: ["en_US", "pt_BR"]
-    readonly property var languageOptions: [
-        (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["settings.language.option.en_us"]) || "English (US)",
-        (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["settings.language.option.pt_br"]) || "Portuguese (Brazil)"
-    ]
+    property var languageValues: ["en_US", "pt_BR"]
+    property var languageOptions: []
 
     property bool loading: true
     property string errorMessage: ""
@@ -35,8 +32,13 @@ ScrollPage {
     property int selectedLanguage: 0
     property var settingsConfig: ({ language: "en_US" })
 
-    function t(key, fallback) {
-        return (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages[key]) || fallback
+    function t(key, fallback, params) { return AstreaI18n.I18n.tr(key, fallback, params) }
+    function languageLabel(code) {
+        var key = "settings.language.option." + code.toLowerCase()
+        return t(key, code)
+    }
+    function rebuildLanguageOptions() {
+        languageOptions = languageValues.map(languageLabel)
     }
 
     function indexForLanguage(value) {
@@ -52,13 +54,31 @@ ScrollPage {
         var next = JSON.parse(JSON.stringify(root.settingsConfig || {}))
         next.language = root.languageValues[index]
         root.settingsConfig = next
-        saveConfigProc.jsonData = JSON.stringify(next, null, 4)
-        saveConfigProc.command = ["python3", root.stateJsonScript, "write", root.configPath, saveConfigProc.jsonData]
+        saveConfigProc.command = ["python3", root.stateJsonScript, "write", root.configPath, JSON.stringify(next, null, 4)]
         saveConfigProc.running = false
         saveConfigProc.running = true
     }
 
-    Component.onCompleted: loadConfigProc.running = true
+    Component.onCompleted: { listLanguagesProc.running = true; loadConfigProc.running = true }
+
+
+    Process {
+        id: listLanguagesProc
+        command: ["python3", (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + "/System/i18n/i18n.py", "list-languages"]
+        property string buffer: ""
+        stdout: SplitParser { onRead: data => listLanguagesProc.buffer += data }
+        onExited: code => {
+            if (code === 0) {
+                try {
+                    var langs = JSON.parse(buffer || "[]")
+                    if (langs.length > 0) root.languageValues = langs
+                } catch (e) {}
+            }
+            buffer = ""
+            root.rebuildLanguageOptions()
+            root.selectedLanguage = root.indexForLanguage(root.settingsConfig.language || AstreaI18n.I18n.language)
+        }
+    }
 
     Process {
         id: loadConfigProc
@@ -85,7 +105,6 @@ ScrollPage {
 
     Process {
         id: saveConfigProc
-        property string jsonData: ""
         command: []
         onExited: code => {
             if (code === 0) {

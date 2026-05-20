@@ -281,7 +281,7 @@ ScrollPage {
                         }
 
                         Text {
-                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.bluetooth.text.conecte_se_a_acessa3rios_que_vocaa_pode_usar_par"]) || "Connect to accessories you can use for music streaming, typing, and gaming.")
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["settings.bluetooth.accessories_help"]) || "Connect to accessories you can use for music streaming, typing, and gaming.")
                             color: Theme.textSecondary
                             font.pixelSize: 13
                             Layout.fillWidth: true

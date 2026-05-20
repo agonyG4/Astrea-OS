@@ -26,7 +26,7 @@ ColumnLayout {
             spacing: 8
 
             UI.TextLabel {
-                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.components.sections.feels_like.text.sensaaao_tarmica"]) || "SENSAÇÃO TÉRMICA")
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["weather.feels_like.title"]) || "SENSAÇÃO TÉRMICA")
                 font.pixelSize: UI.Theme.fontSizeSmall
                 font.weight: 600
                 textColor: UI.Theme.textTertiary

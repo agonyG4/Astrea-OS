@@ -229,3 +229,16 @@ def parse_desktop_file(path: Path, *, source: str = "", skip_terminal: bool = Fa
         "source": source,
         "protected": path.name == "astrea-settings.desktop",
     }
+
+
+def run_command(command: list[str], *, timeout: float = 5.0) -> tuple[int, str, str]:
+    """Run command and return (code, stdout, stderr) without raising."""
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+        return result.returncode, (result.stdout or ""), (result.stderr or "")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 1, "", str(exc)
+
+
+def error_payload(message: str, *, code: str = "error") -> dict[str, Any]:
+    return {"ok": False, "code": code, "message": message}

@@ -348,7 +348,7 @@ ScrollPage {
 
             DetailCard {
                 title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.title.identity"]) || "Identity")
-                subtitle: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.subtitle.identificaaao_do_dispositivo_e_da_arquitetura"]) || "Device and architecture identity.")
+                subtitle: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["settings.system.device_arch_subtitle"]) || "Device and architecture identity.")
 
                 InfoValue { Layout.fillWidth: true; label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.hostname"]) || "Hostname"); value: root.systemInfo.system.hostname || "Unknown" }
                 InfoValue { Layout.fillWidth: true; label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.architecture"]) || "Architecture"); value: root.systemInfo.system.architecture || "Unknown" }
