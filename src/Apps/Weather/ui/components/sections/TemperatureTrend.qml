@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import "../../../AstreaComponents" as UI
 import "../common" as WeatherCommon
+import "../../../AstreaI18n" as AstreaI18n
 
 ColumnLayout {
     property var weatherData
@@ -13,9 +14,10 @@ ColumnLayout {
     Rectangle {
         Layout.fillWidth: true
         implicitHeight: 160
-        radius: UI.Theme.cardRadius
-        color: UI.Theme.cardBg
-        opacity: 0.92
+        radius: 20
+        color: "#252529"
+        border.color: "#34343A"
+        border.width: 1
 
         ColumnLayout {
             id: trendContent
@@ -24,7 +26,7 @@ ColumnLayout {
             spacing: 8
 
             UI.TextLabel {
-                text: "MÉDIA DE TEMP"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.components.sections.temperature_trend.text.madia_de_temp"]) || "MÉDIA DE TEMP")
                 font.pixelSize: UI.Theme.fontSizeSmall
                 font.weight: 600
                 textColor: UI.Theme.textTertiary
@@ -57,7 +59,7 @@ ColumnLayout {
 
             UI.TextLabel {
                 visible: !weatherData || weatherData.temp_history_avg === undefined || weatherData.temp_history_avg === null
-                text: "Dados indisponíveis."
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.components.sections.temperature_trend.text.dados_indisponaveis"]) || "Dados indisponíveis.")
                 font.pixelSize: UI.Theme.fontSizeLarge
                 textColor: UI.Theme.textTertiary
                 Layout.fillWidth: true
@@ -66,7 +68,7 @@ ColumnLayout {
             Item { Layout.fillHeight: true }
 
             UI.TextLabel {
-                text: "Média: " + (weatherData && weatherData.temp_history_avg !== undefined && weatherData.temp_history_avg !== null ? weatherData.temp_history_avg : "--") + "°"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.components.sections.temperature_trend.text.madia"]) || "Média: ") + (weatherData && weatherData.temp_history_avg !== undefined && weatherData.temp_history_avg !== null ? weatherData.temp_history_avg : "--") + "°"
                 font.pixelSize: UI.Theme.fontSizeSmall
                 textColor: UI.Theme.textTertiary
                 Layout.fillWidth: true

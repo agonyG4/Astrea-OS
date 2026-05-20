@@ -7,9 +7,16 @@ Rectangle {
     height: 20
     radius: Components.Theme.controlRadius
     property bool checked: false
-    signal toggled()
-    color: checked ? Components.Theme.accent : Qt.rgba(1, 1, 1, 0.18)
-    Behavior on color { ColorAnimation { duration: Components.Theme.animationFast } }
+    property bool visualChecked: checked
+    signal toggled(bool targetChecked)
+
+    onCheckedChanged: visualChecked = checked
+    onEnabledChanged: if (enabled) visualChecked = checked
+
+    color: visualChecked ? Components.Theme.accent : Qt.rgba(1, 1, 1, 0.18)
+    opacity: enabled ? 1.0 : 0.55
+    Behavior on color { ColorAnimation { duration: 80 } }
+    Behavior on opacity { NumberAnimation { duration: Components.Theme.animationMicro } }
 
     Rectangle {
         width: 14
@@ -17,13 +24,18 @@ Rectangle {
         radius: height / 2
         color: "#ffffff"
         anchors.verticalCenter: parent.verticalCenter
-        x: toggle.checked ? parent.width - width - 3 : 3
-        Behavior on x { NumberAnimation { duration: Components.Theme.animationFast; easing.type: Easing.OutCubic } }
+        x: toggle.visualChecked ? parent.width - width - 3 : 3
+        Behavior on x { NumberAnimation { duration: 80; easing.type: Easing.OutCubic } }
     }
 
     MouseArea {
         anchors.fill: parent
+        enabled: toggle.enabled
         cursorShape: Qt.PointingHandCursor
-        onClicked: toggle.toggled()
+        onClicked: {
+            const target = !toggle.visualChecked
+            toggle.visualChecked = target
+            toggle.toggled(target)
+        }
     }
 }

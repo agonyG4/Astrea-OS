@@ -1,0 +1,4 @@
+BarSegment      1.0 BarSegment.qml
+Clock           1.0 Clock.qml
+IndicatorButton 1.0 IndicatorButton.qml
+TopbarIndicator 1.0 TopbarIndicator.qml

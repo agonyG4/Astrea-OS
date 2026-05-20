@@ -1,9 +1,8 @@
 // ============================================================
 //  music-bars — PipeWire via PulseAudio compat
 //
-//  cargo build --release                         (Unix socket)
-//  cargo build --release --no-default-features \
-//              --features ipc-stdout             (stdout/pipe)
+//  cargo build --release                         (stdout/pipe)
+//  cargo build --release --features ipc-socket   (stdout + Unix socket)
 // ============================================================
 
 use libpulse_binding::{
@@ -27,26 +26,29 @@ use std::{io::Write, os::unix::net::UnixListener, path::Path};
 // ----------------------------------------------------------------
 #[cfg(feature = "ipc-socket")]
 const FALLBACK_SOCKET_PATH: &str = "/tmp/astrea-music-bars.sock";
-const FFT_SIZE:   usize = 2048;
+const FFT_SIZE:   usize = 1024;
 const HOP_SIZE:   usize = FFT_SIZE / 4;
 const BANDS:      usize = 16;
 const OUTPUT_BANDS: usize = 6;
+const FRAME_INTERVAL_MS: u64 = 33;
+const PLAYER_RECHECK_MS: u64 = 2500;
+const NO_PLAYER_RETRY_MS: u64 = 1200;
 const DEFAULT_INPUT_GAIN: f32 = 2.15;
 const DEFAULT_SENSITIVITY: f32 = 1.0;
 const DEFAULT_IDLE_FLOOR: f32 = 0.018;
-const DEFAULT_APPLE_SMOOTHNESS: f32 = 0.72;
-const DEFAULT_BEAT_STRENGTH: f32 = 1.0;
-const PEAK_ATTACK: f32 = 0.30;
-const PEAK_RELEASE: f32 = 0.014;
-const PEAK_FALL: f32 = 0.008;
-const SPRING: f32 = 0.145;
-const DAMPING: f32 = 0.74;
+const DEFAULT_APPLE_SMOOTHNESS: f32 = 0.55;
+const DEFAULT_BEAT_STRENGTH: f32 = 1.35;
+const PEAK_ATTACK: f32 = 0.42;
+const PEAK_RELEASE: f32 = 0.020;
+const PEAK_FALL: f32 = 0.014;
+const SPRING: f32 = 0.165;
+const DAMPING: f32 = 0.72;
 const MIN_FREQ:   f32   = 42.0;
 const MAX_FREQ:   f32   = 14_500.0;
 const SAMPLE_RATE: u32  = 48000;
 const CHANNELS:    u8   = 2;
-const BEAT_ATTACK: f32 = 0.44;
-const BEAT_DECAY: f32 = 0.88;
+const BEAT_ATTACK: f32 = 0.58;
+const BEAT_DECAY: f32 = 0.80;
 const SILENCE_GATE: f32 = 0.000_018;
 const BAND_GAINS: [f32; BANDS] = [
     0.72, 0.78, 0.86, 0.94,
@@ -255,15 +257,14 @@ fn band_width(index: usize) -> f32 {
     ((next - prev) * 0.56).max(0.08)
 }
 
-fn log_bands(mags: &[f32]) -> Vec<f32> {
+fn build_band_weights() -> Vec<Vec<(usize, f32)>> {
     let bin_hz = SAMPLE_RATE as f32 / FFT_SIZE as f32;
     (0..BANDS).map(|band| {
         let center = band_center(band).log2();
         let width = band_width(band);
-        let mut weighted_sum = 0.0;
-        let mut weight_total = 0.0;
+        let mut weights = Vec::new();
 
-        for (bin, mag) in mags.iter().enumerate().skip(1) {
+        for bin in 1..(FFT_SIZE / 2) {
             let freq = bin as f32 * bin_hz;
             if !(MIN_FREQ..=MAX_FREQ).contains(&freq) {
                 continue;
@@ -274,16 +275,34 @@ fn log_bands(mags: &[f32]) -> Vec<f32> {
                 continue;
             }
 
-            let weight = (1.0 - distance / 1.25).powf(2.0);
+            weights.push((bin, (1.0 - distance / 1.25).powf(2.0)));
+        }
+
+        weights
+    }).collect()
+}
+
+fn log_bands_into(mags: &[f32], weights: &[Vec<(usize, f32)>], out: &mut [f32]) {
+    for (band, band_weights) in weights.iter().enumerate() {
+        let mut weighted_sum = 0.0;
+        let mut weight_total = 0.0;
+
+        for &(bin, weight) in band_weights {
+            let mag = mags[bin];
             weighted_sum += mag * mag * weight;
             weight_total += weight;
         }
 
-        (weighted_sum / weight_total.max(f32::EPSILON)).sqrt().max(0.0)
-    }).collect()
+        out[band] = (weighted_sum / weight_total.max(f32::EPSILON)).sqrt().max(0.0);
+    }
 }
 
-fn normalize_bands(raw: &[f32], adaptive_peak: &mut f32, config: &MusicBarsConfig) -> (Vec<f32>, f32) {
+fn normalize_bands_into(
+    raw: &[f32],
+    adaptive_peak: &mut f32,
+    config: &MusicBarsConfig,
+    out: &mut [f32],
+) -> f32 {
     let frame_peak = raw.iter().copied().fold(0.0, f32::max) * config.input_gain;
     if frame_peak > *adaptive_peak {
         *adaptive_peak += (frame_peak - *adaptive_peak) * PEAK_ATTACK;
@@ -293,24 +312,22 @@ fn normalize_bands(raw: &[f32], adaptive_peak: &mut f32, config: &MusicBarsConfi
 
     let signal = frame_peak.max(0.0);
     if signal < SILENCE_GATE && *adaptive_peak < SILENCE_GATE * 3.0 {
-        return (vec![0.0; BANDS], signal);
+        out.fill(0.0);
+        return signal;
     }
 
     // Hybrid normalization keeps quiet songs alive without letting silence
     // appoint itself as the reference level.
     let peak = (*adaptive_peak * 0.76 + frame_peak * 0.24).max(0.000_001);
-    let bands = raw.iter()
-        .enumerate()
-        .map(|(i, v)| {
-            let normalized = (v * config.input_gain / peak * config.sensitivity).max(0.0);
-            let t = i as f32 / (BANDS - 1) as f32;
-            let exponent = 0.58 + t * 0.15;
-            let tuned = normalized.powf(exponent) * BAND_GAINS[i];
-            tuned.clamp(0.0, 1.0)
-        })
-        .collect();
+    for (i, (target, v)) in out.iter_mut().zip(raw.iter()).enumerate() {
+        let normalized = (v * config.input_gain / peak * config.sensitivity).max(0.0);
+        let t = i as f32 / (BANDS - 1) as f32;
+        let exponent = 0.58 + t * 0.15;
+        let tuned = normalized.powf(exponent) * BAND_GAINS[i];
+        *target = tuned.clamp(0.0, 1.0);
+    }
 
-    (bands, signal)
+    signal
 }
 
 fn attack_release(current: f32, target: f32, band: usize) -> f32 {
@@ -318,9 +335,9 @@ fn attack_release(current: f32, target: f32, band: usize) -> f32 {
     let delta = (target - current).abs();
 
     if target > current {
-        (0.42 + delta * 0.28 + t * 0.05).min(0.82)
+        (0.50 + delta * 0.28 + t * 0.04).min(0.86)
     } else {
-        (0.070 + delta * 0.045 + t * 0.065).min(0.20)
+        (0.115 + delta * 0.070 + t * 0.065).min(0.26)
     }
 }
 
@@ -330,6 +347,7 @@ struct VisualState {
     rendered: Vec<f32>,
     velocity: Vec<f32>,
     peaks: Vec<f32>,
+    normalized: Vec<f32>,
     adaptive_peak: f32,
     energy: f32,
     beat: f32,
@@ -345,6 +363,7 @@ impl VisualState {
             rendered: vec![0.0; OUTPUT_BANDS],
             velocity: vec![0.0; OUTPUT_BANDS],
             peaks: vec![0.0; OUTPUT_BANDS],
+            normalized: vec![0.0; BANDS],
             adaptive_peak: 0.000_25,
             energy: 0.0,
             beat: 0.0,
@@ -354,11 +373,11 @@ impl VisualState {
     }
 
     fn ingest(&mut self, raw: &[f32]) {
-        let (normalized, signal) = normalize_bands(raw, &mut self.adaptive_peak, &self.config);
+        let signal = normalize_bands_into(raw, &mut self.adaptive_peak, &self.config, &mut self.normalized);
         let live_signal = signal > SILENCE_GATE * 2.5;
         for (band, target) in self.target.iter_mut().enumerate() {
             let shaped = if live_signal {
-                normalized[band].max(self.config.idle_floor * 0.22)
+                self.normalized[band].max(self.config.idle_floor * 0.22)
             } else {
                 0.0
             };
@@ -369,10 +388,10 @@ impl VisualState {
             }
         }
 
-        let instantaneous_energy = normalized.iter().sum::<f32>() / BANDS as f32;
+        let instantaneous_energy = self.normalized.iter().sum::<f32>() / BANDS as f32;
         let transient = (instantaneous_energy - self.previous_energy).max(0.0);
-        if live_signal && transient > 0.052 && instantaneous_energy > 0.085 {
-            self.beat = (self.beat + transient * 4.2 * self.config.beat_strength).min(1.0);
+        if live_signal && transient > 0.032 && instantaneous_energy > 0.060 {
+            self.beat = (self.beat + transient * 5.8 * self.config.beat_strength).min(1.0);
         } else {
             self.beat = (self.beat * BEAT_DECAY).max(0.0);
         }
@@ -392,10 +411,10 @@ impl VisualState {
             let sampled = self.output_band(index);
             let active = sampled > 0.006 || self.energy > 0.018 || self.beat > 0.001;
             let bass_pulse = (self.output_band(2) + self.output_band(3)) * 0.5;
-            let beat_kick = self.beat * (0.12 + bass_pulse * 0.24);
+            let beat_kick = self.beat * (0.16 + bass_pulse * 0.30);
             let flutter = if active {
                 (self.phase * (1.05 + index as f32 * 0.13) + index as f32 * 1.37).sin()
-                    * (0.014 + self.energy * 0.032)
+                    * (0.010 + self.energy * 0.024)
             } else {
                 0.0
             };
@@ -410,7 +429,7 @@ impl VisualState {
                 0.0
             };
             let idle_wiggle = if active && self.energy > 0.045 {
-                (self.phase * 0.63 + index as f32 * 1.83).sin().abs() * self.energy * 0.007
+                (self.phase * 0.63 + index as f32 * 1.83).sin().abs() * self.energy * 0.004
             } else {
                 0.0
             };
@@ -464,12 +483,12 @@ impl VisualState {
     fn spring_to(&mut self, index: usize, target: f32, release_bias: f32) {
         let current = self.rendered[index];
         let smooth = release_bias.clamp(0.0, 1.0);
-        let mut spring = SPRING * (1.18 - smooth * 0.22);
-        let mut damping = (DAMPING + smooth * 0.07).min(0.84);
+        let mut spring = SPRING * (1.22 - smooth * 0.20);
+        let mut damping = (DAMPING + smooth * 0.06).min(0.82);
 
         if target < current {
-            spring = (spring * (0.58 + (1.0 - smooth) * 0.18)).max(0.055);
-            damping = (damping + smooth * 0.05).min(0.88);
+            spring = (spring * (0.78 + (1.0 - smooth) * 0.22)).max(0.09);
+            damping = (damping + smooth * 0.035).min(0.85);
         }
 
         self.velocity[index] = (self.velocity[index] + (target - current) * spring) * damping;
@@ -637,10 +656,15 @@ fn connect_monitor(monitor_name: &str) -> Option<Simple> {
 fn push_samples(pcm: &Arc<Mutex<Vec<f32>>>, samples: &[f32]) {
     let mut b = pcm.lock().unwrap();
     b.extend_from_slice(samples);
-    if b.len() > FFT_SIZE * 4 {
-        let excess = b.len() - FFT_SIZE * 4;
+    if b.len() > FFT_SIZE * 2 {
+        let excess = b.len() - FFT_SIZE * 2;
         b.drain(..excess);
     }
+}
+
+fn push_silence(pcm: &Arc<Mutex<Vec<f32>>>) {
+    let silence = [0.0; HOP_SIZE];
+    push_samples(pcm, &silence);
 }
 
 // ================================================================
@@ -677,34 +701,43 @@ fn main() {
         let out    = output.clone();
         let window = hann_window(FFT_SIZE);
         let mut visual = VisualState::new(config.clone());
-        let mut planner   = FftPlanner::<f32>::new();
-        let fft           = planner.plan_fft_forward(FFT_SIZE);
+        let mut planner = FftPlanner::<f32>::new();
+        let fft = planner.plan_fft_forward(FFT_SIZE);
+        let frame_interval = Duration::from_millis(FRAME_INTERVAL_MS);
+        let mut samples = vec![0.0f32; FFT_SIZE];
+        let mut cx = vec![Complex::new(0.0, 0.0); FFT_SIZE];
+        let mut mags = vec![0.0f32; FFT_SIZE / 2];
+        let band_weights = build_band_weights();
+        let mut raw_bands = vec![0.0f32; BANDS];
 
         thread::spawn(move || loop {
-            thread::sleep(Duration::from_millis(8));
+            thread::sleep(frame_interval);
 
-            let samples = {
+            let has_samples = {
                 let mut b = pcm_r.lock().unwrap();
                 if b.len() >= FFT_SIZE {
-                    let samples = b[..FFT_SIZE].to_vec();
-                    b.drain(..HOP_SIZE);
-                    Some(samples)
+                    let start = b.len() - FFT_SIZE;
+                    samples.copy_from_slice(&b[start..]);
+                    b.clear();
+                    true
                 } else {
-                    None
+                    false
                 }
             };
 
-            if let Some(samples) = samples {
-                let mut cx: Vec<Complex<f32>> = samples.iter().zip(window.iter())
-                    .map(|(&s, &w)| Complex::new(s * w, 0.0))
-                    .collect();
+            if has_samples {
+                for ((slot, &sample), &w) in cx.iter_mut().zip(samples.iter()).zip(window.iter()) {
+                    slot.re = sample * w;
+                    slot.im = 0.0;
+                }
                 fft.process(&mut cx);
 
-                let mags: Vec<f32> = cx[..FFT_SIZE / 2]
-                    .iter().map(|c| c.norm() / FFT_SIZE as f32).collect();
+                for (out, value) in mags.iter_mut().zip(cx[..FFT_SIZE / 2].iter()) {
+                    *out = value.norm() / FFT_SIZE as f32;
+                }
 
-                let raw = log_bands(&mags);
-                visual.ingest(&raw);
+                log_bands_into(&mags, &band_weights, &mut raw_bands);
+                visual.ingest(&raw_bands);
             }
 
             out.send(&visual.frame());
@@ -713,23 +746,24 @@ fn main() {
 
     // Loop de leitura PCM (blocking, thread principal)
     let mut buf = vec![0u8; HOP_SIZE * 4 * CHANNELS as usize]; // f32 = 4 bytes
+    let mut samples = vec![0.0f32; HOP_SIZE];
     eprintln!("[music-bars] Rodando. Ctrl+C para sair.");
 
     loop {
         let Some(monitor_name) = find_music_monitor() else {
-            push_samples(&pcm, &vec![0.0; HOP_SIZE]);
-            thread::sleep(Duration::from_millis(900));
+            push_silence(&pcm);
+            thread::sleep(Duration::from_millis(NO_PLAYER_RETRY_MS));
             continue;
         };
 
         let Some(pa) = connect_monitor(&monitor_name) else {
-            push_samples(&pcm, &vec![0.0; HOP_SIZE]);
-            thread::sleep(Duration::from_millis(900));
+            push_silence(&pcm);
+            thread::sleep(Duration::from_millis(NO_PLAYER_RETRY_MS));
             continue;
         };
 
         eprintln!("[music-bars] Conectado em '{}'", monitor_name);
-        let mut next_player_check = Instant::now() + Duration::from_millis(850);
+        let mut next_player_check = Instant::now() + Duration::from_millis(PLAYER_RECHECK_MS);
 
         loop {
             if pa.read(&mut buf).is_err() {
@@ -739,23 +773,21 @@ fn main() {
             }
 
             if Instant::now() >= next_player_check {
-                next_player_check = Instant::now() + Duration::from_millis(850);
+                next_player_check = Instant::now() + Duration::from_millis(PLAYER_RECHECK_MS);
                 if find_music_monitor().as_deref() != Some(monitor_name.as_str()) {
                     eprintln!("[music-bars] Player de música saiu/trocou; revalidando fonte");
-                    push_samples(&pcm, &vec![0.0; HOP_SIZE]);
+                    push_silence(&pcm);
                     break;
                 }
             }
 
-            let samples: Vec<f32> = buf.chunks_exact(4 * CHANNELS as usize)
-                .map(|frame| {
-                    let sum: f32 = frame
-                        .chunks_exact(4)
-                        .map(|b| f32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-                        .sum();
-                    sum / CHANNELS as f32
-                })
-                .collect();
+            for (out, frame) in samples.iter_mut().zip(buf.chunks_exact(4 * CHANNELS as usize)) {
+                let mut sum = 0.0;
+                for sample in frame.chunks_exact(4) {
+                    sum += f32::from_le_bytes([sample[0], sample[1], sample[2], sample[3]]);
+                }
+                *out = sum / CHANNELS as f32;
+            }
 
             push_samples(&pcm, &samples);
         }

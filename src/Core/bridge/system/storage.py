@@ -11,6 +11,14 @@ from pathlib import Path
 
 HOME = Path.home()
 CACHE_DB = HOME / ".cache/storagesense/metadata_cache.db"
+STATE_DIR = HOME / ".local/state/Astrea"
+REFRESH_LOCK = STATE_DIR / "storage-refresh.lock"
+REFRESH_STATUS = STATE_DIR / "storage-refresh.json"
+REFRESH_LOG = STATE_DIR / "storage-refresh.log"
+AUTO_REFRESH_AFTER_SECONDS = int(os.environ.get("ASTREA_STORAGE_REFRESH_AFTER_SECONDS", "900"))
+REFRESH_POLL_SECONDS = 5
+COMPSIZE_CACHE = STATE_DIR / "storage-compsize.json"
+COMPSIZE_CACHE_AFTER_SECONDS = int(os.environ.get("ASTREA_STORAGE_COMPSIZE_AFTER_SECONDS", "3600"))
 SENSE_SCRIPT_CANDIDATES = [
     Path(os.environ["ASTREA_STORAGESENSE"])
     if os.environ.get("ASTREA_STORAGESENSE")
@@ -38,6 +46,7 @@ DISPLAY_LABELS = {
     "config": "Configuracoes",
     "fonts": "Fontes",
     "sys:apps": "Applications",
+    "sys:pacman": "Pacman",
     "sys:system": "Base do sistema",
     "sys:other": "Arquivos de sistema",
     "sys:games": "Jogos fora da pasta pessoal",
@@ -81,6 +90,7 @@ SYSTEM_IDS = {
     "config",
     "fonts",
 }
+PACMAN_IDS = {"sys:pacman"}
 
 
 def find_sense_script() -> Path | None:
@@ -110,6 +120,307 @@ def cache_metadata() -> dict:
     }
 
 
+def read_json(path: Path, default: dict) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else default
+    except (OSError, json.JSONDecodeError):
+        return default
+
+
+def write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def parse_compsize_size(value: str) -> int:
+    value = value.strip()
+    if not value:
+        return 0
+    suffix = value[-1].upper()
+    multiplier = 1
+    number = value
+    if suffix in {"K", "M", "G", "T", "P"}:
+        multiplier = {
+            "K": 1_000,
+            "M": 1_000_000,
+            "G": 1_000_000_000,
+            "T": 1_000_000_000_000,
+            "P": 1_000_000_000_000_000,
+        }[suffix]
+        number = value[:-1]
+    return int(float(number) * multiplier)
+
+
+def parse_compsize_output(output: str) -> dict:
+    stats = {
+        "exact": False,
+        "compressed_saved": 0,
+        "compressed_total": 0,
+        "zstd_disk_usage": 0,
+        "zstd_saved": 0,
+        "by_algorithm": {},
+    }
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("Processed") or line.startswith("Type"):
+            continue
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        alg = parts[0]
+        try:
+            disk_usage = parse_compsize_size(parts[2])
+            uncompressed = parse_compsize_size(parts[3])
+        except ValueError:
+            continue
+        saved = max(0, uncompressed - disk_usage)
+        if alg == "TOTAL":
+            stats["compressed_saved"] = saved
+            stats["exact"] = True
+        else:
+            stats["by_algorithm"][alg] = {
+                "disk_usage": disk_usage,
+                "uncompressed": uncompressed,
+                "compressed_saved": saved,
+            }
+            if alg == "zstd":
+                stats["compressed_total"] = uncompressed
+                stats["zstd_disk_usage"] = disk_usage
+                stats["zstd_saved"] = saved
+    return stats
+
+
+def parse_compsize_bytes(output: str) -> dict:
+    return parse_compsize_output(output)
+
+
+def cached_compsize_stats() -> dict:
+    cached = read_json(COMPSIZE_CACHE, {})
+    updated_at = cached.get("updated_at")
+    if not updated_at:
+        return {}
+    if time.time() - float(updated_at) > COMPSIZE_CACHE_AFTER_SECONDS:
+        return {}
+    return cached
+
+
+def compsize_stats(paths: list[Path]) -> dict:
+    cached = cached_compsize_stats()
+    if cached:
+        return cached
+    binary = shutil.which("compsize")
+    if not binary:
+        return {"exact": False, "error": "compsize not installed", "source": "unavailable"}
+    command = [binary, "-b", "-x"] + [str(path) for path in paths if path.exists()]
+    if len(command) <= 3:
+        return {"exact": False, "error": "no compsize paths", "source": "unavailable"}
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=8)
+    except (OSError, subprocess.TimeoutExpired) as err:
+        return {"exact": False, "error": str(err), "source": "compsize"}
+    if result.returncode != 0:
+        return {
+            "exact": False,
+            "error": (result.stderr or result.stdout or "compsize failed").strip(),
+            "source": "compsize",
+        }
+    stats = parse_compsize_output(result.stdout)
+    stats.update({
+        "source": "compsize",
+        "updated_at": time.time(),
+        "paths": [str(path) for path in paths if path.exists()],
+    })
+    try:
+        write_json(COMPSIZE_CACHE, stats)
+    except OSError:
+        pass
+    return stats
+
+
+def import_compsize_cache(output: str, source: str = "manual-compsize") -> dict:
+    stats = parse_compsize_output(output)
+    stats.update({
+        "source": source,
+        "updated_at": time.time(),
+        "paths": [str(HOME)],
+    })
+    write_json(COMPSIZE_CACHE, stats)
+    return stats
+
+
+def process_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+
+
+def process_is_refresh_worker(pid: int) -> bool:
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return False
+    parts = [part.decode("utf-8", errors="ignore") for part in raw.split(b"\0") if part]
+    return any(part.endswith("storage.py") for part in parts) and "refresh-background" in parts
+
+
+def refresh_status() -> dict:
+    status = read_json(REFRESH_STATUS, {})
+    pid = int(status.get("pid") or 0)
+    running = process_alive(pid) and process_is_refresh_worker(pid)
+    if not running and REFRESH_LOCK.exists():
+        try:
+            REFRESH_LOCK.unlink()
+        except OSError:
+            pass
+    if status.get("running") and not running:
+        status["running"] = False
+        status["updated_at"] = time.time()
+        try:
+            write_json(REFRESH_STATUS, status)
+        except OSError:
+            pass
+    status["running"] = running
+    return status
+
+
+def refresh_running() -> bool:
+    return bool(refresh_status().get("running"))
+
+
+def cache_needs_auto_refresh(meta: dict) -> bool:
+    if not meta.get("cache_exists"):
+        return True
+    age = meta.get("cache_updated_ago_seconds")
+    return age is None or age > AUTO_REFRESH_AFTER_SECONDS
+
+
+def start_auto_refresh(sense_script: Path, reason: str) -> bool:
+    if refresh_running():
+        return False
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    command = [sys.executable, str(Path(__file__).resolve()), "refresh-background", str(sense_script), reason]
+    with REFRESH_LOG.open("ab") as log:
+        proc = subprocess.Popen(
+            command,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+    write_json(REFRESH_STATUS, {
+        "pid": proc.pid,
+        "running": True,
+        "reason": reason,
+        "started_at": time.time(),
+        "updated_at": time.time(),
+        "log": str(REFRESH_LOG),
+    })
+    return True
+
+
+def enrich_refresh_metadata(payload: dict, sense_script: Path | None = None) -> dict:
+    meta = cache_metadata()
+    status = refresh_status()
+    compression_missing = payload.get("compression_index_ready") is False
+    stale = cache_needs_auto_refresh(meta) or compression_missing
+    started = False
+    if sense_script and stale and not status.get("running"):
+        reason = "missing-cache" if not meta.get("cache_exists") else "compression-metadata" if compression_missing else "stale-cache"
+        started = start_auto_refresh(sense_script, reason)
+        status = refresh_status()
+
+    payload.update({
+        "refresh_running": bool(status.get("running")),
+        "refresh_started": started,
+        "refresh_reason": status.get("reason", ""),
+        "refresh_started_at": status.get("started_at"),
+        "refresh_updated_at": status.get("updated_at"),
+        "refresh_log": status.get("log", str(REFRESH_LOG)),
+        "cache_stale": stale,
+        "cache_refresh_after_seconds": AUTO_REFRESH_AFTER_SECONDS,
+        "refresh_poll_seconds": REFRESH_POLL_SECONDS,
+    })
+    return payload
+
+
+def run_refresh_background(sense_script: Path, reason: str) -> int:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(REFRESH_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode("ascii"))
+        os.close(fd)
+    except FileExistsError:
+        if refresh_running():
+            return 0
+        try:
+            REFRESH_LOCK.unlink()
+        except OSError:
+            pass
+
+    started = time.time()
+    write_json(REFRESH_STATUS, {
+        "pid": os.getpid(),
+        "running": True,
+        "reason": reason,
+        "started_at": started,
+        "updated_at": started,
+        "log": str(REFRESH_LOG),
+    })
+    exit_code = 0
+    try:
+        command_base = [sys.executable, str(sense_script)]
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(sense_script.parent) + os.pathsep + env.get("PYTHONPATH", "")
+        result = subprocess.run(
+            command_base + ["scan", "--quiet"],
+            cwd=str(sense_script.parent),
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if result.returncode != 0:
+            exit_code = result.returncode
+            write_json(REFRESH_STATUS, {
+                "pid": os.getpid(),
+                "running": False,
+                "reason": reason,
+                "started_at": started,
+                "finished_at": time.time(),
+                "updated_at": time.time(),
+                "ok": False,
+                "error": (result.stderr or "refresh failed").strip(),
+                "log": str(REFRESH_LOG),
+            })
+            return exit_code
+        write_json(REFRESH_STATUS, {
+            "pid": os.getpid(),
+            "running": False,
+            "reason": reason,
+            "started_at": started,
+            "finished_at": time.time(),
+            "updated_at": time.time(),
+            "ok": True,
+            "log": str(REFRESH_LOG),
+        })
+        return 0
+    finally:
+        try:
+            REFRESH_LOCK.unlink()
+        except OSError:
+            pass
+
+
 def label_for(cat_id: str) -> str:
     if cat_id in DISPLAY_LABELS:
         return DISPLAY_LABELS[cat_id]
@@ -120,10 +431,24 @@ def label_for(cat_id: str) -> str:
 def color_for(cat_id: str, label: str) -> str:
     label_lower = label.lower()
     cat_lower = cat_id.lower()
+    apple_colors = {
+        "games": "#007AFF",
+        "downloads": "#FF9500",
+        "sys:temp_files": "#8E8E93",
+        "sys:pacman": "#FFD60A",
+        "sys:unified": "#AEAEB2",
+        "home_other": "#636366",
+        "unified_apps": "#FF3B30",
+        "images": "#FF9F0A",
+        "code": "#34C759",
+        "documents": "#5856D6",
+    }
+    if cat_id in apple_colors:
+        return apple_colors[cat_id]
     if "game" in label_lower:
         return "#007AFF"
     if "download" in label_lower:
-        return "#FFD426"
+        return "#FF9500"
     if "image" in label_lower:
         return "#FF9F0A"
     if "video" in label_lower:
@@ -138,6 +463,8 @@ def color_for(cat_id: str, label: str) -> str:
         return "#5856D6"
     if cat_id == "unified_apps" or "app" in label_lower or "flatpak" in cat_lower:
         return "#FF3B30"
+    if "pacman" in label_lower:
+        return "#FFD60A"
     if "cache" in label_lower or "tmp" in cat_lower or "system" in label_lower:
         return "#AEAEB2"
     return "#636366"
@@ -149,12 +476,16 @@ def add_group(data_map: dict, target_id: str, target_label: str, is_system: bool
             "id": target_id,
             "label": target_label,
             "size": 0,
+            "disk_size": 0,
+            "compressed_saved": 0,
             "count": 0,
             "color": color_for(target_id, target_label),
             "is_system": is_system,
             "breakdown": [],
         }
     data_map[target_id]["size"] += row["size"]
+    data_map[target_id]["disk_size"] += row.get("disk_size", row["size"])
+    data_map[target_id]["compressed_saved"] += row.get("compressed_saved", 0)
     data_map[target_id]["count"] += row["count"]
     data_map[target_id]["breakdown"].append(row)
 
@@ -162,7 +493,7 @@ def add_group(data_map: dict, target_id: str, target_label: str, is_system: bool
 def print_cached_json() -> int:
     meta = cache_metadata()
     if not CACHE_DB.exists():
-        print(json.dumps({
+        print(json.dumps(enrich_refresh_metadata({
             "error": "No cache found",
             "disk_total": 0,
             "disk_used": 0,
@@ -171,32 +502,71 @@ def print_cached_json() -> int:
             "uncategorized_delta": 0,
             "data": [],
             **meta,
-        }))
+        }, None)))
         return 0
 
     try:
         conn = sqlite3.connect(f"file:{CACHE_DB}?mode=ro", uri=True)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
+        if "disk_size" in columns and "disk_ready" in columns:
+            physical_expr = "CASE WHEN disk_ready = 1 THEN disk_size ELSE size END"
+            compressed_expr = "CASE WHEN disk_ready = 1 AND size > disk_size THEN size - disk_size ELSE 0 END"
+            compression_missing_expr = "CASE WHEN disk_ready = 1 THEN 0 ELSE 1 END"
+        elif "disk_size" in columns:
+            physical_expr = "size"
+            compressed_expr = "0"
+            compression_missing_expr = "1"
+        else:
+            physical_expr = "size"
+            compressed_expr = "0"
+            compression_missing_expr = "1"
         rows = conn.execute(
-            "SELECT cat, COUNT(*), SUM(size) FROM files GROUP BY cat ORDER BY SUM(size) DESC"
+            f"""
+            SELECT cat,
+                   COUNT(*),
+                   SUM(size),
+                   SUM({physical_expr}),
+                   SUM({compressed_expr})
+            FROM files
+            GROUP BY cat
+            ORDER BY SUM(size) DESC
+            """
         ).fetchall()
-        total_scanned = conn.execute("SELECT SUM(size) FROM files").fetchone()[0] or 0
+        total_scanned, total_physical, total_saved, compression_missing = conn.execute(
+            f"""
+            SELECT
+                SUM(size),
+                SUM({physical_expr}),
+                SUM({compressed_expr}),
+                SUM({compression_missing_expr})
+            FROM files
+            """
+        ).fetchone()
+        total_scanned = total_scanned or 0
+        total_physical = total_physical or 0
+        total_saved = total_saved or 0
+        compression_missing = compression_missing or 0
         conn.close()
     except sqlite3.Error as err:
-        print(json.dumps({"error": f"Could not read storage cache: {err}", "data": []}))
+        print(json.dumps(enrich_refresh_metadata({"error": f"Could not read storage cache: {err}", "data": []}, None)))
         return 0
 
     usage = shutil.disk_usage("/")
     data_map = {}
 
-    for cat_id, count, size in rows:
+    for cat_id, count, size, disk_size, saved in rows:
         if not size:
             continue
+        disk_size = int(disk_size or 0)
+        saved = int(saved or 0)
         canonical = CAT_ALIASES.get(cat_id, cat_id)
         label = label_for(canonical)
         source_row = {
             "id": canonical,
             "label": label,
             "size": int(size),
+            "disk_size": disk_size,
+            "compressed_saved": saved,
             "count": int(count),
         }
 
@@ -205,6 +575,8 @@ def print_cached_json() -> int:
             add_group(data_map, "unified_apps", "Applications", False, source_row)
         elif canonical in TEMP_IDS or "temp" in label_lower or "cache" in label_lower:
             add_group(data_map, "sys:temp_files", "Arquivos temporarios", True, source_row)
+        elif canonical in PACMAN_IDS:
+            add_group(data_map, "sys:pacman", "Pacman", False, source_row)
         elif canonical.startswith("sys:") or canonical in SYSTEM_IDS or "system" in label_lower:
             add_group(data_map, "sys:unified", "System", True, source_row)
         elif canonical in {"archives", "sys:archives"}:
@@ -219,6 +591,8 @@ def print_cached_json() -> int:
             "id": "disk_gap",
             "label": "Espaco usado fora do indice",
             "size": int(system_delta),
+            "disk_size": int(system_delta),
+            "compressed_saved": 0,
             "count": 0,
         })
 
@@ -233,24 +607,81 @@ def print_cached_json() -> int:
             item["details_summary"] = "Arquivos pessoais que nao entraram nas categorias principais."
         elif item["id"] == "unified_apps":
             item["details_summary"] = "Apps instalados no home, Flatpaks e executaveis."
+        elif item["id"] == "sys:pacman":
+            item["details_summary"] = "Arquivos instalados pelo gerenciador de pacotes do sistema."
         else:
             item["details_summary"] = ""
 
-    print(json.dumps({
+    print(json.dumps(enrich_refresh_metadata({
         "disk_total": usage.total,
         "disk_used": usage.used,
         "scanned_total": int(total_scanned),
+        "physical_scanned_total": int(total_physical),
+        "compressed_total": 0,
+        "compressed_saved": int(total_saved),
+        "compressed_source": "allocated-estimate",
+        "compressed_exact": False,
+        "compression_index_ready": compression_missing == 0,
+        "compression_missing_count": int(compression_missing),
         "categorized_total": int(categorized_total),
         "uncategorized_delta": int(system_delta),
         "data": sorted(data_map.values(), key=lambda item: item["size"], reverse=True),
         "backend_path": None,
         "backend_fallback": "cache",
         **meta,
-    }, ensure_ascii=False))
+    }, None), ensure_ascii=False))
+    return 0
+
+
+def print_sense_json(sense_script: Path) -> int:
+    command = [sys.executable, str(sense_script), "json"]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(sense_script.parent) + os.pathsep + env.get("PYTHONPATH", "")
+    result = subprocess.run(command, cwd=str(sense_script.parent), env=env, capture_output=True, text=True)
+    if result.returncode != 0:
+        payload = {
+            "error": (result.stderr or result.stdout or "StorageSense json failed").strip(),
+            "data": [],
+            **cache_metadata(),
+        }
+    else:
+        try:
+            payload = json.loads(result.stdout or "{}")
+            if not isinstance(payload, dict):
+                payload = {"error": "Invalid StorageSense JSON", "data": []}
+        except json.JSONDecodeError as err:
+            payload = {"error": f"Could not parse StorageSense JSON: {err}", "data": []}
+    if not payload.get("refresh_running"):
+        exact = compsize_stats([HOME])
+        if exact.get("exact"):
+            payload["compressed_total"] = int(exact.get("compressed_total") or 0)
+            payload["compressed_saved"] = int(exact.get("zstd_saved") or exact.get("compressed_saved") or 0)
+            payload["zstd_disk_usage"] = int(exact.get("zstd_disk_usage") or 0)
+            payload["compressed_source"] = "compsize"
+            payload["compressed_exact"] = True
+            payload["compressed_algorithms"] = exact.get("by_algorithm", {})
+        else:
+            payload.setdefault("compressed_source", "allocated-estimate")
+            payload.setdefault("compressed_exact", False)
+            if exact.get("error"):
+                payload["compressed_error"] = exact["error"]
+    print(json.dumps(enrich_refresh_metadata(payload, sense_script), ensure_ascii=False))
     return 0
 
 
 def main() -> int:
+    if sys.argv[1:2] == ["refresh-background"]:
+        if len(sys.argv) < 3:
+            print(json.dumps({"error": "sense script path missing"}))
+            return 1
+        reason = sys.argv[3] if len(sys.argv) > 3 else "manual"
+        return run_refresh_background(Path(sys.argv[2]), reason)
+
+    if sys.argv[1:2] == ["import-compsize"]:
+        stats = import_compsize_cache(sys.stdin.read())
+        print(json.dumps(stats, ensure_ascii=False))
+        return 0
+
     sense_script = find_sense_script()
     if not sense_script:
         if sys.argv[1:2] == ["json"]:
@@ -261,6 +692,9 @@ def main() -> int:
             **cache_metadata(),
         }))
         return 0
+
+    if sys.argv[1:2] == ["json"]:
+        return print_sense_json(sense_script)
 
     command = [sys.executable, str(sense_script)] + sys.argv[1:]
     env = os.environ.copy()

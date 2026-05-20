@@ -1,6 +1,7 @@
 import QtQuick
-import Qt5Compat.GraphicalEffects
 import "../bar" as Bar
+import "./modes/gamemode" as Gamemode
+import "./modes/music" as Music
 
 Rectangle {
     id: islandContent
@@ -81,118 +82,36 @@ Rectangle {
     HoverHandler { id: mouseArea }
 
     // ── Compact: music bars ───────────────────────────────────────
-    Item {
+    Music.MusicCompactBars {
         anchors.fill: parent
-        visible:      opacity > 0
-        opacity:      (!isGamemodeNotify && island.showCompactMusic && !isMouseOver) ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
-
-        Row {
-            spacing: 3
-            anchors { right: parent.right; rightMargin: 12; verticalCenter: parent.verticalCenter }
-
-            Repeater {
-                model: 6
-                Item {
-                    width: 3; height: 20
-                    Rectangle {
-                        width:  3
-                        height: Math.min(island.musicBarsMaxHeightCompact, Math.max(island.musicBarsMinHeight, island.musicBars[index] / 100 * 18))
-                        radius: 2
-                        anchors.centerIn: parent
-                        color:  island.dominantCol
-                        Behavior on height { NumberAnimation { duration: 105 + index * 8; easing.type: Easing.OutBack; easing.overshoot: 0.36 } }
-                        Behavior on color  { ColorAnimation  { duration: 800 } }
-                    }
-                }
-            }
-        }
+        active: !isGamemodeNotify && island.showCompactMusic && !isMouseOver
+        bars: island.musicBars
+        minHeight: island.musicBarsMinHeight
+        maxHeight: island.musicBarsMaxHeightCompact
+        tint: island.dominantCol
     }
 
     // ── Gamemode notify ───────────────────────────────────────────
-    Item {
+    Gamemode.GamemodeNotifyView {
         anchors.fill: parent
-        visible:      opacity > 0
-        opacity:      isGamemodeNotify ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
-
-        Text {
-            anchors.centerIn: parent
-            text:             "🎮"
-            font.family:       Bar.Theme.fontFamilyDisplay
-            font.pixelSize:    48
-            antialiasing:      true
-            renderType:        Text.NativeRendering
-            RotationAnimation on rotation {
-                from: 0; to: 360; duration: 1500
-                loops: Animation.Infinite; running: isGamemodeNotify
-            }
-        }
+        active: isGamemodeNotify
+        fontFamily: Bar.Theme.fontFamilyDisplay
     }
 
     // ── Home: MusicView ───────────────────────────────────────────
-    MusicView {
+    Music.MusicView {
         id: musicView
         anchors.fill: parent
     }
 
     // ── Floating album art ────────────────────────────────────────
-    Item {
+    Music.MusicArtwork {
         id:      floatingArt
-        visible: opacity > 0
-        opacity: (island.hasMusic && !isGamemodeNotify && (island.showCompactMusic || island.isExpanded)) ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 200 } }
-
-        readonly property bool artExpanded: island.isExpanded && island.hasMusic && !isGamemodeNotify
-
-        Rectangle {
-            id:      artClipMask
-            anchors.fill: parent
-            radius:  floatingArt.artExpanded ? 12 : floatingArt.width / 2
-            visible: false
-            Behavior on radius { NumberAnimation { duration: floatingArt.artExpanded ? flipAnim.artExpandDuration : flipAnim.artCollapseDuration; easing.type: Easing.OutExpo } }
-        }
-
-        Item {
-            anchors.fill: parent
-            transform: Scale {
-                origin.x: floatingArt.width  / 2
-                origin.y: floatingArt.height / 2
-                xScale:   islandContent.flipScale
-            }
-            Image {
-                anchors.fill: parent
-                source:       island.artSource
-                fillMode:     Image.PreserveAspectCrop
-                smooth: true; mipmap: true; cache: false; asynchronous: true
-                opacity: source === "" || status === Image.Loading ? 0 : 1
-                Behavior on opacity { NumberAnimation { duration: 150 } }
-                layer.enabled: true
-                layer.effect:  OpacityMask { maskSource: artClipMask }
-            }
-        }
-
-        states: [
-            State {
-                name: "expanded"; when: floatingArt.artExpanded
-                PropertyChanges { target: floatingArt; x: 18; y: 18; width: 60; height: 60 }
-            },
-            State {
-                name: "compact"; when: !floatingArt.artExpanded
-                PropertyChanges { target: floatingArt; x: 8; y: 7; width: 20; height: 20 }
-            }
-        ]
-        transitions: [
-            Transition {
-                from: "compact"; to: "expanded"
-                NumberAnimation { properties: "x,y,width,height";    duration: flipAnim.artExpandDuration;   easing.type: Easing.OutExpo }
-                NumberAnimation { target: artClipMask; property: "radius"; duration: flipAnim.artExpandDuration;   easing.type: Easing.OutExpo }
-            },
-            Transition {
-                from: "expanded"; to: "compact"
-                NumberAnimation { properties: "x,y,width,height";    duration: flipAnim.artCollapseDuration; easing.type: Easing.OutExpo }
-                NumberAnimation { target: artClipMask; property: "radius"; duration: flipAnim.artCollapseDuration; easing.type: Easing.OutExpo }
-            }
-        ]
+        active: island.hasMusic && !isGamemodeNotify && (island.showCompactMusic || island.isExpanded)
+        expanded: island.isExpanded && island.hasMusic && !isGamemodeNotify
+        artSource: island.artSource
+        flipScale: islandContent.flipScale
+        expandDuration: flipAnim.artExpandDuration
+        collapseDuration: flipAnim.artCollapseDuration
     }
 }

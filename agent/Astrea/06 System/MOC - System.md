@@ -8,6 +8,7 @@ System notes describe OS integration, local scripts, privileged helpers, and mac
 ## Notes
 - [[Astrea - System Layer]]
 - [[Astrea - Bluetooth Manager]]
+- [[Astrea - Launcher and Latency]]
 
 ## Related Bridges
 - [[Astrea - Display Bridge]]
@@ -19,4 +20,3 @@ System notes describe OS integration, local scripts, privileged helpers, and mac
 - PipeWire/WirePlumber integration crosses this domain and [[Astrea - Audio Bridge]].
 - Bluetooth is a system helper consumed by both UI and Settings.
 - Privileged helpers should be treated as a security boundary.
-

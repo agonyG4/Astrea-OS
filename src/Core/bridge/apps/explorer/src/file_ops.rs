@@ -27,17 +27,28 @@ enum ConflictPolicy {
     KeepBoth,
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum EventFormat {
+    Legacy,
+    Jsonl,
+}
+
 pub fn run(args: &[String]) -> Result<(), String> {
-    match run_inner(args) {
+    let (format, normalized_args) = parse_event_format(args);
+    match run_inner(&normalized_args, format) {
         Ok(()) => Ok(()),
-        Err(err) => {
-            emit_file_op_event("ERROR", &[err.clone()]);
-            Err(err)
-        }
+        Err(err) => Err(err),
     }
 }
 
-fn run_inner(args: &[String]) -> Result<(), String> {
+fn parse_event_format(args: &[String]) -> (EventFormat, Vec<String>) {
+    if args.first().map(String::as_str) == Some("--json-events") {
+        return (EventFormat::Jsonl, args[1..].to_vec());
+    }
+    (EventFormat::Legacy, args.to_vec())
+}
+
+fn run_inner(args: &[String], format: EventFormat) -> Result<(), String> {
     if args.len() < 5 {
         return Err("usage: explorer_backend file-op <copy|move|cut> <destination> <overwrite|skip|rename|keep-both> <rename> <paths...>".into());
     }
@@ -57,14 +68,7 @@ fn run_inner(args: &[String]) -> Result<(), String> {
         ));
     }
 
-    emit_file_op_event(
-        "START",
-        &[
-            mode.as_str().to_string(),
-            destination.to_string_lossy().into_owned(),
-            sources.len().to_string(),
-        ],
-    );
+    emit_file_op_start(format, mode, destination, sources.len());
 
     let mut completed = 0usize;
     for source in &sources {
@@ -81,13 +85,13 @@ fn run_inner(args: &[String]) -> Result<(), String> {
 
         if same_path(source, &initial_target) {
             completed += 1;
-            emit_file_op_progress(completed, sources.len(), source);
+            emit_file_op_progress(format, mode, completed, sources.len(), source);
             continue;
         }
 
         let Some(target) = resolve_conflict_target(&initial_target, policy)? else {
             completed += 1;
-            emit_file_op_progress(completed, sources.len(), source);
+            emit_file_op_progress(format, mode, completed, sources.len(), source);
             continue;
         };
 
@@ -95,20 +99,22 @@ fn run_inner(args: &[String]) -> Result<(), String> {
             fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
         }
 
-        run_operation(mode, source, &target, policy == ConflictPolicy::Overwrite)?;
+        if let Err(err) = run_operation(mode, source, &target, policy == ConflictPolicy::Overwrite) {
+            emit_file_op_error(
+                format,
+                classify_error_code(&err),
+                &err,
+                Some(mode),
+                Some(source),
+            );
+            return Err(err);
+        }
 
         completed += 1;
-        emit_file_op_progress(completed, sources.len(), source);
+        emit_file_op_progress(format, mode, completed, sources.len(), source);
     }
 
-    emit_file_op_event(
-        "DONE",
-        &[
-            destination.to_string_lossy().into_owned(),
-            completed.to_string(),
-            sources.len().to_string(),
-        ],
-    );
+    emit_file_op_done(format, mode, destination, completed, sources.len());
     Ok(())
 }
 
@@ -156,26 +162,35 @@ fn run_operation(
     }
 }
 
-fn emit_file_op_progress(done: usize, total: usize, source: &Path) {
-    let percent = if total == 0 {
-        100
-    } else {
-        done.saturating_mul(100) / total
-    };
+fn clamped_percent(done: usize, total: usize) -> usize {
+    let raw = if total == 0 { 100 } else { done.saturating_mul(100) / total };
+    raw.clamp(0, 100)
+}
+
+fn emit_file_op_progress(format: EventFormat, mode: OperationMode, done: usize, total: usize, source: &Path) {
+    let percent = clamped_percent(done, total);
     let name = source
         .file_name()
         .and_then(|v| v.to_str())
         .unwrap_or_default()
         .to_string();
-    emit_file_op_event(
-        "PROGRESS",
-        &[
-            done.to_string(),
-            total.to_string(),
-            percent.to_string(),
-            name,
-        ],
-    );
+    let source_path = source.to_string_lossy().into_owned();
+    match format {
+        EventFormat::Legacy => emit_file_op_event(
+            "PROGRESS",
+            &[
+                done.to_string(),
+                total.to_string(),
+                percent.to_string(),
+                name,
+            ],
+        ),
+        EventFormat::Jsonl => println!(
+            "{}",
+            json_progress_line(mode, done, total, percent, &source_path, &name)
+        ),
+    }
+    flush_stdout();
 }
 
 fn emit_file_op_event(event: &str, fields: &[String]) {
@@ -185,7 +200,115 @@ fn emit_file_op_event(event: &str, fields: &[String]) {
         line.push_str(&sanitize_pipe_field(field));
     }
     println!("{line}");
+}
+
+fn emit_file_op_start(format: EventFormat, mode: OperationMode, destination: &Path, total: usize) {
+    let destination = destination.to_string_lossy().into_owned();
+    match format {
+        EventFormat::Legacy => emit_file_op_event("START", &[mode.as_str().to_string(), destination, total.to_string()]),
+        EventFormat::Jsonl => println!(
+            "{}",
+            json_start_line(mode, &destination, total)
+        ),
+    }
     flush_stdout();
+}
+
+fn emit_file_op_done(format: EventFormat, mode: OperationMode, destination: &Path, done: usize, total: usize) {
+    let destination = destination.to_string_lossy().into_owned();
+    let percent = clamped_percent(done, total);
+    match format {
+        EventFormat::Legacy => emit_file_op_event("DONE", &[destination, done.to_string(), total.to_string()]),
+        EventFormat::Jsonl => println!(
+            "{}",
+            json_done_line(mode, &destination, done, total, percent)
+        ),
+    }
+    flush_stdout();
+}
+
+fn emit_file_op_error(format: EventFormat, code: &str, message: &str, mode: Option<OperationMode>, path: Option<&Path>) {
+    match format {
+        EventFormat::Legacy => emit_file_op_event("ERROR", &[message.to_string()]),
+        EventFormat::Jsonl => {
+            let mode_json = mode.map(|m| format!(",\"mode\":\"{}\"", m.as_str())).unwrap_or_default();
+            let path_json = path.map(|p| format!(",\"path\":\"{}\"", escape_json(&p.to_string_lossy()))).unwrap_or_default();
+            println!(
+                "{}",
+                json_error_line(mode_json, code, message, path_json)
+            );
+        }
+    }
+    flush_stdout();
+}
+
+fn classify_error_code(message: &str) -> &'static str {
+    let m = message.to_ascii_lowercase();
+    if m.contains("permission denied") {
+        "permission_denied"
+    } else if m.contains("not found") || m.contains("no such file") {
+        "not_found"
+    } else if m.contains("already exists") {
+        "already_exists"
+    } else if m.contains("invalid") {
+        "invalid_path"
+    } else {
+        "operation_failed"
+    }
+}
+fn json_start_line(mode: OperationMode, destination: &str, total: usize) -> String {
+    format!(
+        "{{\"event\":\"start\",\"mode\":\"{}\",\"destination\":\"{}\",\"total\":{}}}",
+        mode.as_str(),
+        escape_json(destination),
+        total
+    )
+}
+fn json_progress_line(mode: OperationMode, done: usize, total: usize, percent: usize, path: &str, name: &str) -> String {
+    format!(
+        "{{\"event\":\"progress\",\"mode\":\"{}\",\"done\":{},\"total\":{},\"percent\":{},\"path\":\"{}\",\"name\":\"{}\"}}",
+        mode.as_str(),
+        done,
+        total,
+        percent.clamp(0, 100),
+        escape_json(path),
+        escape_json(name)
+    )
+}
+fn json_done_line(mode: OperationMode, destination: &str, done: usize, total: usize, percent: usize) -> String {
+    format!(
+        "{{\"event\":\"done\",\"mode\":\"{}\",\"destination\":\"{}\",\"done\":{},\"total\":{},\"percent\":{}}}",
+        mode.as_str(),
+        escape_json(destination),
+        done,
+        total,
+        percent.clamp(0, 100)
+    )
+}
+fn json_error_line(mode_json: String, code: &str, message: &str, path_json: String) -> String {
+    format!(
+        "{{\"event\":\"error\"{},\"code\":\"{}\",\"message\":\"{}\"{}}}",
+        mode_json,
+        escape_json(code),
+        escape_json(message),
+        path_json
+    )
+}
+
+fn escape_json(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 8);
+    for c in value.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 fn flush_stdout() {
@@ -444,4 +567,44 @@ fn is_self_or_descendant_target(source: &Path, target: &Path) -> bool {
     };
 
     target_canon == source_canon || target_canon.starts_with(&source_canon)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_lines_escape_special_names() {
+        let name = "a|b \"ç\" 😀\nline.txt";
+        let line = json_progress_line(OperationMode::Copy, 1, 3, 33, "/tmp/a|b\nx", name);
+        assert!(line.contains("\"event\":\"progress\""));
+        assert!(line.contains("\\n"));
+        assert!(line.contains("\\\"ç\\\""));
+        assert!(line.contains("😀"));
+    }
+
+    #[test]
+    fn percent_is_clamped() {
+        assert_eq!(clamped_percent(300, 1), 100);
+        let line = json_done_line(OperationMode::Move, "/tmp", 3, 2, 150);
+        assert!(line.contains("\"percent\":100"));
+    }
+
+    #[test]
+    fn error_event_shape_contains_code_and_message() {
+        let line = json_error_line(",\"mode\":\"copy\"".to_string(), "permission_denied", "denied", ",\"path\":\"/tmp/x\"".to_string());
+        assert!(line.contains("\"event\":\"error\""));
+        assert!(line.contains("\"code\":\"permission_denied\""));
+        assert!(line.contains("\"message\":\"denied\""));
+        assert!(line.contains("\"path\":\"/tmp/x\""));
+    }
+
+    #[test]
+    fn classify_error_code_maps_common_errors() {
+        assert_eq!(classify_error_code("Permission denied: /tmp/a"), "permission_denied");
+        assert_eq!(classify_error_code("No such file or directory"), "not_found");
+        assert_eq!(classify_error_code("already exists"), "already_exists");
+        assert_eq!(classify_error_code("invalid source path"), "invalid_path");
+        assert_eq!(classify_error_code("something else"), "operation_failed");
+    }
 }

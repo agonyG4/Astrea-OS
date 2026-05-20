@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import "../../../AstreaComponents" as UI
 import "../common" as WeatherCommon
+import "../../../AstreaI18n" as AstreaI18n
 
 ColumnLayout {
     property var weatherData
@@ -13,9 +14,10 @@ ColumnLayout {
     Rectangle {
         Layout.fillWidth: true
         implicitHeight: 160
-        radius: UI.Theme.cardRadius
-        color: UI.Theme.cardBg
-        opacity: 0.92
+        radius: 20
+        color: "#252529"
+        border.color: "#34343A"
+        border.width: 1
 
         ColumnLayout {
             id: aqiContent
@@ -24,7 +26,7 @@ ColumnLayout {
             spacing: 8
 
             UI.TextLabel {
-                text: "QUALIDADE DO AR"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.components.sections.air_quality.text.qualidade_do_ar"]) || "AIR QUALITY")
                 font.pixelSize: UI.Theme.fontSizeSmall
                 font.weight: 600
                 textColor: UI.Theme.textTertiary
@@ -76,7 +78,7 @@ ColumnLayout {
             Item { Layout.fillHeight: true }
 
             UI.TextLabel {
-                text: "O nível é " + (weatherData ? weatherData.aqi : 0) + "."
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.components.sections.air_quality.text.o_navel_a"]) || "The level is ") + (weatherData ? weatherData.aqi : 0) + "."
                 font.pixelSize: UI.Theme.fontSizeSmall
                 textColor: UI.Theme.textTertiary
                 Layout.fillWidth: true

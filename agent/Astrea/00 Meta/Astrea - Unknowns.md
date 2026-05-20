@@ -55,6 +55,6 @@ The current API payload shape was not revalidated in this documentation pass.
 `Core/bridge/network/manager.py` is used by Internet settings, but exact command/config behavior was not fully expanded.
 
 ## About App
-`Apps/About/main.qml` is a standalone About window.
+Resolved in the current snapshot: `Apps/About/main.qml` is a standalone About window opened from the Astrea top-bar popup. See [[Astrea - About App]].
 
 It reads system and hardware fields from `Core/bridge/system/info.py`.

@@ -1,8 +1,9 @@
 import Quickshell
 import Quickshell.Io
 import QtQuick
-import "../system" as SystemComponents
+import "../system/popups" as SystemComponents
 import "../../.."
+import "../../../../AstreaI18n" as AstreaI18n
 
 SystemComponents.TopbarPopup {
     id: root
@@ -53,12 +54,24 @@ SystemComponents.TopbarPopup {
 
     Process {
         id: btSettingsProc
-        command: ["bash", "-c", "blueman-manager || overskride"]
+        command: ["blueman-manager"]
+        running: false
+        onExited: exitCode => {
+            if (exitCode !== 0) {
+                btSettingsFallbackProc.running = false
+                btSettingsFallbackProc.running = true
+            }
+        }
+    }
+
+    Process {
+        id: btSettingsFallbackProc
+        command: ["overskride"]
         running: false
     }
 
     SystemComponents.PopupHeader {
-        title: "Bluetooth"
+        title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.bluetooth.bluetooth_popup.title.bluetooth"]) || "Bluetooth")
         trailingWidth: 44
         Rectangle {
             anchors.centerIn: parent
@@ -184,7 +197,7 @@ SystemComponents.TopbarPopup {
 
         Text {
             visible: root.parsedScanned.length > 0
-            text:  "Available"
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.bluetooth.bluetooth_popup.text.available"]) || "Available")
             color: Theme.textSecondary
             font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption; weight: Font.DemiBold; letterSpacing: 0.5 }
             bottomPadding: 2
@@ -193,7 +206,7 @@ SystemComponents.TopbarPopup {
         Text {
             visible: root.scanning && root.parsedScanned.length === 0
             width: parent.width; height: 30
-            text:  "Waiting for devices…"
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.bluetooth.bluetooth_popup.text.waiting_for_devicesa"]) || "Waiting for devices…")
             color: Theme.textSecondary
             font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; italic: true }
             verticalAlignment: Text.AlignVCenter
@@ -236,7 +249,7 @@ SystemComponents.TopbarPopup {
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text:  "Bluetooth Settings"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.bluetooth.bluetooth_popup.text.bluetooth_settings"]) || "Bluetooth Settings")
                 color: Theme.textDim
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.Medium; letterSpacing: 0.2 }
             }
@@ -306,7 +319,7 @@ SystemComponents.TopbarPopup {
                 color: Qt.rgba(0.20, 0.60, 1.0, 0.20)
                 Text {
                     anchors.centerIn: parent
-                    text:  "connected"; color: Theme.iconAccent
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.bluetooth.bluetooth_popup.text.connected"]) || "connected"); color: Theme.iconAccent
                     font { family: Theme.fontFamily; pixelSize: Theme.fontSizeMicro; weight: Font.DemiBold; letterSpacing: 0.3 }
                 }
             }
@@ -321,7 +334,7 @@ SystemComponents.TopbarPopup {
                 Behavior on color { ColorAnimation { duration: Theme.animationFast } }
                 Text {
                     anchors.centerIn: parent
-                    text:  "pair"
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.bluetooth.bluetooth_popup.text.pair"]) || "pair")
                     color: rowHover.containsMouse ? Theme.iconAccent : Qt.rgba(1, 1, 1, 0.40)
                     font { family: Theme.fontFamily; pixelSize: Theme.fontSizeMicro; weight: Font.DemiBold; letterSpacing: 0.3 }
                     Behavior on color { ColorAnimation { duration: Theme.animationFast } }

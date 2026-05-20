@@ -16,10 +16,19 @@ import traceback
 from pathlib import Path
 
 BRIDGE_DIR = Path(__file__).resolve().parents[2] / "Core" / "bridge"
-if str(BRIDGE_DIR) not in sys.path:
-    sys.path.insert(0, str(BRIDGE_DIR))
 
-from astrea_shared import atomic_write_json, read_json
+
+def _load_astrea_shared():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("astrea_shared_runtime", BRIDGE_DIR / "astrea_shared.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+ASTREA_SHARED = _load_astrea_shared()
+atomic_write_json = ASTREA_SHARED.atomic_write_json
+read_json = ASTREA_SHARED.read_json
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
@@ -506,37 +515,30 @@ def _autoconnect_candidates(status: dict) -> list[dict]:
     return candidates
 
 
-def _cmd_autoconnect(force: bool) -> None:
+def run_autoconnect(force: bool = False) -> dict:
     status = get_status_payload()
     cfg = status["config"]
     runtime = status["runtime"]
     now = int(time.time())
 
     if not cfg["enabled"]:
-        _out({"success": False, "reason": "disabled"})
-        return
+        return {"success": False, "reason": "disabled"}
     if not status["powered"]:
-        _out({"success": False, "reason": "powered_off"})
-        return
+        return {"success": False, "reason": "powered_off"}
     if status["connected_count"] > 0:
-        _out({"success": False, "reason": "already_connected"})
-        return
+        return {"success": False, "reason": "already_connected"}
 
     elapsed = now - int(runtime.get("last_attempt_ts", 0))
     if not force and elapsed < cfg["retry_interval_sec"]:
-        _out(
-            {
-                "success": False,
-                "reason": "cooldown",
-                "retry_in": cfg["retry_interval_sec"] - elapsed,
-            }
-        )
-        return
+        return {
+            "success": False,
+            "reason": "cooldown",
+            "retry_in": cfg["retry_interval_sec"] - elapsed,
+        }
 
     candidates = _autoconnect_candidates(status)
     if not candidates:
-        _out({"success": False, "reason": "no_candidates"})
-        return
+        return {"success": False, "reason": "no_candidates"}
 
     # stamp attempt before trying (avoids hammering on fast failures)
     runtime["last_attempt_ts"] = now
@@ -557,17 +559,18 @@ def _cmd_autoconnect(force: bool) -> None:
         )
         if connected:
             _remember_success(dev["mac"])
-            _out(
-                {
-                    "success": True,
-                    "reason": "connected",
-                    "device": dev,
-                    "attempts": attempts,
-                }
-            )
-            return
+            return {
+                "success": True,
+                "reason": "connected",
+                "device": dev,
+                "attempts": attempts,
+            }
 
-    _out({"success": False, "reason": "connect_failed", "attempts": attempts})
+    return {"success": False, "reason": "connect_failed", "attempts": attempts}
+
+
+def _cmd_autoconnect(force: bool) -> None:
+    _out(run_autoconnect(force))
 
 
 def cmd_autoconnect() -> None:

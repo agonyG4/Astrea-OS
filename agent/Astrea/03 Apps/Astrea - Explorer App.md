@@ -1,6 +1,6 @@
 # Astrea - Explorer App
 
-Related notes: [[Astrea]], [[Astrea - Explorer Backend]], [[Astrea - Features]], [[Astrea - External Dependencies]]
+Related notes: [[Astrea]], [[Astrea - Explorer Backend]], [[Astrea - Features]], [[Astrea - External Dependencies]], [[Astrea - Launcher and Latency]]
 
 ## Folder
 `Apps/Explorer/`
@@ -45,6 +45,11 @@ It exposes aliases and wrapper functions for:
 
 ## Backend
 Explorer calls [[Astrea - Explorer Backend]] through `app.backendPath`.
+
+## Launching
+Explorer keeps an `astreaLaunch` path pointed at `bin/astrea-launch`.
+
+Use that launcher path for app/file launch behavior owned by Astrea so Explorer stays aligned with Spotlight, Desktop Icons, and launcher history.
 
 ## AppImage Install
 When a `.AppImage` file is targeted from the context menu, Explorer shows an `Install` action.

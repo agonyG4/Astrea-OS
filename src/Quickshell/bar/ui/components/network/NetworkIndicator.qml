@@ -1,15 +1,14 @@
 import QtQuick
-import "../system" as SystemComponents
+import "../system/base" as SystemComponents
 import "../../.."
 
-SystemComponents.IndicatorButton {
+SystemComponents.TopbarIndicator {
     id: root
 
     property bool   netConnected: false
     property string netType:      "none"
-    property var    netPopupRef:  null
-
-    popupRef: root.netPopupRef
+    property string downloadText: "0 B/s"
+    property string uploadText:   "0 B/s"
 
     Text {
         text: !root.netConnected ? "󰖪"

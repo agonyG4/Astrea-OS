@@ -18,6 +18,7 @@ Use this live path for code changes unless the user explicitly requests document
 | alt tab, app switcher, app switching | [[Astrea - Alt Tab]] |
 | notifications, toast, DBus notify | [[Astrea - Notifications]] |
 | settings pages | [[Astrea - Settings App]] |
+| about, system info, About this PC | [[Astrea - About App]], [[Astrea - Core Bridge]] |
 | files, explorer, finder | [[Astrea - Explorer App]], [[Astrea - Explorer Backend]] |
 | portal, file chooser, system file dialog | [[Astrea - FileChooser Portal]], [[Astrea - Explorer App]] |
 | weather, INMET, forecast | [[Astrea - Weather App]], [[Astrea - Weather Bridge]] |
@@ -25,6 +26,7 @@ Use this live path for code changes unless the user explicitly requests document
 | monitor, display, Hyprland display config | [[Astrea - Display Bridge]] |
 | wallpaper, lockscreen media | [[Astrea - Wallpaper Bridge]] |
 | bluetooth | [[Astrea - Bluetooth Manager]] |
+| app launch, launcher daemon, latency burst | [[Astrea - Launcher and Latency]] |
 
 ## Main Shell
 - File: `Quickshell/shell.qml`
@@ -69,6 +71,14 @@ Use this live path for code changes unless the user explicitly requests document
   - used by [[Astrea - Island]] through `System/services/music_bars.sh`.
 - `System/auth/auth_helper`
   - setuid helper used by lockscreen/auth-related paths.
+- `System/launch/target/release/astrea-launch`
+  - built source for `bin/astrea-launch`.
+- `bin/astrea-launch`
+  - app-facing launch wrapper used by Spotlight, Desktop Icons, Explorer, and app manager calls.
+- `bin/weather-cli`
+  - Weather CLI consumed by Weather QML and Spotlight.
+- `bin/astrea-weatherd`
+  - Weather monitor daemon binary installed by `astrea-services.sh`.
 
 ## Unknown
 The exact external autostart owner for `Quickshell/shell.qml` was not established in this pass. See [[Astrea - Unknowns]].

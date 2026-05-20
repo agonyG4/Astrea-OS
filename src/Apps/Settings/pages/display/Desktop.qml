@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
+import "../../AstreaI18n" as AstreaI18n
 
 ScrollPage {
     id: root
@@ -55,8 +56,8 @@ ScrollPage {
         const payload = JSON.stringify({ "enabled": root.desktopIconsEnabled }, null, 4)
         saveConfigProc.command = [
             "python3",
-            "-c",
-            "import pathlib,sys; p=pathlib.Path(sys.argv[1]); p.parent.mkdir(parents=True, exist_ok=True); p.write_text(sys.argv[2] + '\\n', encoding='utf-8')",
+            root.appIndexScript,
+            "--save-config",
             root.configPath,
             payload
         ]
@@ -69,8 +70,8 @@ ScrollPage {
         saveStateProc.restartShell = restartShell
         saveStateProc.command = [
             "python3",
-            "-c",
-            "import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); p.parent.mkdir(parents=True, exist_ok=True); data={};\ntry:\n data=json.loads(p.read_text(encoding='utf-8') or '{}') if p.exists() else {}\nexcept Exception:\n data={}\ndata['sortMode']=sys.argv[2]; data['iconPreset']=sys.argv[3]; data['iconsHidden']=sys.argv[4]=='1'\nif sys.argv[5]=='1': data['positions']={}\nelif not isinstance(data.get('positions'), dict): data['positions']={}\np.write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')) + '\\n', encoding='utf-8')",
+            root.appIndexScript,
+            "--update-layout-state",
             root.desktopIconsStatePath,
             root.sortMode,
             root.iconPreset,
@@ -95,8 +96,8 @@ ScrollPage {
         id: loadConfigProc
         command: [
             "python3",
-            "-c",
-            "import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); p.parent.mkdir(parents=True, exist_ok=True); cfg={'enabled': True};\nif p.exists():\n    cfg.update(json.loads(p.read_text(encoding='utf-8') or '{}'))\nelse:\n    p.write_text(json.dumps(cfg, indent=4) + '\\n', encoding='utf-8')\nprint(json.dumps(cfg))",
+            root.appIndexScript,
+            "--load-config",
             root.configPath
         ]
         stdout: SplitParser {
@@ -134,8 +135,8 @@ ScrollPage {
         id: loadStateProc
         command: [
             "python3",
-            "-c",
-            "import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); default={'sortMode':'name','iconPreset':'medium','iconsHidden':False,'positions':{}}; p.parent.mkdir(parents=True, exist_ok=True)\nif p.exists():\n    try: default.update(json.loads(p.read_text(encoding='utf-8') or '{}'))\n    except Exception: pass\nelse: p.write_text(json.dumps(default, ensure_ascii=False, separators=(',', ':')) + '\\n', encoding='utf-8')\nprint(json.dumps(default, ensure_ascii=False, separators=(',', ':')))",
+            root.appIndexScript,
+            "--load-layout-state",
             root.desktopIconsStatePath
         ]
         stdout: SplitParser {
@@ -215,7 +216,7 @@ ScrollPage {
         spacing: 0
 
         SectionHeader {
-            text: "DESKTOP"
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.desktop.text.desktop"]) || "DESKTOP")
             Layout.bottomMargin: 12
             textSecondary: Theme.textSecondary
         }
@@ -224,7 +225,7 @@ ScrollPage {
             Layout.bottomMargin: 18
 
             SettingRow {
-                label: "Desktop Icons"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.desktop.label.desktop_icons"]) || "Desktop Icons")
                 sublabel: root.desktopIconsEnabled ? "Loaded by the main shell" : "Not loaded by the main shell"
                 textPrimary: Theme.textPrimary
                 textSecondary: Theme.textSecondary
@@ -242,7 +243,7 @@ ScrollPage {
             }
 
             SettingRow {
-                label: "Show Icons"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.desktop.label.show_icons"]) || "Show Icons")
                 sublabel: root.desktopIconsHidden ? "Desktop shortcuts are hidden" : "Desktop shortcuts are visible"
                 textPrimary: Theme.textPrimary
                 textSecondary: Theme.textSecondary
@@ -260,7 +261,7 @@ ScrollPage {
             }
 
             SettingRow {
-                label: "Icon Size"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.desktop.label.icon_size"]) || "Icon Size")
                 sublabel: root.presetSubtitle()
                 textPrimary: Theme.textPrimary
                 textSecondary: Theme.textSecondary
@@ -280,7 +281,7 @@ ScrollPage {
             }
 
             SettingRow {
-                label: "Sort Icons"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.desktop.label.sort_icons"]) || "Sort Icons")
                 sublabel: root.sortSubtitle()
                 textPrimary: Theme.textPrimary
                 textSecondary: Theme.textSecondary
@@ -300,8 +301,8 @@ ScrollPage {
             }
 
             SettingRow {
-                label: "Reorganize Grid"
-                sublabel: "Clears manual desktop icon positions"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.desktop.label.reorganize_grid"]) || "Reorganize Grid")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.desktop.sublabel.clears_manual_desktop_icon_positions"]) || "Clears manual desktop icon positions")
                 textPrimary: Theme.textPrimary
                 textSecondary: Theme.textSecondary
                 cardBorder: Theme.cardBorder
@@ -311,7 +312,7 @@ ScrollPage {
                 SelectButton {
                     implicitWidth: 150
                     isButton: true
-                    label: "Reorganize"
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.desktop.label.reorganize"]) || "Reorganize")
                     onSelected: {
                         root.saveDesktopState(true, true)
                     }
@@ -319,8 +320,8 @@ ScrollPage {
             }
 
             SettingRow {
-                label: "Refresh Apps"
-                sublabel: "Rebuilds the desktop shortcut index"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.desktop.label.refresh_apps"]) || "Refresh Apps")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.desktop.sublabel.rebuilds_the_desktop_shortcut_index"]) || "Rebuilds the desktop shortcut index")
                 textPrimary: Theme.textPrimary
                 textSecondary: Theme.textSecondary
                 cardBorder: Theme.cardBorder
@@ -329,7 +330,7 @@ ScrollPage {
                 SelectButton {
                     implicitWidth: 150
                     isButton: true
-                    label: "Refresh"
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.desktop.label.refresh"]) || "Refresh")
                     onSelected: root.reloadDesktopApps()
                 }
             }
@@ -345,7 +346,7 @@ ScrollPage {
 
         Text {
             Layout.topMargin: 18
-            text: "Icons are read from " + root.desktopPath
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.display.desktop.text.icons_are_read_from"]) || "Icons are read from ") + root.desktopPath
             color: Theme.textSecondary
             font.family: Theme.fontFamily
             font.pixelSize: 12

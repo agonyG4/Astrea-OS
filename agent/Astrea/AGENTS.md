@@ -5,8 +5,11 @@ This vault documents the live Astrea runtime.
 Primary runtime path:
 - `/home/agony/.local/share/Astrea`
 
+Current inspected live target:
+- `/home/agony/.local/share/Astrea-Rolling`
+
 Primary documentation path:
-- `/home/agony/Documentos/Astrea/Astrea`
+- `/home/agony/GitHub/Astrea-Dev/agent/Astrea`
 
 Use the live runtime path for implementation work unless the user explicitly asks for documentation-only changes.
 
@@ -17,9 +20,10 @@ Use the live runtime path for implementation work unless the user explicitly ask
 4. `00 Meta/Astrea - Agent Working Rules.md`
 5. `00 Meta/Astrea - Design Rules.md`
 6. `00 Meta/Astrea - Agent Task Recipes.md`
-7. `01 Architecture/Astrea - Entry Points.md`
-8. `01 Architecture/Astrea - Data Flow.md`
-9. The app, bridge, UI, or system note that matches the task.
+7. `01 Architecture/Astrea - Runtime Snapshot.md`
+8. `01 Architecture/Astrea - Entry Points.md`
+9. `01 Architecture/Astrea - Data Flow.md`
+10. The app, bridge, UI, or system note that matches the task.
 
 ## Core Rule
 Astrea is a live desktop runtime.
@@ -41,6 +45,7 @@ Examples:
 - Explorer context menu work should add actions inside the existing wrapper around `AstreaFiles.FileContextMenu`.
 - Shared file UI belongs in `Features/Files` and must be exported through `Features/Files/qmldir`.
 - Shared Settings controls belong in `Core/components` and must be exported through `Core/components/qmldir`.
+- Launch behavior belongs in `System/launch`, `bin/astrea-launch`, `System/services/astrea_latencyd.py`, and the `astrea-launchd`/`astrea-latencyd` services.
 
 Keep page density, spacing, colors, typography, and control shape consistent with the nearby UI.
 
@@ -51,6 +56,7 @@ Use `Theme.*` tokens before introducing any hardcoded colors.
 - Settings, Explorer, Weather: read `03 Apps/MOC - Apps.md`.
 - Python, Rust, Bash, DBus, portal, or CLI behavior: read `05 Bridges/MOC - Bridges and Backends.md`.
 - Bluetooth, system services, display, theme side effects: read `06 System/MOC - System.md`.
+- App launch, latency burst, or runtime service install: read `06 System/Astrea - Launcher and Latency.md`.
 - Paths, cache, generated state, assets: read `07 Data/MOC - Data.md` and `08 Dependencies/MOC - Dependencies.md`.
 
 ## Validation Bias

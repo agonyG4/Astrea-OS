@@ -3,10 +3,13 @@ import Quickshell.Wayland
 import Quickshell.Io
 import QtQuick
 import "."
+import "./core" as Core
+import "./effects" as Effects
 
 PanelWindow {
     id: island
     property QtObject sharedMusicState: null
+    property alias islandConfig: config
     property bool canRemapLayer: false
     property bool remapVisible: true
     
@@ -25,14 +28,16 @@ PanelWindow {
 
     mask: Region { item: islandContent }
 
-// ── Config ────────────────────────────────────────────────────
-property QtObject islandConfig: QtObject {
-    property bool   enabled:              true
-    property bool   always_on_top:        true
-    property bool   music:                true
-    property bool   show_gamemode_notify: false
-    property string style:                "Notch"  // ou "Notch"
-}
+    // ── Config ────────────────────────────────────────────────────
+    Core.IslandConfig { id: config }
+    Core.IslandModeRouter {
+        id: modeRouter
+        musicEnabled: islandConfig.music
+        musicTitle: island.musicTitleText
+        shouldDisplayMusic: island.shouldDisplayMusic
+        notifyVisible: island.showGamemodeNotify
+    }
+
     // ── Estado ───────────────────────────────────────────────────
     readonly property string artUrlCache: sharedMusicState ? sharedMusicState.artUrlCache : ""
     readonly property var    musicBars: sharedMusicState ? sharedMusicState.musicBars : [0, 0, 0, 0, 0, 0]
@@ -53,8 +58,9 @@ property QtObject islandConfig: QtObject {
     property int    cavaMaxHeightExpanded:      musicBarsMaxHeightExpanded
     property int    cavaMaxHeightCompact:       musicBarsMaxHeightCompact
 
-    property bool hasMusic:           islandConfig.music && musicTitleText !== ""
-    property bool showCompactMusic:   hasMusic && shouldDisplayMusic
+    readonly property string activeMode: modeRouter.activeMode
+    readonly property bool hasMusic: modeRouter.hasMusic
+    readonly property bool showCompactMusic: modeRouter.showCompactMusic
     property bool isExpanded:         islandContent.isMouseOver
     property bool musicBarsActive:    hasMusic && !showGamemodeNotify
     property bool cavaActive:         musicBarsActive
@@ -163,8 +169,8 @@ property QtObject islandConfig: QtObject {
     }
 
     // ── Componentes ───────────────────────────────────────────────
-    IslandProcesses  { id: procs }
-    IslandAnimations { id: flipAnim }
+    Core.IslandProcesses { id: procs }
+    Effects.IslandAnimations { id: flipAnim }
     IslandContent    { id: islandContent }
 
     Component.onCompleted: canRemapLayer = true

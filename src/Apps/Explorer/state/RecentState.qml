@@ -10,6 +10,7 @@ QtObject {
     property string loadBuffer: ""
     readonly property int maxItems: 60
     readonly property string storagePath: Quickshell.env("HOME") + "/.local/state/Astrea/finder-recents.json"
+    readonly property string stateJsonScript: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/state_json.py"
 
     function isPreviewablePath(path, isDir) {
         if (isDir || !path)
@@ -59,8 +60,8 @@ QtObject {
     function persist() {
         saveProc.command = [
             "python3",
-            "-c",
-            "import json, os, sys, tempfile; path = sys.argv[1]; data = json.loads(sys.argv[2]); os.makedirs(os.path.dirname(path), exist_ok=True); fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix='.finder-recents-', suffix='.json'); os.close(fd); open(tmp, 'w', encoding='utf-8').write(json.dumps(data, ensure_ascii=False)); os.replace(tmp, path)",
+            stateJsonScript,
+            "write",
             storagePath,
             JSON.stringify(items)
         ]
@@ -125,14 +126,13 @@ QtObject {
             app.refreshCurrentFolder()
     }
 
-    Component.onCompleted: load()
-
     property Process loadProc: Process {
         command: [
             "python3",
-            "-c",
-            "import json, os, sys; path = sys.argv[1]; print(json.dumps(json.load(open(path, encoding='utf-8'))) if os.path.exists(path) else '[]')",
-            recent.storagePath
+            recent.stateJsonScript,
+            "read-or-init",
+            recent.storagePath,
+            "[]"
         ]
         running: false
         stdout: SplitParser {

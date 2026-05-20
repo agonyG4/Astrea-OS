@@ -28,7 +28,12 @@ It contains:
 - `System/services/display_night_shift_schedule.sh`
 - `System/services/music_bars.sh`
 - `System/services/astrea_statusd.py`
-- `Apps/Weather/backend/target/release/astrea-weatherd`
+- `System/services/astrea_latencyd.py`
+- `Apps/Weather/backend`
+- `System/launch/target/release/astrea-launch`
+- `bin/astrea-launch`
+- `bin/weather-cli`
+- `bin/astrea-weatherd`
 - `System/services/astrea-services.sh`
 - `System/services/theme/apply_color_scheme.sh`
 - `System/services/theme/apply_decoration_style.sh`
@@ -55,9 +60,17 @@ Quickshell may request an immediate refresh with `SIGUSR1`.
 
 The daemon should sleep until the next scheduled refresh instead of waking on a fixed short interval. The sleep is capped so manual refreshes remain responsive.
 
-`astrea-weatherd.service` runs `Apps/Weather/backend/target/release/astrea-weatherd`.
+`astrea-latencyd.service` runs `System/services/astrea_latencyd.py serve`.
+It owns temporary launch performance bursts and writes state/history under `~/.local/state/Astrea/latencyd`.
+
+`astrea-launchd.service` runs `bin/astrea-launch daemon`.
+It must be attached to `graphical-session.target` so app launches inherit the real desktop session environment.
+
+`astrea-weatherd.service` runs `bin/astrea-weatherd`.
 It owns Weather refresh monitoring and desktop notifications independently from
 the Weather QML app.
+
+See [[Astrea - Launcher and Latency]] for launch-specific behavior.
 
 ## External System Tools
 Observed dependencies:

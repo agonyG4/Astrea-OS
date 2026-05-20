@@ -16,8 +16,8 @@ QtObject {
     readonly property string scannedJson: JSON.stringify(scannedDevices)
     property bool scanning: false
     property var _scanOwners: ({})
-    property string _statusBuf: ""
     property string _powerBuf: ""
+    property string _pairTargetMac: ""
     property bool powerPending: false
     property string powerError: ""
     property bool _started: false
@@ -25,10 +25,6 @@ QtObject {
     function refresh() {
         statusRefreshProc.running = false
         statusRefreshProc.running = true
-        if (directStatusProc.running)
-            directStatusProc.running = false
-        root._statusBuf = ""
-        directStatusProc.running = true
     }
 
     function setPower(target) {
@@ -117,10 +113,6 @@ QtObject {
         }
     }
 
-    function appendDirectStatus(data) {
-        root._statusBuf += data
-    }
-
     function appendPowerOutput(data) {
         root._powerBuf += data
     }
@@ -160,23 +152,22 @@ QtObject {
     }
 
     property var statusRefreshProc: Process {
-        command: ["bash", "-c", "systemctl --user is-active --quiet astrea-status.service && systemctl --user kill -s SIGUSR1 astrea-status.service || systemctl --user start astrea-status.service"]
+        command: ["systemctl", "--user", "kill", "-s", "SIGUSR1", "astrea-status.service"]
         running: false
-        onExited: statusFile.reload()
+        onExited: exitCode => {
+            if (exitCode === 0)
+                statusFile.reload()
+            else {
+                statusStartProc.running = false
+                statusStartProc.running = true
+            }
+        }
     }
 
-    property var directStatusProc: Process {
-        id: directStatusProc
-        command: ["python3", root.scriptPath, "status"]
+    property var statusStartProc: Process {
+        command: ["systemctl", "--user", "start", "astrea-status.service"]
         running: false
-        stdout: SplitParser {
-            onRead: data => root.appendDirectStatus(data)
-        }
-        onExited: exitCode => {
-            if (exitCode === 0 && root._statusBuf.trim())
-                root.applyStatus(root._statusBuf)
-            root._statusBuf = ""
-        }
+        onExited: statusFile.reload()
     }
 
     property var powerProc: Process {
@@ -235,7 +226,26 @@ QtObject {
     property var pairProc: Process {
         id: pairProc
         property string targetMac: ""
-        command: ["bash", "-lc", "bluetoothctl pair \"$1\" && bluetoothctl trust \"$1\"", "--", targetMac]
+        command: ["bluetoothctl", "pair", targetMac]
+        running: false
+        onExited: exitCode => {
+            root._pairTargetMac = targetMac
+            if (exitCode === 0) {
+                trustProc.command = ["bluetoothctl", "trust", root._pairTargetMac]
+                trustProc.running = false
+                trustProc.running = true
+                return
+            }
+            root.refresh()
+            root.scannedDevices = []
+            root.autoConnect(true)
+            root.requestScan("pair-refresh")
+        }
+    }
+
+    property var trustProc: Process {
+        id: trustProc
+        command: []
         running: false
         onExited: () => {
             root.refresh()

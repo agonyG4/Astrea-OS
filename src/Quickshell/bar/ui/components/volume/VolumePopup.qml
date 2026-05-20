@@ -1,19 +1,24 @@
 import Quickshell
 import Quickshell.Io
 import QtQuick
-import "../system" as SystemComponents
+import "../system/popups" as SystemComponents
 import "../../.."
+import "../../../../AstreaI18n" as AstreaI18n
 
 SystemComponents.TopbarPopup {
     id: root
 
     property int    masterVol:   50
     property bool   masterMuted: false
-    property string deviceName:  "Volume"
+    property string deviceName:  (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["shell.volume.volume"]) || "Volume"
+    property bool   spatialOn:   false
+    property real   lastDeviceInfoRefresh: 0
 
     signal volumeChangeHandled(int v)
 
     popupWidth: 300
+    readonly property string audioScript: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/system/audio.py"
+    readonly property int deviceInfoRefreshMs: 30000
 
     function volIcon(v, m) {
         if (m || v === 0) return "󰝟"
@@ -25,8 +30,12 @@ SystemComponents.TopbarPopup {
     function refresh() {
         volReadProc.running = false
         volReadProc.running = true
-        deviceProc.running  = false
-        deviceProc.running  = true
+        const now = Date.now()
+        if (now - lastDeviceInfoRefresh > deviceInfoRefreshMs) {
+            lastDeviceInfoRefresh = now
+            deviceProc.running = false
+            deviceProc.running = true
+        }
     }
 
     onShownChanged: {
@@ -38,7 +47,7 @@ SystemComponents.TopbarPopup {
     // ─── Processes ────────────────────────────────────────────────
     Process {
         id: volReadProc
-        command: ["bash", "-c", "wpctl get-volume @DEFAULT_AUDIO_SINK@"]
+        command: ["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"]
         running: false
         stdout: SplitParser {
             onRead: data => {
@@ -51,12 +60,28 @@ SystemComponents.TopbarPopup {
 
     Process {
         id: deviceProc
-        command: ["bash", "-c", "wpctl inspect @DEFAULT_AUDIO_SINK@ 2>/dev/null | grep 'node.nick\\|node.description\\|device.description' | head -1 | sed 's/.*= \"//;s/\".*//;s/^ *//'"]
+        command: ["python3", root.audioScript, "info"]
         running: false
-        stdout: SplitParser {
-            onRead: data => {
-                var name = data.trim()
-                if (name !== "") root.deviceName = name
+        stdout: StdioCollector { id: deviceInfoOut }
+        onExited: (code) => {
+            if (code !== 0) return
+            try {
+                var info = JSON.parse(deviceInfoOut.text || "{}")
+                var spatial = info.spatial || {}
+                var outputs = info.outputs || []
+                root.spatialOn = spatial.enabled === true
+                var current = null
+                for (var i = 0; i < outputs.length; i++) {
+                    if (outputs[i].effective_default === true) {
+                        current = outputs[i]
+                        break
+                    }
+                }
+                if (!current && outputs.length > 0)
+                    current = outputs[0]
+                if (current)
+                    root.deviceName = current.description || current.name || ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["shell.volume.volume"]) || "Volume")
+            } catch (error) {
             }
         }
     }
@@ -75,7 +100,7 @@ SystemComponents.TopbarPopup {
     }
 
     SystemComponents.PopupHeader {
-        title: root.deviceName
+        title: root.spatialOn ? root.deviceName + ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["shell.volume.spatial_audio_suffix"]) || " · Spatial Audio") : root.deviceName
         trailingWidth: 28
         trailingHeight: 28
         Rectangle {

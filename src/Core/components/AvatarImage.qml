@@ -1,5 +1,6 @@
 import QtQuick
 import Qt5Compat.GraphicalEffects
+import "." as Components
 
 Item {
     id: root
@@ -7,8 +8,8 @@ Item {
     property string imagePath: ""
     property int imageVersion: 0
     property string fallbackText: "?"
-    property color fallbackColor: Qt.rgba(0.04, 0.52, 1.0, 0.18)
-    property color fallbackTextColor: "#0a84ff"
+    property color fallbackColor: Qt.rgba(Components.Theme.accent.r, Components.Theme.accent.g, Components.Theme.accent.b, 0.18)
+    property color fallbackTextColor: Components.Theme.accent
     property string fallbackFontFamily: ""
     property real fallbackFontPixelSize: Math.round(Math.min(width, height) * 0.42)
     property int fallbackFontWeight: Font.Medium

@@ -76,9 +76,9 @@ QtObject {
         if (!files || files.length === 0)
             return
         systemClipboardWrite.command = [
-            "bash", "-lc",
-            "for f in \"$@\"; do printf 'file://%s\\n' \"$f\"; done | wl-copy --type text/uri-list",
-            "_"
+            "python3",
+            app.helperPath,
+            "copy-uri-list"
         ].concat(files)
         systemClipboardWrite.running = false
         systemClipboardWrite.running = true
@@ -140,6 +140,56 @@ QtObject {
         var line = String(rawLine || "").trim()
         if (line === "")
             return
+        if (line[0] === "{") {
+            try {
+                var evt = JSON.parse(line)
+                var eventName = String(evt.event || "").toLowerCase()
+                if (eventName === "start") {
+                    fileOperationMode = String(evt.mode || fileOperationMode || "copy")
+                    fileOperationDestination = String(evt.destination || fileOperationDestination)
+                    fileOperationTotalCount = Number(evt.total || fileOperationTotalCount || 0)
+                    fileOperationDoneCount = 0
+                    fileOperationStatus = fileOperationMode === "move" ? "Movendo..." : "Copiando..."
+                    fileOperationPercent = 0
+                    fileOperationProgress = 0
+                    return
+                } else if (eventName === "progress") {
+                    fileOperationMode = String(evt.mode || fileOperationMode || "copy")
+                    fileOperationDoneCount = Number(evt.done || 0)
+                    fileOperationTotalCount = Number(evt.total || fileOperationTotalCount || 0)
+                    var jsonPercent = Number(evt.percent || 0)
+                    if (!isFinite(jsonPercent))
+                        jsonPercent = 0
+                    fileOperationPercent = Math.max(0, Math.min(100, Math.round(jsonPercent)))
+                    fileOperationProgress = fileOperationPercent / 100
+                    fileOperationFileName = String(evt.name || "")
+                    fileOperationStatus = (fileOperationMode === "move" ? "Movendo" : "Copiando") + "... " + fileOperationPercent + "%"
+                    return
+                } else if (eventName === "done") {
+                    fileOperationMode = String(evt.mode || fileOperationMode || "copy")
+                    fileOperationDestination = String(evt.destination || fileOperationDestination)
+                    fileOperationDoneCount = Number(evt.done || fileOperationDoneCount || 0)
+                    fileOperationTotalCount = Number(evt.total || fileOperationTotalCount || 0)
+                    var donePercent = Number(evt.percent || 100)
+                    if (!isFinite(donePercent))
+                        donePercent = 100
+                    fileOperationPercent = Math.max(0, Math.min(100, Math.round(donePercent)))
+                    fileOperationProgress = fileOperationPercent / 100
+                    fileOperationStatus = fileOperationMode === "move" ? "Movido" : "Copiado"
+                    fileOperationError = ""
+                    return
+                } else if (eventName === "error") {
+                    var code = String(evt.code || "")
+                    var message = String(evt.message || "")
+                    fileOperationError = message !== "" ? message : "Falha na operacao"
+                    if (code !== "")
+                        fileOperationError = fileOperationError + " (" + code + ")"
+                    fileOperationStatus = fileOperationError
+                    return
+                }
+            } catch (e) {
+            }
+        }
         var parts = line.split("|")
         if (parts[0] === "START") {
             fileOperationMode = parts[1] || fileOperationMode
@@ -199,43 +249,11 @@ QtObject {
         archiveExtractionTotalCount = 0
 
         archiveExtractProcess.command = [
-            "bash", "-lc",
-            "archive=\"$1\"; base=\"$2\"; parent=$(dirname -- \"$archive\"); archive_name=$(basename -- \"$archive\"); " +
-            "dest=\"$parent/$base\"; n=2; while [ -e \"$dest\" ]; do dest=\"$parent/$base $n\"; n=$((n+1)); done; " +
-            "mkdir -p -- \"$dest\" || exit 1; " +
-            "lower=$(printf '%s' \"$archive\" | tr '[:upper:]' '[:lower:]'); " +
-            "count_entries() { " +
-            "  if [[ \"$lower\" =~ \\.zip$ ]] && command -v unzip >/dev/null 2>&1; then unzip -Z1 \"$archive\" 2>/dev/null | wc -l; " +
-            "  elif [[ \"$lower\" =~ \\.rar$ ]] && command -v unrar >/dev/null 2>&1; then unrar lb \"$archive\" 2>/dev/null | wc -l; " +
-            "  elif [[ \"$lower\" =~ \\.(7z|rar)$ ]] && command -v 7z >/dev/null 2>&1; then 7z l -ba \"$archive\" 2>/dev/null | awk 'NF { c++ } END { print c + 0 }'; " +
-            "  elif command -v bsdtar >/dev/null 2>&1; then bsdtar -tf \"$archive\" 2>/dev/null | wc -l; " +
-            "  else printf '0\\n'; fi; " +
-            "}; " +
-            "extract_archive() { " +
-            "  if [[ \"$lower\" =~ \\.zip$ ]]; then " +
-            "    if command -v unzip >/dev/null 2>&1; then unzip -o \"$archive\" -d \"$dest\"; else bsdtar -xf \"$archive\" -C \"$dest\"; fi; " +
-            "  elif [[ \"$lower\" =~ \\.7z$ ]]; then " +
-            "    7z x -y -o\"$dest\" \"$archive\"; " +
-            "  elif [[ \"$lower\" =~ \\.rar$ ]]; then " +
-            "    if command -v unrar >/dev/null 2>&1; then unrar x -o+ \"$archive\" \"$dest/\"; else 7z x -y -o\"$dest\" \"$archive\"; fi; " +
-            "  else " +
-            "    bsdtar -xf \"$archive\" -C \"$dest\"; " +
-            "  fi; " +
-            "}; " +
-            "total=$(count_entries | tail -n1 | tr -dc '0-9'); total=${total:-0}; " +
-            "printf 'START|%s|%s|%s\\n' \"$archive_name\" \"$dest\" \"$total\"; " +
-            "log=$(mktemp); extract_archive >\"$log\" 2>&1 & pid=$!; tick=0; " +
-            "while kill -0 \"$pid\" 2>/dev/null; do " +
-            "  tick=$((tick + 1)); " +
-            "  done_count=$(find \"$dest\" -mindepth 1 2>/dev/null | wc -l | tr -dc '0-9'); done_count=${done_count:-0}; " +
-            "  if [ \"$total\" -gt 0 ] && [ \"$done_count\" -gt 0 ]; then pct=$((done_count * 100 / total)); [ \"$pct\" -gt 99 ] && pct=99; " +
-            "  else pct=$((tick * 3)); [ \"$pct\" -gt 95 ] && pct=95; fi; " +
-            "  printf 'PROGRESS|%s|%s|%s\\n' \"$done_count\" \"$total\" \"$pct\"; sleep 0.2; " +
-            "done; " +
-            "wait \"$pid\"; code=$?; rm -f -- \"$log\"; " +
-            "done_count=$(find \"$dest\" -mindepth 1 2>/dev/null | wc -l | tr -dc '0-9'); done_count=${done_count:-0}; " +
-            "if [ \"$code\" -eq 0 ]; then printf 'DONE|%s|%s|%s|100\\n' \"$dest\" \"$done_count\" \"$total\"; else printf 'ERROR|%s|%s\\n' \"$dest\" \"$code\"; fi; exit \"$code\"",
-            "_", archivePath, folderName || basename(archivePath)
+            "python3",
+            app.helperPath,
+            "extract-archive",
+            archivePath,
+            folderName || basename(archivePath)
         ]
         archiveExtractProcess.running = false
         archiveExtractProcess.running = true
@@ -259,41 +277,11 @@ QtObject {
         archiveExtractionTotalCount = 0
 
         archiveExtractProcess.command = [
-            "bash", "-lc",
-            "folder=\"$1\"; format=\"$2\"; " +
-            "[ -d \"$folder\" ] || { printf 'ERROR||not-dir\\n'; exit 1; }; " +
-            "parent=$(dirname -- \"$folder\"); name=$(basename -- \"$folder\"); " +
-            "case \"$format\" in " +
-            "  zip) ext='zip' ;; " +
-            "  rar) ext='rar' ;; " +
-            "  tar) ext='tar' ;; " +
-            "  tar.gz) ext='tar.gz' ;; " +
-            "  tar.xz) ext='tar.xz' ;; " +
-            "  *) printf 'ERROR||bad-format\\n'; exit 1 ;; " +
-            "esac; " +
-            "target=\"$parent/$name.$ext\"; n=2; while [ -e \"$target\" ]; do target=\"$parent/$name $n.$ext\"; n=$((n+1)); done; " +
-            "total=$(find \"$folder\" -mindepth 1 2>/dev/null | wc -l | tr -dc '0-9'); total=${total:-0}; " +
-            "printf 'START|%s|%s|%s\\n' \"$name\" \"$target\" \"$total\"; " +
-            "compress_archive() { " +
-            "  cd \"$parent\" || return 1; " +
-            "  case \"$format\" in " +
-            "    zip) command -v zip >/dev/null 2>&1 || return 127; zip -qr \"$target\" \"$name\" ;; " +
-            "    rar) command -v rar >/dev/null 2>&1 || return 127; rar a -idq \"$target\" \"$name\" ;; " +
-            "    tar) tar -cf \"$target\" -- \"$name\" ;; " +
-            "    tar.gz) tar -czf \"$target\" -- \"$name\" ;; " +
-            "    tar.xz) tar -cJf \"$target\" -- \"$name\" ;; " +
-            "  esac; " +
-            "}; " +
-            "compress_archive & pid=$!; tick=0; " +
-            "while kill -0 \"$pid\" 2>/dev/null; do " +
-            "  tick=$((tick + 1)); " +
-            "  pct=$((tick * 2)); [ \"$pct\" -gt 95 ] && pct=95; " +
-            "  done_count=0; [ \"$total\" -gt 0 ] && [ \"$pct\" -gt 0 ] && done_count=$(((total * pct + 99) / 100)); " +
-            "  printf 'PROGRESS|%s|%s|%s\\n' \"$done_count\" \"$total\" \"$pct\"; sleep 0.25; " +
-            "done; " +
-            "wait \"$pid\"; code=$?; " +
-            "if [ \"$code\" -eq 0 ]; then printf 'DONE|%s|%s|%s|100\\n' \"$target\" \"$total\" \"$total\"; else rm -f -- \"$target\"; printf 'ERROR|%s|%s\\n' \"$target\" \"$code\"; fi; exit \"$code\"",
-            "_", folderPath, format || "zip"
+            "python3",
+            app.helperPath,
+            "compress-folder",
+            folderPath,
+            format || "zip"
         ]
         archiveExtractProcess.running = false
         archiveExtractProcess.running = true
@@ -303,6 +291,51 @@ QtObject {
         var line = String(rawLine || "").trim()
         if (line === "")
             return
+        if (line[0] === "{") {
+            try {
+                var evt = JSON.parse(line)
+                var eventName = String(evt.event || "").toLowerCase()
+                if (eventName === "start") {
+                    archiveExtractionFileName = String(evt.name || archiveExtractionFileName)
+                    archiveExtractionDestination = String(evt.destination || archiveExtractionDestination)
+                    archiveExtractionTotalCount = Number(evt.total || archiveExtractionTotalCount || 0)
+                    archiveExtractionDoneCount = 0
+                    archiveExtractionPercent = 0
+                    archiveExtractionProgress = 0
+                    archiveExtractionStatus = archiveOperationMode === "compress" ? "Compactando..." : "Extraindo..."
+                    return
+                } else if (eventName === "progress") {
+                    archiveExtractionDoneCount = Number(evt.done || 0)
+                    archiveExtractionTotalCount = Number(evt.total || archiveExtractionTotalCount || 0)
+                    var p = Number(evt.percent || 0)
+                    if (!isFinite(p)) p = 0
+                    archiveExtractionPercent = Math.max(0, Math.min(100, Math.round(p)))
+                    archiveExtractionProgress = archiveExtractionPercent / 100
+                    var v = archiveOperationMode === "compress" ? "Compactando" : "Extraindo"
+                    archiveExtractionStatus = v + "... " + archiveExtractionPercent + "%"
+                    return
+                } else if (eventName === "done") {
+                    archiveExtractionDestination = String(evt.destination || archiveExtractionDestination)
+                    archiveExtractionRevealName = basename(archiveExtractionDestination)
+                    archiveExtractionDoneCount = Number(evt.done || archiveExtractionDoneCount || 0)
+                    archiveExtractionTotalCount = Number(evt.total || archiveExtractionTotalCount || 0)
+                    archiveExtractionPercent = 100
+                    archiveExtractionProgress = 1
+                    archiveExtractionStatus = archiveOperationMode === "compress" ? "Compactacao concluida" : "Extracao concluida"
+                    archiveExtractionError = ""
+                    return
+                } else if (eventName === "error") {
+                    var m = String(evt.message || "")
+                    var c = String(evt.code || "")
+                    archiveExtractionDestination = String(evt.destination || archiveExtractionDestination)
+                    archiveExtractionError = m !== "" ? m : (archiveOperationMode === "compress" ? "Falha ao compactar" : "Falha ao extrair")
+                    if (c !== "")
+                        archiveExtractionError = archiveExtractionError + " (" + c + ")"
+                    archiveExtractionStatus = archiveExtractionError
+                    return
+                }
+            } catch (e) {}
+        }
         var parts = line.split("|")
         if (parts[0] === "START") {
             archiveExtractionFileName = parts[1] || archiveExtractionFileName
@@ -382,13 +415,12 @@ QtObject {
             return
         var resolvedDestination = destinationPath || app.currentPath
         conflictScanProcess.command = [
-            "bash", "-lc",
-            "dest=\"$1\"; shift; " +
-            "for f in \"$@\"; do " +
-            "name=$(basename -- \"$f\"); target=\"$dest/$name\"; " +
-            "if [ \"$f\" != \"$target\" ] && [ -e \"$target\" ]; then printf '%s\\n' \"$name\"; fi; " +
-            "done",
-            "_", resolvedDestination
+            "python3",
+            app.helperPath,
+            "scan-conflicts",
+            resolvedDestination,
+            "--format",
+            "json"
         ].concat(files)
         pendingPasteFiles = files.slice()
         pendingPasteMode = mode || "copy"
@@ -428,27 +460,11 @@ QtObject {
             return
         pendingClipboardImageMime = mimeType
         pasteImageProcess.command = [
-            "bash", "-lc",
-            "set -e; " +
-            "dest_dir=\"$1\"; mime=\"$2\"; " +
-            "case \"$mime\" in " +
-            "  image/png) ext='png' ;; " +
-            "  image/jpeg) ext='jpg' ;; " +
-            "  image/webp) ext='webp' ;; " +
-            "  image/gif) ext='gif' ;; " +
-            "  image/bmp) ext='bmp' ;; " +
-            "  image/tiff) ext='tiff' ;; " +
-            "  image/x-portable-pixmap) ext='ppm' ;; " +
-            "  image/x-portable-graymap) ext='pgm' ;; " +
-            "  image/x-portable-bitmap) ext='pbm' ;; " +
-            "  *) ext='png' ;; " +
-            "esac; " +
-            "stamp=$(date +'%Y-%m-%d %H-%M-%S'); " +
-            "base=\"Pasted Image $stamp\"; target=\"$dest_dir/$base.$ext\"; n=2; " +
-            "while [ -e \"$target\" ]; do target=\"$dest_dir/$base $n.$ext\"; n=$((n+1)); done; " +
-            "wl-paste --no-newline --type \"$mime\" > \"$target\"; " +
-            "printf '%s\\n' \"$target\"",
-            "_", app.currentPath, mimeType
+            "python3",
+            app.helperPath,
+            "paste-image",
+            app.currentPath,
+            mimeType
         ]
         pasteImageProcess.running = false
         pasteImageProcess.running = true
@@ -465,6 +481,7 @@ QtObject {
         pasteProcess.command = [
             app.backendPath,
             "file-op",
+            "--json-events",
             mode,
             destinationPath,
             policy,
@@ -512,20 +529,11 @@ QtObject {
         var targets = selectedPathsInCurrentFolder()
         pendingDeleteTargets = targets.slice()
         deleteProcess.command = [
-            "bash", "-lc",
-            "trashDir=\"$1\"; infoDir=\"$2\"; shift 2; mkdir -p -- \"$trashDir\" \"$infoDir\"; " +
-            "encode_path() { " +
-            "  if command -v python3 >/dev/null 2>&1; then python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=\"/\"))' \"$1\"; else printf '%s' \"$1\"; fi; " +
-            "}; " +
-            "for target in \"$@\"; do " +
-            "[ -e \"$target\" ] || continue; " +
-            "name=$(basename -- \"$target\"); dest=\"$trashDir/$name\"; " +
-            "n=2; while [ -e \"$dest\" ]; do dest=\"$trashDir/$name $n\"; n=$((n+1)); done; " +
-            "trash_name=$(basename -- \"$dest\"); info=\"$infoDir/$trash_name.trashinfo\"; " +
-            "mv -- \"$target\" \"$dest\" || continue; " +
-            "{ printf '[Trash Info]\\nPath='; encode_path \"$target\"; printf '\\nDeletionDate=%s\\n' \"$(date +'%Y-%m-%dT%H:%M:%S')\"; } > \"$info\"; " +
-            "done",
-            "_", app.trashFilesPath, app.trashInfoPath
+            "python3",
+            app.helperPath,
+            "trash",
+            app.trashFilesPath,
+            app.trashInfoPath
         ].concat(targets)
         deleteProcess.running = false
         deleteProcess.running = true
@@ -537,28 +545,11 @@ QtObject {
         var targets = selectedPathsInCurrentFolder()
         pendingRestoreTargets = targets.slice()
         restoreProcess.command = [
-            "bash", "-lc",
-            "trashInfo=\"$1\"; fallbackDir=\"$2\"; shift 2; mkdir -p -- \"$fallbackDir\"; " +
-            "decode_path() { " +
-            "  if command -v python3 >/dev/null 2>&1; then python3 -c 'import sys, urllib.parse; print(urllib.parse.unquote(sys.argv[1]))' \"$1\"; else printf '%s' \"$1\"; fi; " +
-            "}; " +
-            "unique_target() { " +
-            "  dir=\"$1\"; name=\"$2\"; base=\"$name\"; ext=\"\"; " +
-            "  case \"$name\" in .*|*.) ;; *.*) base=\"${name%.*}\"; ext=\".${name##*.}\" ;; esac; " +
-            "  candidate=\"$dir/$name\"; n=2; " +
-            "  while [ -e \"$candidate\" ]; do candidate=\"$dir/$base $n$ext\"; n=$((n + 1)); done; " +
-            "  printf '%s\\n' \"$candidate\"; " +
-            "}; " +
-            "for trashed in \"$@\"; do " +
-            "[ -e \"$trashed\" ] || continue; " +
-            "trash_name=$(basename -- \"$trashed\"); info=\"$trashInfo/$trash_name.trashinfo\"; original=\"\"; " +
-            "if [ -f \"$info\" ]; then raw=$(sed -n 's/^Path=//p' \"$info\" | head -n1); [ -n \"$raw\" ] && original=$(decode_path \"$raw\"); fi; " +
-            "[ -n \"$original\" ] || original=\"$fallbackDir/$trash_name\"; " +
-            "dest_dir=$(dirname -- \"$original\"); dest_name=$(basename -- \"$original\"); mkdir -p -- \"$dest_dir\" || dest_dir=\"$fallbackDir\"; " +
-            "dest=$(unique_target \"$dest_dir\" \"$dest_name\"); " +
-            "mv -- \"$trashed\" \"$dest\" && rm -f -- \"$info\"; " +
-            "done",
-            "_", app.trashInfoPath, app.homePath
+            "python3",
+            app.helperPath,
+            "restore-trash",
+            app.trashInfoPath,
+            app.homePath
         ].concat(targets)
         restoreProcess.running = false
         restoreProcess.running = true
@@ -567,12 +558,11 @@ QtObject {
 
     function emptyTrash() {
         emptyTrashProcess.command = [
-            "bash", "-lc",
-            "trash_files=\"$1\"; trash_info=\"$2\"; " +
-            "mkdir -p -- \"$trash_files\" \"$trash_info\"; " +
-            "find \"$trash_files\" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + 2>/dev/null; " +
-            "find \"$trash_info\" -mindepth 1 -maxdepth 1 -exec rm -f -- {} + 2>/dev/null",
-            "_", app.trashFilesPath, app.trashInfoPath
+            "python3",
+            app.helperPath,
+            "empty-trash",
+            app.trashFilesPath,
+            app.trashInfoPath
         ]
         emptyTrashProcess.running = false
         emptyTrashProcess.running = true
@@ -698,7 +688,37 @@ QtObject {
         stdout: StdioCollector {
             id: conflictScanStdout
             onStreamFinished: {
-                var items = text.split("\n").map(function(line) { return line.trim() }).filter(Boolean)
+                var raw = (text || "").trim()
+                var parsedItems = []
+                if (raw !== "") {
+                    try {
+                        var parsed = JSON.parse(raw)
+                        if (Array.isArray(parsed))
+                            parsedItems = parsed
+                    } catch (e) {
+                        parsedItems = raw.split("\n").map(function(line) { return line.trim() }).filter(Boolean).map(function(name) {
+                            return { name: name, conflict_kind: "name-collision", supported_policies: ["skip", "overwrite", "keep-both", "rename"] }
+                        })
+                    }
+                }
+
+                var blocking = parsedItems.filter(function(item) {
+                    var kind = String(item.conflict_kind || "")
+                    return kind === "file-over-directory" || kind === "directory-over-file" || kind === "same-path"
+                })
+                if (blocking.length > 0) {
+                    ops.pendingPasteFiles = []
+                    ops.pendingPasteMode = ""
+                    ops.pendingPasteDestination = ""
+                    ops.pendingPasteRename = ""
+                    ops.fileOperationRunning = true
+                    ops.fileOperationError = "Conflito de tipo nao suportado para colagem"
+                    ops.fileOperationStatus = ops.fileOperationError
+                    fileOperationHideTimer.restart()
+                    return
+                }
+
+                var items = parsedItems.map(function(item) { return String(item.name || "") }).filter(Boolean)
                 ops.pasteConflictItems = items
                 if (items.length > 0) {
                     ops.pendingPasteRename = items.length === 1 ? items[0] : ""

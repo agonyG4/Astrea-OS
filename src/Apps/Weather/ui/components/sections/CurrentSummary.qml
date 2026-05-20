@@ -2,30 +2,42 @@ import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import "../../../AstreaComponents" as UI
 import "../common" as WeatherCommon
+import "../../../AstreaI18n" as AstreaI18n
 
 ColumnLayout {
     property var weatherData
     property var colors
+    readonly property string nextSunEventLabel: sunInfo.isAfterSunset ? "Nascer" : "Pôr"
+    readonly property string nextSunEventTime: {
+        if (!weatherData) return "--"
+        if (sunInfo.isAfterSunset) {
+            return (weatherData.weekly && weatherData.weekly.length > 1)
+                ? weatherData.weekly[1].sunrise
+                : weatherData.sunrise
+        }
+        return weatherData.sunset
+    }
 
     Layout.fillWidth: true
-    spacing: 0
+    Layout.bottomMargin: 2
+    spacing: 3
 
     UI.DisplayLabel {
         Layout.fillWidth: true
         text: weatherData ? weatherData.city : ""
-        font.pixelSize: UI.Theme.fontSizeIconLarge
+        font.pixelSize: 22
         font.weight: 400
         horizontalAlignment: Text.AlignHCenter
-        topPadding: 8
+        topPadding: 2
         textColor: UI.Theme.textPrimary
     }
 
     UI.DisplayLabel {
         Layout.fillWidth: true
-        text: weatherData ? weatherData.temp : "--"
-        font.pixelSize: 92
+        text: weatherData && weatherData.temp !== undefined ? weatherData.temp + "°" : "--"
+        font.pixelSize: 86
         font.weight: 200
-        lineHeight: 0.88
+        lineHeight: 0.82
         horizontalAlignment: Text.AlignHCenter
         textColor: UI.Theme.textPrimary
     }
@@ -33,11 +45,10 @@ ColumnLayout {
     UI.TextLabel {
         Layout.fillWidth: true
         text: weatherData ? weatherData.condition : ""
-        font.pixelSize: UI.Theme.fontSizeTitle
+        font.pixelSize: 15
         font.weight: 400
         horizontalAlignment: Text.AlignHCenter
         textColor: UI.Theme.textSecondary
-        topPadding: 0
     }
 
     UI.TextLabel {
@@ -51,38 +62,16 @@ ColumnLayout {
         bottomPadding: 2
     }
 
-
-
-    RowLayout {
-        Layout.alignment: Qt.AlignHCenter
-        Layout.topMargin: 4
-        Layout.bottomMargin: 4
-        spacing: 16
-
-        // Vento
-        RowLayout {
-            spacing: 6
-            visible: weatherData && weatherData.wind !== undefined
-            WeatherCommon.WeatherIcon {
-                condition: "vento"
-                iconSize: 16
-                Layout.alignment: Qt.AlignVCenter
-            }
-            UI.TextLabel {
-                text: weatherData ? weatherData.wind + " km/h" : ""
-                font.pixelSize: UI.Theme.fontSizeLarge
-                font.weight: 500
-                textColor: UI.Theme.textSecondary
-            }
-        }
-
-    }
-
-    RowLayout {
+    Rectangle {
         id: sunInfo
-        Layout.alignment: Qt.AlignHCenter
-        Layout.bottomMargin: 12
-        spacing: 6
+        Layout.fillWidth: true
+        Layout.topMargin: 10
+        Layout.bottomMargin: 8
+        implicitHeight: 52
+        radius: 18
+        color: "#252529"
+        border.color: "#34343A"
+        border.width: 1
 
         property bool isAfterSunset: {
             if (!weatherData || !weatherData.sunset) return false
@@ -93,28 +82,78 @@ ColumnLayout {
             return currentMinutes > sunsetMin
         }
 
-        WeatherCommon.WeatherIcon {
-            condition: sunInfo.isAfterSunset ? "nascer do sol" : "pôr do sol"
-            iconSize: 18
-            Layout.alignment: Qt.AlignVCenter
-        }
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 16
+            anchors.rightMargin: 16
+            spacing: 14
 
-        UI.TextLabel {
-            text: {
-                if (!weatherData) return ""
-                if (sunInfo.isAfterSunset) {
-                    // Tenta pegar o nascer do sol de amanhã (weekly[1])
-                    var nextSunrise = (weatherData.weekly && weatherData.weekly.length > 1) 
-                        ? weatherData.weekly[1].sunrise 
-                        : weatherData.sunrise
-                    return "Nascer do sol " + nextSunrise
-                } else {
-                    return "Pôr do sol " + weatherData.sunset
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                visible: weatherData && weatherData.wind !== undefined
+
+                WeatherCommon.WeatherIcon {
+                    condition: "vento"
+                    iconSize: 18
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                ColumnLayout {
+                    spacing: 1
+
+                    UI.TextLabel {
+                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.components.sections.current_summary.text.vento"]) || "WIND")
+                        font.pixelSize: 10
+                        font.weight: 600
+                        textColor: UI.Theme.textTertiary
+                    }
+
+                    UI.TextLabel {
+                        text: weatherData ? weatherData.wind + " km/h" : "--"
+                        font.pixelSize: 13
+                        font.weight: 500
+                        textColor: "#F2F2F7"
+                    }
                 }
             }
-            font.pixelSize: UI.Theme.fontSizeLarge
-            font.weight: 500
-            textColor: UI.Theme.textSecondary
+
+            Rectangle {
+                Layout.preferredWidth: 1
+                Layout.fillHeight: true
+                Layout.topMargin: 12
+                Layout.bottomMargin: 12
+                color: "#3A3A40"
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                WeatherCommon.WeatherIcon {
+                    condition: sunInfo.isAfterSunset ? "nascer do sol" : "pôr do sol"
+                    iconSize: 18
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                ColumnLayout {
+                    spacing: 1
+
+                    UI.TextLabel {
+                        text: nextSunEventLabel.toUpperCase()
+                        font.pixelSize: 10
+                        font.weight: 600
+                        textColor: UI.Theme.textTertiary
+                    }
+
+                    UI.TextLabel {
+                        text: nextSunEventTime
+                        font.pixelSize: 13
+                        font.weight: 500
+                        textColor: "#F2F2F7"
+                    }
+                }
+            }
         }
     }
 }

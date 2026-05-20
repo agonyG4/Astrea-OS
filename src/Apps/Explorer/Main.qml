@@ -5,13 +5,14 @@ import "components/layout" as LayoutComponents
 import "components/views" as ViewComponents
 import "components/common" as CommonComponents
 import "AstreaFiles" as AstreaFiles
+import "AstreaI18n" as AstreaI18n
 
 ApplicationWindow {
     id: window
     visible: true
     width: 1100; height: 680
     minimumWidth: 700; minimumHeight: 450
-    title: "Finder"
+    title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.title.finder"]) || "Finder")
     color: Theme.bg
 
     Component.onCompleted: {
@@ -223,7 +224,7 @@ ApplicationWindow {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "Carregando..."; color: Theme.textTer; font.pixelSize: 15
+                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.text.carregando"]) || "Loading..."); color: Theme.textTer; font.pixelSize: 15
                         visible: AppState.loadingDir
                     }
 
@@ -309,7 +310,7 @@ ApplicationWindow {
             padding: 16
 
             Text {
-                text: "Arquivos com o mesmo nome"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.text.arquivos_com_o_mesmo_nome"]) || "Files with the same name")
                 color: Theme.text
                 font.pixelSize: 15
                 font.weight: Font.DemiBold
@@ -330,7 +331,7 @@ ApplicationWindow {
                 width: parent.width
                 text: AppState.pendingPasteRename
                 color: Theme.text
-                placeholderText: "Novo nome"
+                placeholderText: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.placeholderText.novo_nome"]) || "New name")
                 selectByMouse: true
                 background: Rectangle {
                     radius: 8
@@ -381,29 +382,29 @@ ApplicationWindow {
                 spacing: 8
 
                 DialogButton {
-                    label: "Cancelar"
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.label.cancelar"]) || "Cancel")
                     onClicked: AppState.cancelPasteConflict()
                 }
 
                 DialogButton {
-                    label: "Ignorar"
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.label.ignorar"]) || "Skip")
                     onClicked: AppState.resolvePasteConflict("skip")
                 }
 
                 DialogButton {
                     visible: AppState.pasteConflictItems.length === 1
-                    label: "Renomear"
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.label.renomear"]) || "Rename")
                     onClicked: AppState.renamePasteConflict(AppState.pendingPasteRename)
                 }
 
                 DialogButton {
-                    label: "Manter ambos"
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.label.manter_ambos"]) || "Keep both")
                     emphasized: true
                     onClicked: AppState.resolvePasteConflict("keep-both")
                 }
 
                 DialogButton {
-                    label: "Sobrescrever"
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.label.sobrescrever"]) || "Overwrite")
                     danger: true
                     onClicked: AppState.resolvePasteConflict("overwrite")
                 }
@@ -468,7 +469,7 @@ ApplicationWindow {
             padding: 16
 
             Text {
-                text: "Conectar ao servidor"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.text.conectar_ao_servidor"]) || "Connect to server")
                 color: Theme.text
                 font.pixelSize: 15
                 font.weight: Font.DemiBold
@@ -479,7 +480,7 @@ ApplicationWindow {
                 wrapMode: Text.WordWrap
                 color: Theme.textSec
                 font.pixelSize: 12
-                text: "Use um endereço como smb://servidor/compartilhamento ou sftp://usuario@host/caminho."
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.text.network_address_help"]) || "Use an address like smb://server/share or sftp://user@host/path.")
             }
 
             TextField {
@@ -488,7 +489,7 @@ ApplicationWindow {
                 text: AppState.networkAddress
                 enabled: !AppState.networkConnecting
                 color: Theme.text
-                placeholderText: "smb://servidor/compartilhamento"
+                placeholderText: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.placeholder.network_address"]) || "smb://server/share")
                 placeholderTextColor: Theme.textTer
                 selectByMouse: true
                 font.pixelSize: 13
@@ -528,7 +529,7 @@ ApplicationWindow {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "Cancelar"
+                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.label.cancelar"]) || "Cancel")
                         color: Theme.text
                         font.pixelSize: 13
                     }

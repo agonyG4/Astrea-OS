@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
+import "../../AstreaI18n" as AstreaI18n
 
 ScrollPage {
     id: root
@@ -173,7 +174,7 @@ ScrollPage {
         visible: !root.loading
 
         SectionHeader {
-            text: "SYSTEM"
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.text.system"]) || "SYSTEM")
             textSecondary: root.textSecondary
             Layout.bottomMargin: 14
         }
@@ -256,7 +257,7 @@ ScrollPage {
                         }
 
                         Text {
-                            text: "Um retrato rápido do hardware, da sessão e da identidade deste dispositivo."
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.text.um_retrato_rapido_do_hardware_da_sessao_e_da_ide"]) || "A quick snapshot of this device hardware, session, and identity.")
                             font.family: root.fontFamily
                             color: root.textSecondary
                             font.pixelSize: root.fontSizeMeta
@@ -280,19 +281,19 @@ ScrollPage {
 
                     InfoValue {
                         Layout.fillWidth: true
-                        label: "Kernel"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.kernel"]) || "Kernel")
                         value: root.systemInfo.system.kernel || "Unknown"
                     }
 
                     InfoValue {
                         Layout.fillWidth: true
-                        label: "Desktop"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.desktop"]) || "Desktop")
                         value: root.systemInfo.system.desktop || "Unknown"
                     }
 
                     InfoValue {
                         Layout.fillWidth: true
-                        label: "Memory"
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.memory"]) || "Memory")
                         value: root.systemInfo.hardware.memory_total || "Unknown"
                     }
                 }
@@ -307,51 +308,51 @@ ScrollPage {
             rowSpacing: 18
 
             DetailCard {
-                title: "Hardware"
-                subtitle: "Resumo do equipamento detectado."
+                title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.title.hardware"]) || "Hardware")
+                subtitle: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.subtitle.resumo_do_equipamento_detectado"]) || "Summary of detected hardware.")
 
                 InfoValue {
                     Layout.fillWidth: true
-                    label: "Machine"
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.machine"]) || "Machine")
                     value: root.systemInfo.system.machine || "Unknown"
                 }
 
                 InfoValue {
                     Layout.fillWidth: true
-                    label: "CPU"
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.cpu"]) || "CPU")
                     value: root.systemInfo.hardware.cpu || "Unknown"
                 }
 
                 InfoValue {
                     Layout.fillWidth: true
-                    label: "GPU"
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.gpu"]) || "GPU")
                     value: root.systemInfo.hardware.gpu || "Unknown"
                 }
 
                 InfoValue {
                     Layout.fillWidth: true
-                    label: "Memory"
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.memory"]) || "Memory")
                     value: root.systemInfo.hardware.memory_total || "Unknown"
                 }
             }
 
             DetailCard {
-                title: "System"
-                subtitle: "Base do sistema operacional e da sessão."
+                title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.title.system"]) || "System")
+                subtitle: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.subtitle.base_do_sistema_operacional_e_da_sessao"]) || "Operating system and session base.")
 
-                InfoValue { Layout.fillWidth: true; label: "Distribution"; value: root.systemInfo.system.distro || "Unknown" }
-                InfoValue { Layout.fillWidth: true; label: "Kernel"; value: root.systemInfo.system.kernel || "Unknown" }
-                InfoValue { Layout.fillWidth: true; label: "Desktop"; value: root.systemInfo.system.desktop || "Unknown" }
-                InfoValue { Layout.fillWidth: true; label: "Session"; value: root.systemInfo.system.session_type || "Unknown" }
+                InfoValue { Layout.fillWidth: true; label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.distribution"]) || "Distribution"); value: root.systemInfo.system.distro || "Unknown" }
+                InfoValue { Layout.fillWidth: true; label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.kernel"]) || "Kernel"); value: root.systemInfo.system.kernel || "Unknown" }
+                InfoValue { Layout.fillWidth: true; label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.desktop"]) || "Desktop"); value: root.systemInfo.system.desktop || "Unknown" }
+                InfoValue { Layout.fillWidth: true; label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.session"]) || "Session"); value: root.systemInfo.system.session_type || "Unknown" }
             }
 
             DetailCard {
-                title: "Identity"
-                subtitle: "Identificação do dispositivo e da arquitetura."
+                title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.title.identity"]) || "Identity")
+                subtitle: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["settings.system.device_arch_subtitle"]) || "Device and architecture identity.")
 
-                InfoValue { Layout.fillWidth: true; label: "Hostname"; value: root.systemInfo.system.hostname || "Unknown" }
-                InfoValue { Layout.fillWidth: true; label: "Architecture"; value: root.systemInfo.system.architecture || "Unknown" }
-                InfoValue { Layout.fillWidth: true; label: "Desktop Shell"; value: root.systemInfo.system.desktop || "Unknown" }
+                InfoValue { Layout.fillWidth: true; label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.hostname"]) || "Hostname"); value: root.systemInfo.system.hostname || "Unknown" }
+                InfoValue { Layout.fillWidth: true; label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.architecture"]) || "Architecture"); value: root.systemInfo.system.architecture || "Unknown" }
+                InfoValue { Layout.fillWidth: true; label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.system.system.label.desktop_shell"]) || "Desktop Shell"); value: root.systemInfo.system.desktop || "Unknown" }
             }
         }
     }

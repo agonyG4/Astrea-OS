@@ -118,6 +118,9 @@ Item {
 
     // ── Theme ─────────────────────────────────────────────────────────────
     readonly property color accent:        accentHex
+    readonly property color accentForeground: (accent.r * 0.299 + accent.g * 0.587 + accent.b * 0.114) > 0.62
+        ? "#111111"
+        : "#ffffff"
     readonly property color textPrimary:   themeMode === 1 ? "#111111" : "#ffffff"
     readonly property color textSecondary: themeMode === 1 ? "#5f6368" : "#98989f"
     readonly property color textTertiary:  themeMode === 1 ? "#8e8e93" : "#b9b9c2"

@@ -16,6 +16,8 @@ Observed dependencies outside `/home/agony/.local/share/Astrea`:
 ## External Config and State
 - `~/.config/AstreaOS`
 - `~/.local/state/Astrea`
+- `~/.local/state/Astrea/launch/history.jsonl`
+- `~/.local/state/Astrea/latencyd/history.jsonl`
 - `~/.local/state/Astrea/weather/settings.json`
 - `~/.local/state/Astrea/weather/alerts-seen.json`
 - `~/.local/state/Astrea/weather/current.json`
@@ -27,6 +29,9 @@ Observed dependencies outside `/home/agony/.local/share/Astrea`:
 - `~/.local/share/dbus-1/services/org.freedesktop.Notifications.service`
 - `~/.local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.astrea.service`
 - `/tmp/explorer-quicklook-*`
+- `/run/user/1000/Astrea/astrea-launchd.sock`
+- `/run/user/1000/Astrea/astrea-latencyd.sock`
+- `/usr/local/libexec/astrea-latency-burst-helper`
 
 ## External System Services and Commands
 - Hyprland / `hyprctl`
@@ -35,6 +40,8 @@ Observed dependencies outside `/home/agony/.local/share/Astrea`:
 - DBus / `gdbus`
 - XDG Desktop Portal / `xdg-desktop-portal`
 - systemd user units
+- Cargo for rebuilding Rust helpers
+- `gio` for desktop launch fallback through `astrea-launch`
 - `playerctl`
 - `notify-send`
 - `gsettings`
@@ -42,4 +49,4 @@ Observed dependencies outside `/home/agony/.local/share/Astrea`:
 - `nvibrant`
 
 ## Risk Boundary
-Astrea is not fully self-contained because some runtime paths point to Bench project files.
+Astrea is not fully self-contained because some runtime paths still point to Bench project files and some launch burst behavior depends on a privileged helper outside the runtime tree.

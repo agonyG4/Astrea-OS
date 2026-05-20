@@ -7,6 +7,7 @@ import Quickshell.Io
 import "../.."
 import "../common" as CommonComponents
 import "../../AstreaFiles" as AstreaFiles
+import "../../AstreaI18n" as AstreaI18n
 
 Rectangle {
     id: toolbar
@@ -102,14 +103,11 @@ Rectangle {
         }
 
         suggestionProcess.command = [
-            "bash", "-lc",
-            "base=\"$1\"; prefix=\"$2\"; " +
-            "[ -d \"$base\" ] || exit 0; " +
-            "find \"$base\" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort | while IFS= read -r entry; do " +
-            "name=${entry##*/}; " +
-            "case \"$name\" in \"$prefix\"*) printf '%s\\n' \"$entry\" ;; esac; " +
-            "done | head -n 12",
-            "--", basePath, prefix
+            "python3",
+            AppState.helperPath,
+            "suggest-dirs",
+            basePath,
+            prefix
         ]
         suggestionProcess.running = false
         suggestionProcess.running = true
@@ -148,12 +146,12 @@ Rectangle {
         Row {
             spacing: 2
             CommonComponents.NavButton {
-                text: "‹"; tooltip: "Voltar"
+                text: "‹"; tooltip: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.tooltip.voltar"]) || "Back")
                 enabled: AppState.historyIdx > 0
                 onClicked: AppState.goBack()
             }
             CommonComponents.NavButton {
-                text: "›"; tooltip: "Avançar"
+                text: "›"; tooltip: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.tooltip.avanaar"]) || "Forward")
                 enabled: AppState.historyIdx < AppState.history.length - 1
                 onClicked: AppState.goForward()
             }
@@ -421,7 +419,7 @@ Rectangle {
                     font.pixelSize: 13
                     selectByMouse: true
                     background: null
-                    placeholderText: "Buscar na pasta atual"
+                    placeholderText: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.placeholderText.buscar_na_pasta_atual"]) || "Search current folder")
                     placeholderTextColor: Theme.textTer
                     verticalAlignment: TextInput.AlignVCenter
                     leftPadding: 0
@@ -488,7 +486,7 @@ Rectangle {
             Text {
                 id: restoreTrashLabel
                 anchors.centerIn: parent
-                text: "Restaurar"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.text.restaurar"]) || "Restore")
                 color: "#9fd0ff"
                 font.pixelSize: 12
                 font.weight: Font.Normal
@@ -519,7 +517,7 @@ Rectangle {
             Text {
                 id: emptyTrashLabel
                 anchors.centerIn: parent
-                text: "Esvaziar lixeira"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.text.esvaziar_lixeira"]) || "Empty Trash")
                 color: "#ffb3b3"
                 font.pixelSize: 12
                 font.weight: Font.Normal
@@ -678,7 +676,7 @@ Rectangle {
             padding: 16
 
             Text {
-                text: "Esvaziar lixeira?"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.text.esvaziar_lixeira_3"]) || "Empty Trash?")
                 color: Theme.text
                 font.pixelSize: 15
                 font.weight: Font.DemiBold
@@ -687,7 +685,7 @@ Rectangle {
             Text {
                 width: 320
                 wrapMode: Text.WordWrap
-                text: "Todos os itens da lixeira serão removidos permanentemente."
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.text.todos_os_itens_da_lixeira_serao_removidos_perman"]) || "All items in the trash will be permanently removed.")
                 color: Theme.textSec
                 font.pixelSize: 12
             }
@@ -703,7 +701,7 @@ Rectangle {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "Cancelar"
+                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.text.cancelar"]) || "Cancel")
                         color: Theme.text
                         font.pixelSize: 12
                     }
@@ -725,7 +723,7 @@ Rectangle {
 
                     Text {
                         anchors.centerIn: parent
-                        text: "Esvaziar"
+                        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.text.esvaziar"]) || "Empty")
                         color: "#ffd6d6"
                         font.pixelSize: 12
                         font.weight: Font.Normal
@@ -758,7 +756,7 @@ Rectangle {
 
             // Section label
             Text {
-                text: "VISUALIZAÇÃO"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.toolbar.view"]) || "VIEW")
                 color: Theme.textTer
                 font { pixelSize: 9; weight: Font.DemiBold; letterSpacing: 1.0 }
                 leftPadding: 10
@@ -775,7 +773,7 @@ Rectangle {
             }
 
             SettingsAction {
-                label: "Painel de Preview"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.label.painel_de_preview"]) || "Preview Panel")
                 icon: AppState.showPreview ? "◉" : "○"
                 checked: AppState.showPreview
                 onTriggered: AppState.showPreview = !AppState.showPreview
@@ -785,7 +783,7 @@ Rectangle {
             Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.07) }
 
             Text {
-                text: "ORDENAÇÃO"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.toolbar.sorting"]) || "SORTING")
                 color: Theme.textTer
                 font { pixelSize: 9; weight: Font.DemiBold; letterSpacing: 1.0 }
                 leftPadding: 10
@@ -795,10 +793,10 @@ Rectangle {
 
             Repeater {
                 model: [
-                    { label: "Por Nome",         field: "name" },
-                    { label: "Por Data",          field: "date" },
-                    { label: "Por Tamanho",       field: "size" },
-                    { label: "Por Tipo",          field: "kind" }
+                    { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.label.por_nome"]) || "By Name"),         field: "name" },
+                    { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.label.por_data"]) || "By Date"),          field: "date" },
+                    { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.label.por_tamanho"]) || "By Size"),       field: "size" },
+                    { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.label.por_tipo"]) || "By Kind"),          field: "kind" }
                 ]
                 SettingsAction {
                     label: modelData.label + (AppState.sortField === modelData.field ? (AppState.sortAsc ? "  ↑" : "  ↓") : "")
@@ -811,7 +809,7 @@ Rectangle {
             Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.07) }
 
             Text {
-                text: "OPÇÕES"
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.toolbar.options"]) || "OPTIONS")
                 color: Theme.textTer
                 font { pixelSize: 9; weight: Font.DemiBold; letterSpacing: 1.0 }
                 leftPadding: 10
@@ -826,28 +824,28 @@ Rectangle {
             }
 
             SettingsAction {
-                label: "Mostrar Ocultos"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.label.mostrar_ocultos"]) || "Show Hidden Files")
                 icon: AppState.showHidden ? "◉" : "○"
                 checked: AppState.showHidden
                 onTriggered: AppState.showHidden = !AppState.showHidden
             }
 
             SettingsAction {
-                label: "Pastas Primeiro"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.label.pastas_primeiro"]) || "Folders First")
                 icon: AppState.foldersFirst ? "◉" : "○"
                 checked: AppState.foldersFirst
                 onTriggered: AppState.foldersFirst = !AppState.foldersFirst
             }
 
             SettingsAction {
-                label: "Separar por seções"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.toolbar.separate_sections"]) || "Separate by sections")
                 icon: AppState.groupingEnabled ? "◉" : "○"
                 checked: AppState.groupingEnabled
                 onTriggered: AppState.groupingEnabled = !AppState.groupingEnabled
             }
 
             SettingsAction {
-                label: "Reset Zoom"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.label.reset_zoom"]) || "Reset Zoom")
                 icon: "⊙"
                 isEnabled: AppState.zoomLevel !== 1.0
                 onTriggered: AppState.resetZoom()

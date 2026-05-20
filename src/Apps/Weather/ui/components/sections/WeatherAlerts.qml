@@ -2,6 +2,7 @@ import QtQuick 2.15
 import QtQuick.Layouts 1.15
 import "../../../AstreaComponents" as UI
 import "../common" as WeatherCommon
+import "../../../AstreaI18n" as AstreaI18n
 
 Item {
     property var weatherData
@@ -16,8 +17,8 @@ Item {
 
     Rectangle {
         anchors.fill: parent
-        radius: UI.Theme.cardRadius
-        color: UI.Theme.cardBg
+        radius: 20
+        color: "#252529"
         border.color: mainAlert ? (mainAlert.color || "#F96602") : "#F96602"
         border.width: 1
 
@@ -38,7 +39,7 @@ Item {
                 spacing: 3
 
                 UI.TextLabel {
-                    text: "INMET"
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.components.sections.weather_alerts.text.inmet"]) || "INMET")
                     font.pixelSize: 10
                     font.weight: 600
                     textColor: mainAlert ? (mainAlert.color || "#F96602") : "#F96602"

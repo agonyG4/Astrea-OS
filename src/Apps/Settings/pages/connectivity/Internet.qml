@@ -4,6 +4,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
+import "../../AstreaI18n" as AstreaI18n
 
 Item {
     id: root
@@ -11,11 +12,11 @@ Item {
     // ── Constants ────────────────────────────────────────────────────────────
     readonly property string _script: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/network/manager.py"
     readonly property var dnsPresets: [
-        { label: "Auto",       value: "",                             color: "#888888" },
-        { label: "Cloudflare", value: "1.1.1.1, 1.0.0.1",           color: "#f38020" },
-        { label: "Google",     value: "8.8.8.8, 8.8.4.4",           color: "#4285f4" },
-        { label: "Quad9",      value: "9.9.9.9, 149.112.112.112",    color: "#3ddc97" },
-        { label: "AdGuard",    value: "94.140.14.14, 94.140.15.15",  color: "#68bc71" },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.auto"]) || "Auto"),       value: "",                             color: "#888888" },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.cloudflare"]) || "Cloudflare"), value: "1.1.1.1, 1.0.0.1",           color: "#f38020" },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.google"]) || "Google"),     value: "8.8.8.8, 8.8.4.4",           color: "#4285f4" },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.quad9"]) || "Quad9"),      value: "9.9.9.9, 149.112.112.112",    color: "#3ddc97" },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.adguard"]) || "AdGuard"),    value: "94.140.14.14, 94.140.15.15",  color: "#68bc71" },
     ]
     readonly property var _dnsMap: ({
         "1.1.1.1": "Cloudflare", "1.0.0.1": "Cloudflare",
@@ -47,6 +48,11 @@ Item {
     property string _statsBuf: ""
     property string _dnsBuf: ""
     property string _firewallBuf: ""
+    readonly property color accent: Theme.accent
+    readonly property color textPrimary: Theme.textPrimary
+    readonly property color textSecondary: Theme.textSecondary
+    readonly property color cardBorder: Theme.cardBorder
+    readonly property color popupBg: Theme.popupBg
 
     // ── Helpers ──────────────────────────────────────────────────────────────
     function formatBytes(b) {
@@ -251,7 +257,7 @@ Item {
             Text {
                 id: _lbl
  text: parent.parent.label
-                color: parent.parent.selected ? "#fff" : Qt.rgba(1,1,1,0.45)
+                color: parent.parent.selected ? parent.parent.chipColor : Theme.textSecondary
                 font.family: Theme.fontFamily; font.pixelSize: 12
                 font.weight: parent.parent.selected ? 500 : 400
             }
@@ -259,6 +265,18 @@ Item {
         MouseArea { anchors.fill: parent
  cursorShape: Qt.PointingHandCursor
  onClicked: parent.clicked() }
+    }
+
+    component ValueLabel: Text {
+        property bool strong: false
+
+        color: root.textSecondary
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSizeNormal
+        font.weight: strong ? Theme.fontWeightDemiBold : Theme.fontWeightMedium
+        horizontalAlignment: Text.AlignRight
+        elide: Text.ElideRight
+        Layout.preferredWidth: 190
     }
 
     // Dialog DNS customizado
@@ -296,12 +314,12 @@ Item {
                 spacing: 12
 
                 Text {
-                    text: "Custom DNS"
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.text.custom_dns"]) || "Custom DNS")
                     color: Qt.rgba(1,1,1,0.85)
                     font.family: Theme.fontFamily; font.pixelSize: 14; font.weight: 600
                 }
                 Text {
-                    text: "Enter one or two servers separated by a comma. Leave blank to reset to automatic."
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.text.enter_one_or_two_servers_separated_by_a_comma_le"]) || "Enter one or two servers separated by a comma. Leave blank to reset to automatic.")
                     color: Qt.rgba(1,1,1,0.35)
                     font.family: Theme.fontFamily; font.pixelSize: 12
                     wrapMode: Text.Wrap; Layout.fillWidth: true
@@ -330,7 +348,7 @@ Item {
                         Text {
                             anchors.fill: parent
  verticalAlignment: Text.AlignVCenter
-                            text: "e.g. 8.8.8.8, 1.1.1.1"
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.text.e_g_8_8_8_8_1_1_1_1"]) || "e.g. 8.8.8.8, 1.1.1.1")
                             font: dnsInput.font
  color: Qt.rgba(1,1,1,0.18)
                             visible: !dnsInput.text && !dnsInput.activeFocus
@@ -353,7 +371,7 @@ Item {
                             Text {
                                 anchors.centerIn: parent
  text: modelData.t
-                                color: modelData.accent ? "#fff" : Qt.rgba(1,1,1,0.55)
+                                color: modelData.accent ? Theme.accentForeground : Qt.rgba(1,1,1,0.55)
                                 font.family: Theme.fontFamily; font.pixelSize: 13
                                 font.weight: modelData.accent ? 500 : 400
                             }
@@ -370,196 +388,182 @@ Item {
     }
 
     // ── Main UI ──────────────────────────────────────────────────────────────
-    ScrollView {
-        anchors { fill: parent
- leftMargin: 20
- rightMargin: 20
- topMargin: 12
- bottomMargin: 16 }
-        contentWidth: availableWidth
- clip: true
-        visible: !root.loading
+    ScrollPage {
+        anchors.fill: parent
+        contentMargins: 32
+        maxWidth: 900
 
-        ColumnLayout {
-            width: parent.width
- spacing: 0
-
-            // ── Network ───────────────────────────────────────────────────
-            Text {
-                text: "Network"
-                color: Qt.rgba(1,1,1,0.35); font.family: Theme.fontFamily
-                font.pixelSize: 12; font.weight: 400
-                Layout.bottomMargin: 6; Layout.topMargin: 16; Layout.leftMargin: 4
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
- radius: 10
- color: Qt.rgba(1,1,1,0.07)
-                implicitHeight: _net.implicitHeight
-                ColumnLayout { id: _net
- anchors { left: parent.left
- right: parent.right }
- spacing: 0
-                    InfoRow { label: "Status"
-     value: root.connectionKind()
- valueBold: true
- valueColor: Theme.accent }
-                    InfoRow { label: "Connection"
- value: root.currentConnection || "—" }
-                    InfoRow { label: "Interface"
-  value: root.interfaceName || "—"
- isLast: true }
-                }
-            }
-
-            // ── Security ──────────────────────────────────────────────────
-            Text {
-                text: "Security"
-                color: Qt.rgba(1,1,1,0.35); font.family: Theme.fontFamily
-                font.pixelSize: 12; font.weight: 400
-                Layout.bottomMargin: 6; Layout.topMargin: 20; Layout.leftMargin: 4
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
- radius: 10
- color: Qt.rgba(1,1,1,0.07)
-                implicitHeight: _sec.implicitHeight
-                ColumnLayout { id: _sec
- anchors { left: parent.left
- right: parent.right }
- spacing: 0
-                    InfoRow {
-                        label: "Firewall"
- value: root.firewallStatus
- isLast: true
-                        valueBold: root.firewallActive
-                        valueColor: root.firewallActive ? "#3ddc97" : Qt.rgba(1,1,1,0.4)
-                    }
-                }
-            }
-
-            // ── DNS ───────────────────────────────────────────────────────
-            Text {
-                text: "DNS"
-                color: Qt.rgba(1,1,1,0.35); font.family: Theme.fontFamily
-                font.pixelSize: 12; font.weight: 400
-                Layout.bottomMargin: 6; Layout.topMargin: 20; Layout.leftMargin: 4
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
- radius: 10
- color: Qt.rgba(1,1,1,0.07)
-                implicitHeight: _dns.implicitHeight
-                ColumnLayout { id: _dns
- anchors { left: parent.left
- right: parent.right }
- spacing: 0
-                    InfoRow {
-                        label: "Provider"
- value: root.currentDnsLabel
-                        valueBold: !root.currentDnsAuto
-                        valueColor: root.currentDnsAuto ? Qt.rgba(1,1,1,0.85) : root.currentDnsBadgeColor
-                    }
-                    InfoRow {
-                        label: "Mode"
-                        value: root.currentDnsAuto ? "Automatic" : "Manual"
-                        valueColor: root.currentDnsAuto ? Qt.rgba(1,1,1,0.4) : "#3ddc97"
-                    }
-                    InfoRow {
-                        label: "Servers"
-                        value: root.currentDnsAuto ? "Assigned by network" : root.currentDnsDetail
-                        isLast: true
-                    }
-                }
-            }
-
-            // ── Presets ───────────────────────────────────────────────────
-            Text {
-                text: "Quick Presets"
-                color: Qt.rgba(1,1,1,0.35); font.family: Theme.fontFamily
-                font.pixelSize: 12; font.weight: 400
-                Layout.bottomMargin: 6; Layout.topMargin: 20; Layout.leftMargin: 4
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
- radius: 10
- color: Qt.rgba(1,1,1,0.07)
-                implicitHeight: _presets.implicitHeight + 28
-
-                ColumnLayout {
-                    id: _presets
-                    anchors { left: parent.left
- right: parent.right
- top: parent.top
- margins: 14 }
-                    spacing: 10
-
-                    Flow {
-                        Layout.fillWidth: true
- spacing: 7
-
-                        Repeater {
-                            model: root.dnsPresets
-                            DnsChip {
-                                required property var modelData
-                                label: modelData.label
- value: modelData.value
-                                chipColor: modelData.color
-                                selected: root.selectedPreset === modelData.label
-                                onClicked: { root.selectedPreset = modelData.label; root.applyDnsValue(modelData.value) }
-                            }
-                        }
-
-                        Rectangle {
-                            implicitWidth: _cLbl.implicitWidth + 20
- implicitHeight: 26
- radius: 13
-                            color: Qt.rgba(1,1,1,0.05); border.width: 1; border.color: Qt.rgba(1,1,1,0.08)
-                            Row {
-                                anchors.centerIn: parent
- spacing: 4
-                                Text { text: "+"
- color: Qt.rgba(1,1,1,0.25); font.pixelSize: 13; anchors.verticalCenter: parent.verticalCenter }
-                                Text { id: _cLbl
- text: "Custom"
- color: Qt.rgba(1,1,1,0.38); font.family: Theme.fontFamily; font.pixelSize: 12 }
-                            }
-                            MouseArea { anchors.fill: parent
- cursorShape: Qt.PointingHandCursor
- onClicked: customDnsDialog.open() }
-                        }
-                    }
-
-                    Text {
-                        visible: root.applyStatus !== ""
-                        text: root.applyStatus === "ok" ? "Settings applied." : "Failed to apply."
-                        color: root.applyStatus === "ok" ? "#3ddc97" : "#ff5f57"
-                        font.family: Theme.fontFamily; font.pixelSize: 12
-                        opacity: root.applyStatus !== "" ? 0.75 : 0
-                        Behavior on opacity { NumberAnimation { duration: 200 } }
-                    }
-                }
-            }
-
-            Item { Layout.preferredHeight: 32 }
+        SectionHeader {
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.text.network"]) || "NETWORK")
+            textSecondary: root.textSecondary
+            Layout.bottomMargin: 12
         }
-    }
 
-    // Loader
-    ColumnLayout {
-        anchors.centerIn: parent
- visible: root.loading
- spacing: 12
-        BusyIndicator { running: root.loading; Layout.alignment: Qt.AlignHCenter }
-        Text {
-            text: "Loading…"
- color: Qt.rgba(1,1,1,0.2)
-            font.family: Theme.fontFamily; font.pixelSize: 12
-            Layout.alignment: Qt.AlignHCenter
+        FormCard {
+            Layout.bottomMargin: 24
+
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.status"]) || "Status")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.sublabel.current_connection_type"]) || "Current connection type")
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+
+                ValueLabel {
+                    text: root.connectionKind()
+                    color: root.accent
+                    strong: true
+                }
+            }
+
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.connection"]) || "Connection")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.sublabel.active_networkmanager_profile"]) || "Active NetworkManager profile")
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+
+                ValueLabel { text: root.currentConnection || "—" }
+            }
+
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.interface"]) || "Interface")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.sublabel.network_interface_in_use"]) || "Network interface in use")
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                isLast: true
+
+                ValueLabel { text: root.interfaceName || "—" }
+            }
+        }
+
+        SectionHeader {
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.text.security"]) || "SECURITY")
+            textSecondary: root.textSecondary
+            Layout.bottomMargin: 12
+        }
+
+        FormCard {
+            Layout.bottomMargin: 24
+
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.firewall"]) || "Firewall")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.sublabel.local_firewall_service_state"]) || "Local firewall service state")
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                isLast: true
+
+                ValueLabel {
+                    text: root.firewallStatus
+                    color: root.firewallActive ? "#3ddc97" : root.textSecondary
+                    strong: root.firewallActive
+                }
+            }
+        }
+
+        SectionHeader {
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.text.dns"]) || "DNS")
+            textSecondary: root.textSecondary
+            Layout.bottomMargin: 12
+        }
+
+        FormCard {
+            Layout.bottomMargin: 24
+
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.provider"]) || "Provider")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.sublabel.current_dns_provider"]) || "Current DNS provider")
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+
+                ValueLabel {
+                    text: root.currentDnsLabel
+                    color: root.currentDnsAuto ? root.textPrimary : root.currentDnsBadgeColor
+                    strong: !root.currentDnsAuto
+                }
+            }
+
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.mode"]) || "Mode")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.sublabel.dns_assignment_mode"]) || "DNS assignment mode")
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+
+                ValueLabel {
+                    text: root.currentDnsAuto ? "Automatic" : "Manual"
+                    color: root.currentDnsAuto ? root.textSecondary : "#3ddc97"
+                }
+            }
+
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.servers"]) || "Servers")
+                sublabel: root.currentDnsAuto ? "Assigned by network" : root.currentDnsDetail
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                isLast: true
+            }
+        }
+
+        SectionHeader {
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.text.quick_presets"]) || "QUICK PRESETS")
+            textSecondary: root.textSecondary
+            Layout.bottomMargin: 12
+        }
+
+        FormCard {
+            Layout.bottomMargin: 28
+
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.dns_preset"]) || "DNS preset")
+                sublabel: root.applyStatus === "ok"
+                    ? "Settings applied"
+                    : (root.applyStatus === "error" ? "Failed to apply" : "Choose a known provider or reset to automatic")
+                textPrimary: root.textPrimary
+                textSecondary: root.applyStatus === "error" ? "#ff5f57" : (root.applyStatus === "ok" ? "#3ddc97" : root.textSecondary)
+                cardBorder: root.cardBorder
+
+                SelectButton {
+                    implicitWidth: 160
+                    label: root.selectedPreset || "Custom"
+                    options: root.dnsPresets.map(p => p.label)
+                    selectedIndex: root.dnsPresets.findIndex(p => p.label === root.selectedPreset)
+                    accent: root.accent
+                    textPrimary: root.textPrimary
+                    textSecondary: root.textSecondary
+                    popupBg: root.popupBg
+                    onSelected: index => {
+                        const preset = root.dnsPresets[index]
+                        root.selectedPreset = preset.label
+                        root.applyDnsValue(preset.value)
+                    }
+                }
+            }
+
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.text.custom_dns"]) || "Custom DNS")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.sublabel.enter_custom_dns_servers_manually"]) || "Enter custom DNS servers manually")
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                isLast: true
+
+                SelectButton {
+                    implicitWidth: 120
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.custom"]) || "Custom")
+                    options: []
+                    isButton: true
+                    accent: root.accent
+                    textPrimary: root.textPrimary
+                    textSecondary: root.textSecondary
+                    popupBg: root.popupBg
+                    onSelected: customDnsDialog.open()
+                }
+            }
         }
     }
 }
