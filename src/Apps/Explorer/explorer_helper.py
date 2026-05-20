@@ -10,6 +10,7 @@ import signal
 import shutil
 import subprocess
 import time
+import urllib.parse
 from pathlib import Path
 
 
@@ -111,14 +112,221 @@ def copy_uri_list(paths: list[str]) -> None:
     payload = "".join(f"file://{path}\n" for path in paths)
     subprocess.run(["wl-copy", "--type", "text/uri-list"], input=payload, text=True, check=True)
 
+IMAGE_MIME_EXTENSIONS = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "image/bmp": "bmp",
+    "image/tiff": "tiff",
+    "image/x-portable-pixmap": "ppm",
+    "image/x-portable-graymap": "pgm",
+    "image/x-portable-bitmap": "pbm",
+}
+ARCHIVE_FORMAT_EXTENSIONS = {"zip": "zip", "rar": "rar", "tar": "tar", "tar.gz": "tar.gz", "tar.xz": "tar.xz"}
 
-def scan_conflicts(destination_text: str, paths: list[str]) -> None:
+
+def image_extension_for_mime(mime_type: str) -> str:
+    return IMAGE_MIME_EXTENSIONS.get(mime_type, "png")
+
+
+def paste_image(destination_dir_text: str, mime_type: str, paste_runner=None) -> str:
+    destination_dir = Path(destination_dir_text).expanduser()
+    if not destination_dir.is_dir():
+        raise SystemExit(2)
+
+    ext = image_extension_for_mime(mime_type)
+    stamp = time.strftime("%Y-%m-%d %H-%M-%S")
+    base_name = f"Pasted Image {stamp}"
+    target = _unique_target(destination_dir, f"{base_name}.{ext}")
+
+    runner = paste_runner or subprocess.run
+    result = runner(
+        ["wl-paste", "--no-newline", "--type", mime_type],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    target.write_bytes(result.stdout)
+    print(target)
+    return str(target)
+
+
+def _json_event(payload: dict[str, object]) -> None:
+    import json
+    print(json.dumps(payload, ensure_ascii=False), flush=True)
+
+
+def _error_code_from_exception(exc: Exception) -> str:
+    msg = str(exc).lower()
+    if "permission denied" in msg:
+        return "permission_denied"
+    if "no such file" in msg or "not found" in msg:
+        return "not_found"
+    return "operation_failed"
+
+
+def _pick_extractor(archive_path: Path, which_runner=shutil.which) -> list[str]:
+    lower = archive_path.name.lower()
+    if lower.endswith(".zip"):
+        if which_runner("unzip"):
+            return ["unzip", "-o", str(archive_path), "-d"]
+        if which_runner("bsdtar"):
+            return ["bsdtar", "-xf", str(archive_path), "-C"]
+        raise RuntimeError("missing_tool: unzip/bsdtar")
+    if lower.endswith(".rar"):
+        if which_runner("unrar"):
+            return ["unrar", "x", "-o+", str(archive_path)]
+        if which_runner("7z"):
+            return ["7z", "x", "-y", str(archive_path)]
+        raise RuntimeError("missing_tool: unrar/7z")
+    if lower.endswith(".7z"):
+        if which_runner("7z"):
+            return ["7z", "x", "-y", str(archive_path)]
+        raise RuntimeError("missing_tool: 7z")
+    if which_runner("bsdtar"):
+        return ["bsdtar", "-xf", str(archive_path), "-C"]
+    if which_runner("tar"):
+        return ["tar", "-xf", str(archive_path), "-C"]
+    raise RuntimeError("missing_tool: bsdtar/tar")
+
+
+def extract_archive(archive_path_text: str, folder_name: str, run_cmd=None, which_runner=shutil.which) -> None:
+    archive_path = Path(archive_path_text).expanduser()
+    if not archive_path.exists():
+        _json_event({"event": "error", "mode": "extract", "code": "not_found", "message": "archive not found"})
+        raise SystemExit(1)
+    parent = archive_path.parent
+    destination = _unique_target(parent, folder_name or archive_path.name)
+    destination.mkdir(parents=True, exist_ok=True)
+    _json_event({"event": "start", "mode": "extract", "name": archive_path.name, "destination": str(destination), "total": 1})
+    runner = run_cmd or subprocess.run
+    try:
+        cmd = _pick_extractor(archive_path, which_runner)
+        if cmd[0] == "unrar":
+            runner(cmd + [str(destination) + "/"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        elif cmd[0] == "7z":
+            runner(cmd + [f"-o{destination}"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        else:
+            runner(cmd + [str(destination)], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        _json_event({"event": "progress", "mode": "extract", "done": 1, "total": 1, "percent": 100})
+        _json_event({"event": "done", "mode": "extract", "destination": str(destination), "done": 1, "total": 1, "percent": 100})
+    except RuntimeError as exc:
+        _json_event({"event": "error", "mode": "extract", "code": "missing_tool", "message": str(exc), "destination": str(destination)})
+        raise SystemExit(1)
+    except Exception as exc:
+        _json_event({"event": "error", "mode": "extract", "code": _error_code_from_exception(exc), "message": str(exc), "destination": str(destination)})
+        raise SystemExit(1)
+
+
+def compress_folder(folder_path_text: str, archive_format: str, run_cmd=None, which_runner=shutil.which) -> None:
+    folder = Path(folder_path_text).expanduser()
+    if not folder.is_dir():
+        _json_event({"event": "error", "mode": "compress", "code": "not_found", "message": "folder not found"})
+        raise SystemExit(1)
+    ext = ARCHIVE_FORMAT_EXTENSIONS.get(archive_format)
+    if not ext:
+        _json_event({"event": "error", "mode": "compress", "code": "invalid_format", "message": "unsupported format"})
+        raise SystemExit(1)
+    target = _unique_target(folder.parent, f"{folder.name}.{ext}")
+    _json_event({"event": "start", "mode": "compress", "name": folder.name, "destination": str(target), "total": 1})
+    runner = run_cmd or subprocess.run
+    try:
+        if archive_format == "zip":
+            if not which_runner("zip"): raise RuntimeError("zip")
+            runner(["zip", "-qr", str(target), folder.name], check=True, cwd=str(folder.parent), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        elif archive_format == "rar":
+            if not which_runner("rar"): raise RuntimeError("rar")
+            runner(["rar", "a", "-idq", str(target), folder.name], check=True, cwd=str(folder.parent), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        else:
+            if not which_runner("tar"): raise RuntimeError("tar")
+            args = {"tar": ["tar", "-cf"], "tar.gz": ["tar", "-czf"], "tar.xz": ["tar", "-cJf"]}[archive_format]
+            runner(args + [str(target), folder.name], check=True, cwd=str(folder.parent), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        _json_event({"event": "progress", "mode": "compress", "done": 1, "total": 1, "percent": 100})
+        _json_event({"event": "done", "mode": "compress", "destination": str(target), "done": 1, "total": 1, "percent": 100})
+    except RuntimeError as exc:
+        _json_event({"event": "error", "mode": "compress", "code": "missing_tool", "message": f"missing_tool: {exc}", "destination": str(target)})
+        raise SystemExit(1)
+    except Exception as exc:
+        _json_event({"event": "error", "mode": "compress", "code": _error_code_from_exception(exc), "message": str(exc), "destination": str(target)})
+        raise SystemExit(1)
+
+
+def _path_type(path: Path) -> str:
+    try:
+        path.lstat()
+    except OSError:
+        return "missing"
+    if path.is_symlink():
+        return "symlink"
+    if path.is_dir():
+        return "directory"
+    if path.is_file():
+        return "file"
+    return "other"
+
+
+def _conflict_record(source: Path, destination: Path) -> dict[str, object] | None:
+    target = destination / source.name
+    if source == target:
+        return {
+            "source": str(source),
+            "destination": str(target),
+            "name": source.name,
+            "source_type": _path_type(source),
+            "destination_type": _path_type(target),
+            "conflict_kind": "same-path",
+            "supported_policies": ["skip"],
+        }
+    if not target.exists():
+        return None
+
+    source_type = _path_type(source)
+    destination_type = _path_type(target)
+    if source_type == "directory" and destination_type == "directory":
+        conflict_kind = "directory-merge"
+        policies = ["skip", "overwrite", "keep-both", "merge"]
+    elif source_type == "file" and destination_type == "file":
+        conflict_kind = "file-replace"
+        policies = ["skip", "overwrite", "keep-both", "rename"]
+    elif source_type == "directory" and destination_type == "file":
+        conflict_kind = "directory-over-file"
+        policies = ["skip"]
+    elif source_type == "file" and destination_type == "directory":
+        conflict_kind = "file-over-directory"
+        policies = ["skip"]
+    else:
+        conflict_kind = "name-collision"
+        policies = ["skip", "keep-both"]
+
+    return {
+        "source": str(source),
+        "destination": str(target),
+        "name": source.name,
+        "source_type": source_type,
+        "destination_type": destination_type,
+        "conflict_kind": conflict_kind,
+        "supported_policies": policies,
+    }
+
+
+def scan_conflicts(destination_text: str, paths: list[str], output_format: str = "names") -> None:
+    import json
+
     destination = Path(destination_text).expanduser()
+    conflicts: list[dict[str, object]] = []
     for raw in paths:
         source = Path(raw).expanduser()
-        target = destination / source.name
-        if source != target and target.exists():
-            print(source.name)
+        record = _conflict_record(source, destination)
+        if record is not None:
+            conflicts.append(record)
+
+    if output_format == "json":
+        print(json.dumps(conflicts, ensure_ascii=False))
+        return
+
+    for item in conflicts:
+        print(item["name"])
 
 
 IN_CLOSE_WRITE = 0x00000008
@@ -151,6 +359,101 @@ def _dir_signature(path: Path) -> tuple:
 
 def _emit_changed() -> None:
     print("changed", flush=True)
+
+
+def _unique_target(parent: Path, name: str) -> Path:
+    candidate = parent / name
+    if not candidate.exists():
+        return candidate
+    stem, ext = os.path.splitext(name)
+    index = 2
+    while True:
+        candidate = parent / f"{stem} {index}{ext}"
+        if not candidate.exists():
+            return candidate
+        index += 1
+
+
+def _encode_trash_path(path: Path) -> str:
+    return urllib.parse.quote(str(path), safe="/")
+
+
+def _decode_trash_path(path_text: str) -> str:
+    return urllib.parse.unquote(path_text)
+
+
+def trash_items(trash_files_text: str, trash_info_text: str, paths: list[str]) -> None:
+    trash_files = Path(trash_files_text).expanduser()
+    trash_info = Path(trash_info_text).expanduser()
+    trash_files.mkdir(parents=True, exist_ok=True)
+    trash_info.mkdir(parents=True, exist_ok=True)
+    deletion_date = time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    for raw in paths:
+        source = Path(raw).expanduser()
+        if not source.exists():
+            continue
+        destination = _unique_target(trash_files, source.name)
+        shutil.move(str(source), str(destination))
+        info_path = trash_info / f"{destination.name}.trashinfo"
+        info_path.write_text(
+            "[Trash Info]\n"
+            f"Path={_encode_trash_path(source)}\n"
+            f"DeletionDate={deletion_date}\n",
+            encoding="utf-8",
+        )
+
+
+def restore_trash_items(trash_info_text: str, fallback_dir_text: str, paths: list[str]) -> None:
+    trash_info = Path(trash_info_text).expanduser()
+    fallback_dir = Path(fallback_dir_text).expanduser()
+    fallback_dir.mkdir(parents=True, exist_ok=True)
+
+    for raw in paths:
+        trashed = Path(raw).expanduser()
+        if not trashed.exists():
+            continue
+        info_path = trash_info / f"{trashed.name}.trashinfo"
+
+        original = ""
+        if info_path.exists():
+            try:
+                for line in info_path.read_text(encoding="utf-8").splitlines():
+                    if line.startswith("Path="):
+                        original = _decode_trash_path(line[5:])
+                        break
+            except OSError:
+                original = ""
+
+        target = Path(original) if original else (fallback_dir / trashed.name)
+        parent = target.parent
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            parent = fallback_dir
+
+        final_target = _unique_target(parent, target.name)
+        shutil.move(str(trashed), str(final_target))
+        info_path.unlink(missing_ok=True)
+
+
+def empty_trash(trash_files_text: str, trash_info_text: str) -> None:
+    trash_files = Path(trash_files_text).expanduser()
+    trash_info = Path(trash_info_text).expanduser()
+    trash_files.mkdir(parents=True, exist_ok=True)
+    trash_info.mkdir(parents=True, exist_ok=True)
+
+    for entry in trash_files.iterdir():
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry, ignore_errors=True)
+        else:
+            entry.unlink(missing_ok=True)
+
+    for entry in trash_info.iterdir():
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry, ignore_errors=True)
+        else:
+            entry.unlink(missing_ok=True)
 
 
 def _drain_inotify(fd: int) -> None:
@@ -238,9 +541,34 @@ def parse_args() -> argparse.Namespace:
     conflicts = sub.add_parser("scan-conflicts")
     conflicts.add_argument("destination")
     conflicts.add_argument("paths", nargs="+")
+    conflicts.add_argument("--format", choices=["names", "json"], default="names")
 
     monitor = sub.add_parser("monitor-dir")
     monitor.add_argument("path")
+
+    trash = sub.add_parser("trash")
+    trash.add_argument("trash_files")
+    trash.add_argument("trash_info")
+    trash.add_argument("paths", nargs="+")
+
+    restore = sub.add_parser("restore-trash")
+    restore.add_argument("trash_info")
+    restore.add_argument("fallback_dir")
+    restore.add_argument("paths", nargs="+")
+
+    empty = sub.add_parser("empty-trash")
+    empty.add_argument("trash_files")
+    empty.add_argument("trash_info")
+
+    paste_image_cmd = sub.add_parser("paste-image")
+    paste_image_cmd.add_argument("destination_dir")
+    paste_image_cmd.add_argument("mime_type")
+    extract_cmd = sub.add_parser("extract-archive")
+    extract_cmd.add_argument("archive_path")
+    extract_cmd.add_argument("folder_name")
+    compress_cmd = sub.add_parser("compress-folder")
+    compress_cmd.add_argument("folder_path")
+    compress_cmd.add_argument("archive_format")
 
     return parser.parse_args()
 
@@ -264,9 +592,21 @@ def main() -> None:
     elif args.command == "copy-uri-list":
         copy_uri_list(args.paths)
     elif args.command == "scan-conflicts":
-        scan_conflicts(args.destination, args.paths)
+        scan_conflicts(args.destination, args.paths, args.format)
     elif args.command == "monitor-dir":
         monitor_dir(args.path)
+    elif args.command == "trash":
+        trash_items(args.trash_files, args.trash_info, args.paths)
+    elif args.command == "restore-trash":
+        restore_trash_items(args.trash_info, args.fallback_dir, args.paths)
+    elif args.command == "empty-trash":
+        empty_trash(args.trash_files, args.trash_info)
+    elif args.command == "paste-image":
+        paste_image(args.destination_dir, args.mime_type)
+    elif args.command == "extract-archive":
+        extract_archive(args.archive_path, args.folder_name)
+    elif args.command == "compress-folder":
+        compress_folder(args.folder_path, args.archive_format)
 
 
 if __name__ == "__main__":
