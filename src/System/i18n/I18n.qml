@@ -18,6 +18,16 @@ QtObject {
     property bool ready: false
     property string _buffer: ""
 
+
+    function tr(key, fallback, params) {
+        var value = (messages && messages[key]) || fallback || key
+        if (params) {
+            for (var name in params)
+                value = value.replace(new RegExp("\\{" + name + "\\}", "g"), String(params[name]))
+        }
+        return value
+    }
+
     function reload() {
         ready = false
         _buffer = ""

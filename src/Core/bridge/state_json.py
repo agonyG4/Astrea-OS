@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 from astrea_shared import atomic_write_text
@@ -49,7 +50,8 @@ def parse_args() -> argparse.Namespace:
 
     write = sub.add_parser("write", help="atomically write a JSON payload")
     write.add_argument("path")
-    write.add_argument("payload")
+    write.add_argument("payload", nargs="?", default=None)
+    write.add_argument("--stdin", action="store_true", dest="use_stdin")
 
     read_or_init = sub.add_parser("read-or-init", help="print a JSON file, creating it from defaults when missing")
     read_or_init.add_argument("path")
@@ -67,7 +69,8 @@ def main() -> None:
             print(text)
         return
     if args.command == "write":
-        write_json_text(args.path, args.payload)
+        payload = sys.stdin.read() if args.use_stdin else (args.payload or "")
+        write_json_text(args.path, payload)
         return
     if args.command == "read-or-init":
         text = read_or_init_json_text(args.path, args.default_payload, args.legacy_path or "").strip()

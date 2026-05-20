@@ -2,6 +2,7 @@
 
 import argparse
 import configparser
+import importlib.util
 import json
 import shutil
 import shlex
@@ -10,24 +11,30 @@ import subprocess
 import sys
 from pathlib import Path
 
-BRIDGE_DIR = Path(__file__).resolve().parents[1]
-if str(BRIDGE_DIR) not in sys.path:
-    sys.path.insert(0, str(BRIDGE_DIR))
 
-from astrea_shared import application_dirs, astrea_root, parse_desktop_file, xdg_desktop_dir
+def _load_module(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+BRIDGE_DIR = Path(__file__).resolve().parents[1]
+_shared = _load_module("astrea_shared_runtime", BRIDGE_DIR / "astrea_shared.py")
+_uninstall = _load_module("apps_uninstall_runtime", Path(__file__).with_name("app_uninstall.py"))
+
+application_dirs = _shared.application_dirs
+astrea_root = _shared.astrea_root
+parse_desktop_file = _shared.parse_desktop_file
+xdg_desktop_dir = _shared.xdg_desktop_dir
+
+is_protected_app = _uninstall.is_protected_app
+is_steam_game_app = _uninstall.is_steam_game_app
+build_uninstall_info = _uninstall.uninstall_info
 
 CAMERA_PORTAL_NAME = "org.freedesktop.portal.Camera"
-
-def is_protected_app(app: dict) -> bool:
-    app_id = (app.get("id") or "").casefold()
-    desktop_file = (app.get("desktop_file") or "").casefold()
-    name = (app.get("name") or "").casefold()
-    return (
-        app_id == "astrea-settings.desktop"
-        or desktop_file.endswith("/astrea-settings.desktop")
-        or name in {"astrea settings", "settings"} and app_id.startswith("astrea-settings")
-    )
-
 
 
 def list_apps() -> dict:
@@ -323,75 +330,13 @@ def package_owner(app: dict) -> str:
     return ""
 
 
-def is_steam_game_app(app: dict) -> bool:
-    app_id = (app.get("id") or "").casefold()
-    exec_line = (app.get("exec") or "").casefold()
-    icon = (app.get("icon") or "").casefold()
-    comment = (app.get("comment") or "").casefold()
-    if app_id in {"steam.desktop", "steam-console.desktop", "steam_http_loader.desktop"}:
-        return False
-    return (
-        "steam://rungameid/" in exec_line
-        or icon.startswith("steam_icon_")
-        or "steam_app_" in (app.get("startup_wm_class") or "").casefold()
-        or "play this game on steam" in comment
-    )
-
-
 def uninstall_info(app: dict, fp_id: str = "") -> dict:
-    if is_protected_app(app):
-        return {
-            "can": False,
-            "method": "protected",
-            "label": "Settings protegido",
-            "reason": "Settings é protegido e não pode ser desinstalado.",
-        }
-
-    fp_id = fp_id or flatpak_app_id(app)
-    if fp_id:
-        return {
-            "can": True,
-            "method": "flatpak",
-            "label": "Desinstalar",
-            "reason": "Remove o app Flatpak. Dados do app são preservados.",
-            "flatpak_id": fp_id,
-            "installation": flatpak_installation(app),
-        }
-
-    if is_steam_game_app(app):
-        return {
-            "can": False,
-            "method": "steam",
-            "label": "Desinstalar pela Steam",
-            "reason": "Este jogo deve ser desinstalado na Steam.",
-        }
-
-    desktop_file = Path(app.get("desktop_file", "")).expanduser()
-    if app.get("source") == "user" and desktop_file.is_file():
-        return {
-            "can": True,
-            "method": "desktop-file",
-            "label": "Remover da lista",
-            "reason": "Remove apenas este launcher de aplicativos.",
-        }
-
-    owner = package_owner(app)
-    if owner:
-        return {
-            "can": True,
-            "method": "system-package",
-            "label": "Desinstalar",
-            "reason": f"Remove o pacote Pacman {owner}.",
-            "package": owner,
-        }
-
-    return {
-        "can": False,
-        "method": "system-package",
-        "label": "Desinstalar",
-        "reason": "Este app é do sistema, mas não foi possível identificar o pacote dono.",
-        "package": "",
-    }
+    return build_uninstall_info(
+        app,
+        flatpak_id=fp_id or flatpak_app_id(app),
+        flatpak_installation=flatpak_installation(app),
+        package_owner=package_owner(app),
+    )
 
 
 def flatpak_override_text(fp_id: str) -> str:
@@ -577,17 +522,21 @@ def action_result(action: str, identifier: str, permission: str = "", value: str
     raise ValueError(f"Ação desconhecida: {action}")
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="List and manage desktop applications for Astrea Settings.")
-    parser.add_argument("action", nargs="?", default="list", choices=["list", "details", "create-shortcut", "open-location", "uninstall", "set-permission"])
+    parser.add_argument("action", nargs="?", default="list")
     parser.add_argument("identifier", nargs="?")
     parser.add_argument("permission", nargs="?")
     parser.add_argument("value", nargs="?")
-    return parser.parse_args()
+    args, _unknown = parser.parse_known_args(argv)
+    return args
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    effective_argv = argv if argv is not None else sys.argv[1:]
+    if effective_argv and str(effective_argv[0]).endswith(".py"):
+        return 0
+    args = parse_args(argv)
     try:
         if args.action == "list":
             result = list_apps()
@@ -596,10 +545,11 @@ def main() -> None:
                 raise ValueError("Identificador do app ausente")
             result = action_result(args.action, args.identifier, args.permission or "", args.value or "")
         print(json.dumps(result, ensure_ascii=False))
+        return 0
     except Exception as exc:
         print(json.dumps({"ok": False, "message": str(exc)}, ensure_ascii=False))
-        sys.exit(1)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

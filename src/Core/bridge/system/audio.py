@@ -15,8 +15,17 @@ import os
 from pathlib import Path
 
 BRIDGE_DIR = Path(__file__).resolve().parents[1]
-if str(BRIDGE_DIR) not in sys.path:
-    sys.path.insert(0, str(BRIDGE_DIR))
+
+
+def _load_astrea_shared():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("astrea_shared_runtime", BRIDGE_DIR / "astrea_shared.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+ASTREA_SHARED = _load_astrea_shared()
 
 # ── WirePlumber config path ───────────────────────────────────────────────────
 WP_CONF = Path.home() / ".config/wireplumber/wireplumber.conf.d/50-astrea-audio.conf"
@@ -44,13 +53,11 @@ def read_json(path: Path, default):
 
 
 def atomic_write_json(path: Path, payload, *, indent: int | None = 2, sort_keys: bool = False) -> None:
-    from astrea_shared import atomic_write_json as shared_atomic_write_json
-    shared_atomic_write_json(path, payload, indent=indent, sort_keys=sort_keys)
+    ASTREA_SHARED.atomic_write_json(path, payload, indent=indent, sort_keys=sort_keys)
 
 
 def atomic_write_text(path: Path, text: str) -> None:
-    from astrea_shared import atomic_write_text as shared_atomic_write_text
-    shared_atomic_write_text(path, text)
+    ASTREA_SHARED.atomic_write_text(path, text)
 
 
 def application_dirs() -> list[Path]:
@@ -69,13 +76,11 @@ def application_dirs() -> list[Path]:
 
 
 def parse_desktop_file(path: Path, *, source: str = "", require_exec: bool = False):
-    from astrea_shared import parse_desktop_file as shared_parse_desktop_file
-    return shared_parse_desktop_file(path, source=source, require_exec=require_exec)
+    return ASTREA_SHARED.parse_desktop_file(path, source=source, require_exec=require_exec)
 
 
 def resolve_icon_path(icon_name: str) -> str:
-    from astrea_shared import resolve_icon_path as shared_resolve_icon_path
-    return shared_resolve_icon_path(icon_name)
+    return ASTREA_SHARED.resolve_icon_path(icon_name)
 
 def get_aliases():
     data = read_json(ALIASES_CONF, {})

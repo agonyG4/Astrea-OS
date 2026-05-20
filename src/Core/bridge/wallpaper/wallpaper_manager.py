@@ -9,10 +9,19 @@ import sys
 from pathlib import Path
 
 BRIDGE_DIR = Path(__file__).resolve().parents[1]
-if str(BRIDGE_DIR) not in sys.path:
-    sys.path.insert(0, str(BRIDGE_DIR))
 
-from astrea_shared import atomic_write_text
+
+def _load_astrea_shared():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("astrea_shared_runtime", BRIDGE_DIR / "astrea_shared.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+ASTREA_SHARED = _load_astrea_shared()
+
+atomic_write_text = ASTREA_SHARED.atomic_write_text
 
 PROJECT_DIR = Path.home() / ".local/share/Astrea"
 FEATURES_DIR = PROJECT_DIR / "Features/Paper"

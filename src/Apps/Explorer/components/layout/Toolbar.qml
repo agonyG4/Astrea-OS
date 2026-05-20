@@ -756,7 +756,7 @@ Rectangle {
 
             // Section label
             Text {
-                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.text.visualizaaao"]) || "VIEW")
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.toolbar.view"]) || "VIEW")
                 color: Theme.textTer
                 font { pixelSize: 9; weight: Font.DemiBold; letterSpacing: 1.0 }
                 leftPadding: 10
@@ -783,7 +783,7 @@ Rectangle {
             Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.07) }
 
             Text {
-                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.text.ordenaaao"]) || "SORTING")
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.toolbar.sorting"]) || "SORTING")
                 color: Theme.textTer
                 font { pixelSize: 9; weight: Font.DemiBold; letterSpacing: 1.0 }
                 leftPadding: 10
@@ -809,7 +809,7 @@ Rectangle {
             Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.07) }
 
             Text {
-                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.text.opaaes"]) || "OPTIONS")
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.toolbar.options"]) || "OPTIONS")
                 color: Theme.textTer
                 font { pixelSize: 9; weight: Font.DemiBold; letterSpacing: 1.0 }
                 leftPadding: 10
@@ -838,7 +838,7 @@ Rectangle {
             }
 
             SettingsAction {
-                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.label.separar_por_seaaes"]) || "Separate by sections")
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.toolbar.separate_sections"]) || "Separate by sections")
                 icon: AppState.groupingEnabled ? "◉" : "○"
                 checked: AppState.groupingEnabled
                 onTriggered: AppState.groupingEnabled = !AppState.groupingEnabled

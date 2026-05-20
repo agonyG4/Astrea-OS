@@ -12,10 +12,23 @@ import time
 from pathlib import Path
 
 BRIDGE_DIR = Path(__file__).resolve().parents[2] / "Core" / "bridge"
-if str(BRIDGE_DIR) not in sys.path:
-    sys.path.insert(0, str(BRIDGE_DIR))
 
-from astrea_shared import FALLBACK_ICON, atomic_write_json, atomic_write_text, parse_desktop_file, xdg_desktop_dir
+
+def _load_astrea_shared():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("astrea_shared_runtime", BRIDGE_DIR / "astrea_shared.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+ASTREA_SHARED = _load_astrea_shared()
+
+FALLBACK_ICON = ASTREA_SHARED.FALLBACK_ICON
+atomic_write_json = ASTREA_SHARED.atomic_write_json
+atomic_write_text = ASTREA_SHARED.atomic_write_text
+parse_desktop_file = ASTREA_SHARED.parse_desktop_file
+xdg_desktop_dir = ASTREA_SHARED.xdg_desktop_dir
 
 MAX_APPS = 64
 DESKTOP_CONFIG_DEFAULT = {"enabled": True}
