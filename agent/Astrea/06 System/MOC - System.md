@@ -9,11 +9,15 @@ System notes describe OS integration, local scripts, privileged helpers, and mac
 - [[Astrea - System Layer]]
 - [[Astrea - Bluetooth Manager]]
 - [[Astrea - Launcher and Latency]]
+- [[Astrea - Polkit Auth]]
+- [[Astrea - I18n]]
 
 ## Related Bridges
 - [[Astrea - Display Bridge]]
 - [[Astrea - Audio Bridge]]
 - [[Astrea - Core Bridge]]
+- [[Astrea - Session Daemon]]
+- [[Astrea - State JSON Bridge]]
 
 ## Important Boundaries
 - Hyprland integration lives here.

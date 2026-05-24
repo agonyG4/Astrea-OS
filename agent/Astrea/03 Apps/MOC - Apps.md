@@ -10,12 +10,16 @@ App notes describe standalone Astrea applications.
 - [[Astrea - Settings App]]
 - [[Astrea - Explorer App]]
 - [[Astrea - Weather App]]
+- [[Astrea - Media Viewer App]]
+- [[Astrea - Wallpapers App]]
 
 ## App Backends
 - About: [[Astrea - Core Bridge]]
-- Settings: [[Astrea - Core Bridge]], [[Astrea - Display Bridge]], [[Astrea - Audio Bridge]], [[Astrea - Bluetooth Manager]], [[Astrea - Wallpaper Bridge]]
+- Settings: [[Astrea - Core Bridge]], [[Astrea - App Manager Bridge]], [[Astrea - Display Bridge]], [[Astrea - Audio Bridge]], [[Astrea - Bluetooth Manager]], [[Astrea - Wallpaper Bridge]], [[Astrea - I18n]]
 - Explorer: [[Astrea - Explorer Backend]]
 - Weather: [[Astrea - Weather Bridge]]
+- Media Viewer: `Apps/MediaViewer/media_viewer_helper.py`
+- Wallpapers: [[Astrea - Wallpaper Bridge]]
 
 ## Shared Dependencies
 - [[Astrea - Core Components]]
@@ -31,6 +35,7 @@ Reuse shared imports:
 - Settings uses `AstreaComponents`.
 - Explorer uses `AstreaFiles`.
 - Weather uses `AstreaComponents`, app-local components, and [[Astrea - Weather Bridge]] for data.
+- Media Viewer and Wallpapers use `AstreaComponents`.
 
 Do not duplicate a shared context menu, row, card, sidebar, or theme object inside an app.
 

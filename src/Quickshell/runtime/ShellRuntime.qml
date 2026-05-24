@@ -25,19 +25,22 @@ Item {
 
     Music.MusicMonitor {
         id: musicMonitor
-        performancePaused: gameMode.active
+        performancePaused: root.gameModeActive
     }
 
     NetworkProcess {
         id: networkStatus
+        performancePaused: root.gameModeActive
     }
 
     BluetoothProcess {
         id: bluetoothStatus
+        performancePaused: root.gameModeActive
     }
 
     AudioProcess {
         id: audioStatus
+        performancePaused: root.gameModeActive
     }
 
     IpcHandler {

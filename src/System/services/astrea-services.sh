@@ -130,7 +130,7 @@ TimeoutStopSec=3
 KillMode=mixed
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target
 EOF
 }
 
@@ -150,10 +150,10 @@ ExecStart=${astrea_bin_dir}/astrea-launch daemon
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=3
-KillMode=mixed
+KillMode=process
 
 [Install]
-WantedBy=default.target
+WantedBy=graphical-session.target
 EOF
 }
 

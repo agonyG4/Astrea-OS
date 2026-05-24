@@ -55,7 +55,7 @@ SystemComponents.TopbarPopup {
     // ─── Processos ────────────────────────────────────────────────
     Process { id: shellLauncher;  command: ["rofi", "-show", "drun"] }
     Process { id: shellAbout;    command: ["quickshell", "-p", root.astreaRoot + "/Apps/About/main.qml"] }
-    Process { id: shellSettings; command: ["quickshell", "-p", root.astreaRoot + "/Apps/Settings/main.qml"] }
+    Process { id: shellSettings; command: [Quickshell.env("HOME") + "/.local/bin/astrea-settings-open"] }
     Process { id: shellForceQuit; command: ["hyprctl", "kill"] }
     Process { id: shellLock; command: ["quickshell", "-p", root.astreaRoot + "/Features/Paper/lockscreen/lockscreen.qml"] }
     Process { id: shellPower;     command: ["shutdown", "now"] }

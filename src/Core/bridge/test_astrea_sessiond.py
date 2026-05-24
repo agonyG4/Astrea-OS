@@ -35,5 +35,17 @@ class SessiondTests(unittest.TestCase):
                 self.assertIn("running", payload)
                 self.assertIn("socket_path", payload)
 
+    def test_status_payload_reports_health_domain_only(self):
+        payload = sessiond.status_payload()
+        self.assertIn("health", payload["domains"])
+        self.assertEqual(payload["domains"], sorted(payload["domains"]))
+
+    def test_health_state_has_stable_contract(self):
+        payload = sessiond.domain_state("health")
+        self.assertEqual(payload["state"]["ok"], True)
+        self.assertEqual(payload["state"]["domain"], "health")
+        self.assertEqual(payload["state"]["version"], 1)
+        self.assertIn("timestamp", payload["state"])
+
 if __name__ == "__main__":
     unittest.main()

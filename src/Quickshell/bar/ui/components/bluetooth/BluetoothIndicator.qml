@@ -57,9 +57,9 @@ SystemComponents.TopbarIndicator {
             anchors.centerIn: parent
             text:  root.btOn ? "󰂯" : "󰂲"
             font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
-            color: !root.btOn ? Theme.iconMuted
-                 : root.connectedCount > 0 ? Theme.iconAccent
-                 : Theme.iconMain
+            color: !root.btOn ? Theme.shellIconMuted
+                 : root.connectedCount > 0 ? Theme.shellIconAccent
+                 : Theme.shellIconMain
             Behavior on color { ColorAnimation { duration: Theme.animationFast } }
         }
     }
@@ -67,7 +67,7 @@ SystemComponents.TopbarIndicator {
     Text {
         visible: root.btOn && root.connectedCount > 0
         text:    root.firstDeviceName
-        color:   Theme.textDim
+        color:   Theme.shellTextDim
         font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption; weight: Font.Medium }
         elide: Text.ElideRight
         width: Math.min(implicitWidth, 80)

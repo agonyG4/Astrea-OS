@@ -40,9 +40,13 @@ Do not treat GitHub mirrors, old `.config/quickshell` trees, or Bench copies as 
 | Settings | `Apps/Settings` | [[Astrea - Settings App]] |
 | Explorer | `Apps/Explorer` | [[Astrea - Explorer App]] |
 | Weather | `Apps/Weather` | [[Astrea - Weather App]] |
+| Media Viewer | `Apps/MediaViewer` | [[Astrea - Media Viewer App]] |
+| Wallpapers | `Apps/Wallpapers` | [[Astrea - Wallpapers App]] |
 | shared controls | `Core/components` | [[Astrea - Core Components]] |
 | reusable file UI | `Features/Files` | [[Astrea - Features]] |
 | system bridges | `Core/bridge`, `System` | [[Astrea - Core Bridge]], [[Astrea - System Layer]] |
+| app/session/state helpers | `Core/bridge/apps.py`, `astrea_sessiond.py`, `state_json.py` | [[Astrea - App Manager Bridge]], [[Astrea - Session Daemon]], [[Astrea - State JSON Bridge]] |
+| i18n and auth | `System/i18n`, `System/auth` | [[Astrea - I18n]], [[Astrea - Polkit Auth]] |
 | launch and latency | `System/launch`, `bin/astrea-launch`, `System/services/astrea_latencyd.py` | [[Astrea - Launcher and Latency]] |
 | file chooser portal | `System/portal` + `Apps/Explorer/PortalDialog.qml` | [[Astrea - FileChooser Portal]] |
 
@@ -81,6 +85,14 @@ Weather:
 - QML calls `bin/weather-cli`; the Rust backend delegates compatibility fetching to `Core/bridge/apps/weather.py`
 - alert monitoring belongs to `astrea-weatherd`, not the Weather window lifecycle
 
+Media Viewer:
+- `Apps/MediaViewer/Main.qml` is launched with `ASTREA_MEDIA_TARGET`.
+- `media_viewer_helper.py` scans image siblings and builds cached previews for formats Qt cannot display directly.
+
+Wallpapers:
+- `Apps/Wallpapers/main.qml` is a standalone wallpaper manager backed by `Core/bridge/wallpaper/wallpaper_manager.py`.
+- It lists, applies, renames, and deletes user wallpapers; do not duplicate wallpaper logic in Settings pages.
+
 Shell:
 - use resident popup patterns
 - use `Quickshell/bar/Theme.qml` tokens
@@ -112,6 +124,10 @@ Runtime app state:
 
 Cache:
 - `~/.cache`
+
+Shared JSON state helpers:
+- Use `Core/bridge/state_json.py` for atomic QML-friendly JSON reads/writes when a dedicated domain bridge would be too heavy.
+- Use `System/i18n/i18n.py` and `AstreaI18n` links for translated UI strings.
 
 Some legacy state still lives inside the Astrea tree. Inspect the consumer before moving it.
 

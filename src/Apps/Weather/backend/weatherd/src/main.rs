@@ -3,7 +3,7 @@ use std::process;
 use std::thread;
 use std::time::Duration;
 use weather_core::{
-    check_and_notify, fetch_weather_json, load_settings, DEFAULT_CITY, DEFAULT_INTERVAL_SECONDS,
+    DEFAULT_CITY, DEFAULT_INTERVAL_SECONDS, check_and_notify, fetch_weather_json, load_settings,
 };
 
 fn has_flag(args: &[String], flag: &str) -> bool {
@@ -28,7 +28,9 @@ fn run_once(force: bool, dry_run: bool) -> Result<(), String> {
     let result = check_and_notify(&data, dry_run);
     eprintln!(
         "astrea-weatherd: city={} alerts={} notified={} skipped={} failed={} disabled={}",
-        data.get("city").and_then(serde_json::Value::as_str).unwrap_or(&city),
+        data.get("city")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(&city),
         result.alerts.len(),
         result.notified,
         result.skipped,

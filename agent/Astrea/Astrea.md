@@ -8,9 +8,12 @@ aliases:
 
 This is the main project brain for the live Astrea runtime at `/home/agony/.local/share/Astrea`.
 
+Last broad sync: 2026-05-23 from `/home/agony/.local/share/Astrea-Rolling`.
+
 Use this note as the first stop before reading subsystem notes.
 
 ## Start Here
+- [[AGENT_START_HERE]]
 - [[Astrea - AI Project Brain]]
 - [[Astrea - Code Agent Guide]]
 - [[Astrea - Agent Working Rules]]
@@ -37,10 +40,10 @@ Use this note as the first stop before reading subsystem notes.
 ## Architecture Domains
 - Architecture: [[Astrea - Project Overview]], [[Astrea - Runtime Snapshot]], [[Astrea - Structure Breakdown]], [[Astrea - Entry Points]], [[Astrea - Data Flow]], [[Astrea - Patterns]]
 - UI runtime: [[Astrea - Quickshell Runtime]], [[Astrea - Desktop Icons]], [[Astrea - Top Bar]], [[Astrea - Island]], [[Astrea - Spotlight]], [[Astrea - Notifications]]
-- Apps: [[Astrea - About App]], [[Astrea - Settings App]], [[Astrea - Explorer App]], [[Astrea - Weather App]]
+- Apps: [[Astrea - About App]], [[Astrea - Settings App]], [[Astrea - Explorer App]], [[Astrea - Weather App]], [[Astrea - Media Viewer App]], [[Astrea - Wallpapers App]]
 - Core: [[Astrea - Core Components]], [[Astrea - Features]]
-- Bridges and backends: [[Astrea - Core Bridge]], [[Astrea - Explorer Backend]], [[Astrea - FileChooser Portal]], [[Astrea - Weather Bridge]], [[Astrea - Audio Bridge]], [[Astrea - Display Bridge]], [[Astrea - Wallpaper Bridge]]
-- System: [[Astrea - System Layer]], [[Astrea - Launcher and Latency]], [[Astrea - Bluetooth Manager]]
+- Bridges and backends: [[Astrea - Core Bridge]], [[Astrea - App Manager Bridge]], [[Astrea - Explorer Backend]], [[Astrea - FileChooser Portal]], [[Astrea - Weather Bridge]], [[Astrea - Audio Bridge]], [[Astrea - Display Bridge]], [[Astrea - Wallpaper Bridge]], [[Astrea - Session Daemon]], [[Astrea - State JSON Bridge]]
+- System: [[Astrea - System Layer]], [[Astrea - Launcher and Latency]], [[Astrea - Bluetooth Manager]], [[Astrea - Polkit Auth]], [[Astrea - I18n]]
 - Data and assets: [[Astrea - Assets and Data]]
 - Meta: [[Astrea - AI Project Brain]], [[Astrea - Agent Working Rules]], [[Astrea - Design Rules]], [[Astrea - Unknowns]], [[Astrea - External Dependencies]]
 
@@ -56,6 +59,8 @@ Use this note as the first stop before reading subsystem notes.
 - [[Astrea - Settings App]]
 - [[Astrea - Explorer App]]
 - [[Astrea - Weather App]]
+- [[Astrea - Media Viewer App]]
+- [[Astrea - Wallpapers App]]
 - [[Astrea - About App]]
 
 ## Backend Map
@@ -65,6 +70,9 @@ Use this note as the first stop before reading subsystem notes.
 - [[Astrea - Audio Bridge]]
 - [[Astrea - Display Bridge]]
 - [[Astrea - Wallpaper Bridge]]
+- [[Astrea - App Manager Bridge]]
+- [[Astrea - Session Daemon]]
+- [[Astrea - State JSON Bridge]]
 - [[Astrea - Bluetooth Manager]]
 - [[Astrea - Launcher and Latency]]
 
@@ -74,15 +82,16 @@ Use this note as the first stop before reading subsystem notes.
 
 ## AI Reading Order
 For code agents:
-1. [[Astrea - AI Project Brain]]
-2. [[Astrea - Code Agent Guide]]
-3. [[Astrea - Agent Working Rules]]
-4. [[Astrea - Agent Task Recipes]]
-5. [[Astrea - Runtime Snapshot]]
-6. [[Astrea - Entry Points]]
-7. [[Astrea - Data Flow]]
-8. The matching domain MOC.
-9. The specific app, UI, bridge, system, or data note.
+1. [[AGENT_START_HERE]]
+2. [[Astrea - AI Project Brain]]
+3. [[Astrea - Code Agent Guide]]
+4. [[Astrea - Agent Working Rules]]
+5. [[Astrea - Agent Task Recipes]]
+6. [[Astrea - Runtime Snapshot]]
+7. [[Astrea - Entry Points]]
+8. [[Astrea - Data Flow]]
+9. The matching domain MOC.
+10. The specific app, UI, bridge, system, or data note.
 
 For a broad understanding:
 1. [[Astrea - Project Overview]]

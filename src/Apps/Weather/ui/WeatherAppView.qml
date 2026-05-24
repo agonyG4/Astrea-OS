@@ -13,7 +13,7 @@ FloatingWindow {
     implicitWidth: 430
     implicitHeight: 740
     visible: true
-    color: "#1C1C1E"
+    color: UI.Theme.windowBackground
     property var selectedDay: null
     property var selectedAlert: null
     property bool settingsOpen: false
@@ -52,7 +52,7 @@ FloatingWindow {
     Rectangle {
         id: appSurface
         anchors.fill: parent
-        color: "#1C1C1E"
+        color: UI.Theme.windowBackground
         radius: 0
 
         Behavior on color {
@@ -166,8 +166,8 @@ FloatingWindow {
                 anchors.right: parent.right
                 anchors.rightMargin: 16
                 z: 45
-                color: settingsButtonArea.containsMouse ? "#3A3A40" : "#2B2B30"
-                border.color: "#43434A"
+                color: settingsButtonArea.containsMouse ? UI.Theme.cardBorder : UI.Theme.cardBg
+                border.color: UI.Theme.cardBorder
                 border.width: 1
 
                 UI.TextLabel {
@@ -209,7 +209,7 @@ FloatingWindow {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 0
                 radius: 26
-                color: "#252529"
+                color: UI.Theme.cardBg
                 opacity: 1
                 border.color: UI.Theme.cardBorder
                 border.width: 1
@@ -239,7 +239,7 @@ FloatingWindow {
                             Layout.preferredWidth: 32
                             Layout.preferredHeight: 32
                             radius: 16
-                            color: closeSettingsArea.containsMouse ? "#424248" : "#36363C"
+                            color: closeSettingsArea.containsMouse ? UI.Theme.cardBorder : UI.Theme.cardBg
 
                             UI.TextLabel {
                                 anchors.centerIn: parent
@@ -259,7 +259,7 @@ FloatingWindow {
                     }
 
                     UI.Divider {
-                        lineColor: "#4A4A50"
+                        lineColor: UI.Theme.cardBorder
                     }
 
                     RowLayout {
@@ -331,7 +331,7 @@ FloatingWindow {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: -dragOffset
                 radius: 26
-                color: "#252529"
+                color: UI.Theme.cardBg
                 opacity: 1
                 border.color: UI.Theme.cardBorder
                 border.width: 1
@@ -374,7 +374,7 @@ FloatingWindow {
                                 text: root.selectedDay ? root.selectedDay.cond : ""
                                 font.pixelSize: UI.Theme.fontSizeLarge
                                 font.weight: 400
-                                textColor: "#C9CAD2"
+                                textColor: UI.Theme.textSecondary
                             }
                         }
 
@@ -387,7 +387,7 @@ FloatingWindow {
                     }
 
                     UI.Divider {
-                        lineColor: "#4A4A50"
+                        lineColor: UI.Theme.cardBorder
                     }
 
                     GridLayout {
@@ -399,7 +399,7 @@ FloatingWindow {
                         UI.TextLabel {
                             text: root.selectedDay ? "Chuva " + root.selectedDay.rain + "%" : ""
                             font.pixelSize: UI.Theme.fontSizeLarge
-                            textColor: "#F2F2F7"
+                            textColor: UI.Theme.textPrimary
                             Layout.fillWidth: true
                         }
 
@@ -407,14 +407,14 @@ FloatingWindow {
                             text: root.selectedDay ? "UV " + root.selectedDay.uv : ""
                             font.pixelSize: UI.Theme.fontSizeLarge
                             horizontalAlignment: Text.AlignRight
-                            textColor: "#F2F2F7"
+                            textColor: UI.Theme.textPrimary
                             Layout.fillWidth: true
                         }
 
                         UI.TextLabel {
                             text: root.selectedDay ? "Nascer " + root.selectedDay.sunrise : ""
                             font.pixelSize: UI.Theme.fontSizeLarge
-                            textColor: "#C9CAD2"
+                            textColor: UI.Theme.textSecondary
                             Layout.fillWidth: true
                         }
 
@@ -422,7 +422,7 @@ FloatingWindow {
                             text: root.selectedDay ? "Pôr " + root.selectedDay.sunset : ""
                             font.pixelSize: UI.Theme.fontSizeLarge
                             horizontalAlignment: Text.AlignRight
-                            textColor: "#C9CAD2"
+                            textColor: UI.Theme.textSecondary
                             Layout.fillWidth: true
                         }
                     }
@@ -430,7 +430,7 @@ FloatingWindow {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 1
-                        color: "#424248"
+                        color: UI.Theme.cardBorder
                     }
 
                     UI.TextLabel {
@@ -469,7 +469,7 @@ FloatingWindow {
                                 text: modelData.cond
                                 font.pixelSize: UI.Theme.fontSizeLarge
                                 elide: Text.ElideRight
-                                textColor: "#C9CAD2"
+                                textColor: UI.Theme.textSecondary
                                 Layout.fillWidth: true
                             }
 
@@ -478,7 +478,7 @@ FloatingWindow {
                                 font.pixelSize: UI.Theme.fontSizeLarge
                                 font.weight: 500
                                 horizontalAlignment: Text.AlignRight
-                                textColor: "#9CC7FF"
+                                textColor: UI.Theme.accent
                                 Layout.preferredWidth: 40
                             }
                         }
@@ -490,7 +490,7 @@ FloatingWindow {
                         text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.sem_horarios_de_chuva_nos_dados_disponaveis"]) || "No rain times in the available data.")
                         font.pixelSize: UI.Theme.fontSizeLarge
                         horizontalAlignment: Text.AlignHCenter
-                        textColor: "#C9CAD2"
+                        textColor: UI.Theme.textSecondary
                     }
                 }
 
@@ -502,7 +502,7 @@ FloatingWindow {
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.top: parent.top
                     anchors.topMargin: 9
-                    color: "#6A6A72"
+                    color: UI.Theme.textTertiary
                     opacity: detailDragArea.pressed ? 0.95 : 0.65
                     z: 8
                 }
@@ -567,7 +567,7 @@ FloatingWindow {
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: -dragOffset
                 radius: 26
-                color: "#252529"
+                color: UI.Theme.cardBg
                 opacity: 1
                 border.color: root.selectedAlert ? (root.selectedAlert.color || "#F96602") : "#F96602"
                 border.width: 1
@@ -628,13 +628,13 @@ FloatingWindow {
                                 UI.TextLabel {
                                     text: root.selectedAlert ? (root.selectedAlert.severity || "") : ""
                                     font.pixelSize: UI.Theme.fontSizeLarge
-                                    textColor: "#C9CAD2"
+                                    textColor: UI.Theme.textSecondary
                                 }
                             }
                         }
 
                         UI.Divider {
-                            lineColor: "#4A4A50"
+                            lineColor: UI.Theme.cardBorder
                         }
 
                         UI.TextLabel {
@@ -645,7 +645,7 @@ FloatingWindow {
                             visible: text !== ""
                             wrapMode: Text.WordWrap
                             font.pixelSize: 12
-                            textColor: "#C9CAD2"
+                            textColor: UI.Theme.textSecondary
                         }
 
                         UI.TextLabel {
@@ -664,7 +664,7 @@ FloatingWindow {
                                 wrapMode: Text.WordWrap
                                 font.pixelSize: UI.Theme.fontSizeLarge
                                 lineHeight: 1.14
-                                textColor: "#F2F2F7"
+                                textColor: UI.Theme.textPrimary
                             }
                         }
 
@@ -684,7 +684,7 @@ FloatingWindow {
                                 wrapMode: Text.WordWrap
                                 font.pixelSize: UI.Theme.fontSizeLarge
                                 lineHeight: 1.12
-                                textColor: "#DDDDE4"
+                                textColor: UI.Theme.textSecondary
                             }
                         }
                     }
@@ -697,7 +697,7 @@ FloatingWindow {
                     anchors.horizontalCenter: parent.horizontalCenter
                     anchors.top: parent.top
                     anchors.topMargin: 9
-                    color: "#6A6A72"
+                    color: UI.Theme.textTertiary
                     opacity: alertDragArea.pressed ? 0.95 : 0.65
                     z: 8
                 }

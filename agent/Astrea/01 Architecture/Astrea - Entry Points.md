@@ -1,6 +1,6 @@
 # Astrea - Entry Points
 
-Related notes: [[Astrea]], [[Astrea - Quickshell Runtime]], [[Astrea - Settings App]], [[Astrea - Explorer App]], [[Astrea - Weather App]]
+Related notes: [[Astrea]], [[Astrea - Quickshell Runtime]], [[Astrea - Settings App]], [[Astrea - Explorer App]], [[Astrea - Weather App]], [[Astrea - Media Viewer App]], [[Astrea - Wallpapers App]]
 
 ## Path Prefix
 All relative paths in this note resolve under:
@@ -20,12 +20,16 @@ Use this live path for code changes unless the user explicitly requests document
 | settings pages | [[Astrea - Settings App]] |
 | about, system info, About this PC | [[Astrea - About App]], [[Astrea - Core Bridge]] |
 | files, explorer, finder | [[Astrea - Explorer App]], [[Astrea - Explorer Backend]] |
+| image viewer, media viewer, preview | [[Astrea - Media Viewer App]] |
 | portal, file chooser, system file dialog | [[Astrea - FileChooser Portal]], [[Astrea - Explorer App]] |
 | weather, INMET, forecast | [[Astrea - Weather App]], [[Astrea - Weather Bridge]] |
 | audio, music bars, PipeWire | [[Astrea - Audio Bridge]] |
 | monitor, display, Hyprland display config | [[Astrea - Display Bridge]] |
 | wallpaper, lockscreen media | [[Astrea - Wallpaper Bridge]] |
+| wallpapers app, wallpaper library | [[Astrea - Wallpapers App]], [[Astrea - Wallpaper Bridge]] |
 | bluetooth | [[Astrea - Bluetooth Manager]] |
+| language, translation, i18n, locale | [[Astrea - I18n]] |
+| polkit, authentication prompt, privilege prompt | [[Astrea - Polkit Auth]] |
 | app launch, launcher daemon, latency burst | [[Astrea - Launcher and Latency]] |
 
 ## Main Shell
@@ -49,6 +53,10 @@ Use this live path for code changes unless the user explicitly requests document
   - [[Astrea - Explorer App]] entry point.
 - `Apps/Weather/WeatherApp.qml`
   - [[Astrea - Weather App]] entry point.
+- `Apps/MediaViewer/Main.qml`
+  - [[Astrea - Media Viewer App]] entry point.
+- `Apps/Wallpapers/main.qml`
+  - [[Astrea - Wallpapers App]] entry point.
 
 ## Bridge Entrypoints
 - `Core/bridge/apps.py`
@@ -63,6 +71,10 @@ Use this live path for code changes unless the user explicitly requests document
   - forwards to `Core/bridge/system/storage.py`.
 - `Core/bridge/system.py`
   - forwards to `Core/bridge/system/info.py`.
+- `Core/bridge/astrea_sessiond.py`
+  - [[Astrea - Session Daemon]] status/state/run CLI.
+- `Core/bridge/state_json.py`
+  - [[Astrea - State JSON Bridge]] atomic JSON helper.
 
 ## Native Executables
 - `Core/bridge/apps/explorer_backend`
@@ -71,6 +83,10 @@ Use this live path for code changes unless the user explicitly requests document
   - used by [[Astrea - Island]] through `System/services/music_bars.sh`.
 - `System/auth/auth_helper`
   - setuid helper used by lockscreen/auth-related paths.
+- `System/auth/astrea-polkit-agent.py`
+  - Python Polkit authentication agent.
+- `System/auth/astrea-polkit-agent.qml`
+  - Quickshell Polkit prompt implementation.
 - `System/launch/target/release/astrea-launch`
   - built source for `bin/astrea-launch`.
 - `bin/astrea-launch`

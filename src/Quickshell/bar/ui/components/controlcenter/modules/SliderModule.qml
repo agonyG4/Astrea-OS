@@ -50,7 +50,7 @@ Rectangle {
         anchors.leftMargin: Theme.spacingLarge
         anchors.topMargin: Theme.spacingControlGap
         text: sliderCard.title
-        color: Theme.textActive
+        color: Theme.shellTextActive
         opacity: Theme.opacitySubtle
         font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.DemiBold }
     }
@@ -61,7 +61,7 @@ Rectangle {
         anchors.rightMargin: Theme.spacingLarge
         anchors.topMargin: Theme.spacingControlGap
         text: sliderCard.valueText
-        color: sliderCard.muted ? Theme.iconMuted : Theme.textSecondary
+        color: sliderCard.muted ? Theme.shellIconMuted : Theme.shellTextSecondary
         font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption; weight: Font.DemiBold }
     }
 
@@ -72,7 +72,7 @@ Rectangle {
         anchors.leftMargin: Theme.spacingLarge
         anchors.bottomMargin: Theme.spacingLarge
         text: sliderCard.leftIcon
-        color: sliderCard.muted ? Theme.iconMuted : Theme.iconMain
+        color: sliderCard.muted ? Theme.shellIconMuted : Theme.shellIconMain
         font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
 
         MouseArea {
@@ -99,7 +99,7 @@ Rectangle {
             width: parent.width
             height: 6
             radius: 3
-            color: Theme.separator
+            color: Theme.shellSeparator
 
             Rectangle {
                 width: Math.max(radius * 2, sliderTrack.width * (sliderCard.value / 100))
@@ -107,8 +107,8 @@ Rectangle {
                 radius: parent.radius
                 gradient: Gradient {
                     orientation: Gradient.Horizontal
-                    GradientStop { position: 0.0; color: sliderCard.muted ? Theme.iconMuted : Theme.iconMain }
-                    GradientStop { position: 1.0; color: sliderCard.muted ? Theme.iconMuted : Theme.iconActive }
+                    GradientStop { position: 0.0; color: sliderCard.muted ? Theme.shellIconMuted : Theme.shellIconMain }
+                    GradientStop { position: 1.0; color: sliderCard.muted ? Theme.shellIconMuted : Theme.shellIconActive }
                 }
                 Behavior on width {
                     enabled: sliderCard.control ? sliderCard.control.sliderAnimationsEnabled : false
@@ -123,7 +123,7 @@ Rectangle {
             width: sliderMouse.pressed ? 20 : (sliderMouse.containsMouse ? 18 : 14)
             height: width
             radius: width / 2
-            color: Theme.iconActive
+            color: Theme.shellIconActive
 
             Behavior on width { NumberAnimation { duration: Theme.animationMicro; easing.type: Easing.OutCubic } }
             Behavior on x {
@@ -165,7 +165,7 @@ Rectangle {
         anchors.rightMargin: Theme.spacingLarge
         anchors.bottomMargin: Theme.spacingLarge
         text: sliderCard.rightIcon
-        color: sliderCard.muted ? Theme.iconMuted : Theme.iconMain
+        color: sliderCard.muted ? Theme.shellIconMuted : Theme.shellIconMain
         font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
     }
 }

@@ -8,12 +8,16 @@ Related notes: [[Astrea]], [[Astrea - Settings App]], [[Astrea - Patterns]]
 ## Responsibility
 Shared QML component library.
 
-It is mainly used by [[Astrea - Settings App]].
+It is used by Settings and several standalone apps.
 
-Settings consumes this module through:
+Observed local links:
 - `Apps/Settings/AstreaComponents -> Core/components`
+- `Apps/Explorer/AstreaComponents -> Core/components`
+- `Apps/MediaViewer/AstreaComponents -> Core/components`
+- `Apps/Wallpapers/AstreaComponents -> Core/components`
+- `Apps/Weather/AstreaComponents -> Core/components`
 
-Prefer this local link from Settings pages instead of direct absolute imports.
+Prefer app-local links instead of direct absolute imports.
 
 ## Module
 `Core/components/qmldir` declares module `components`.
@@ -21,6 +25,7 @@ Prefer this local link from Settings pages instead of direct absolute imports.
 Exposed areas include:
 - theme
 - navigation
+- sidebar
 - text labels
 - form controls
 - menu controls
@@ -80,8 +85,8 @@ It reads:
 - `~/.config/AstreaOS/ui/theme.json`
 
 It references:
-- `System/services/theme/apply_color_scheme.sh`
-- `System/services/theme/apply_decoration_style.sh`
+- `System/services/apply_theme_decoration.sh`
+- theme/application side effects from Settings and System service paths
 
 ## Unknown
 Top-level component files are compatibility/public-entry wrappers for categorized implementations. New generic components should keep the implementation in a subfolder and expose a small root wrapper through `qmldir`.

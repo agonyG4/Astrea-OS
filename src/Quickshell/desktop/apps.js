@@ -1,16 +1,16 @@
 var APPS = [
   {
-    "name": "PGPatcher",
-    "generic": "Folder",
-    "icon": "folder",
-    "desktop": "$HOME/Área de trabalho/PGPatcher",
-    "kind": "folder"
-  },
-  {
     "name": "Steam",
     "generic": "",
     "icon": "steam",
     "desktop": "$HOME/Área de trabalho/steam.desktop",
+    "kind": "app"
+  },
+  {
+    "name": "Subnautica 2",
+    "generic": "",
+    "icon": "steam",
+    "desktop": "$HOME/Área de trabalho/Subnautica 2.desktop",
     "kind": "app"
   },
   {

@@ -97,6 +97,55 @@ QtObject {
         }
     }
 
+    function tabIndexById(tabId) {
+        for (var i = 0; i < tabs.length; i++) {
+            if (tabs[i].id === tabId)
+                return i
+        }
+        return -1
+    }
+
+    function closeTabById(tabId) {
+        closeTab(tabIndexById(tabId))
+    }
+
+    function switchTabById(tabId) {
+        switchTab(tabIndexById(tabId))
+    }
+
+    function activeTabId() {
+        if (activeTabIndex < 0 || activeTabIndex >= tabs.length)
+            return -1
+        return tabs[activeTabIndex].id
+    }
+
+    function moveTab(fromIndex, toIndex) {
+        if (fromIndex < 0 || fromIndex >= tabs.length)
+            return
+        if (toIndex < 0)
+            toIndex = 0
+        if (toIndex >= tabs.length)
+            toIndex = tabs.length - 1
+        if (fromIndex === toIndex)
+            return
+
+        _syncTabState()
+
+        var t = tabs.slice()
+        var activeId = activeTabIndex >= 0 && activeTabIndex < t.length
+            ? t[activeTabIndex].id : -1
+        var moved = t.splice(fromIndex, 1)[0]
+        t.splice(toIndex, 0, moved)
+        tabs = t
+
+        for (var i = 0; i < t.length; i++) {
+            if (t[i].id === activeId) {
+                activeTabIndex = i
+                break
+            }
+        }
+    }
+
     function switchTab(index) {
         if (index < 0 || index >= tabs.length || index === activeTabIndex) return
         _resetSearchState()
@@ -537,10 +586,13 @@ QtObject {
         onTriggered: {
             if (!navigation.currentPath
                     || navigation.currentPath !== navigation.watchedDirectoryPath
-                    || navigation.loadingDir
                     || navigation.searchActive
                     || app.isRecentPath(navigation.currentPath))
                 return
+            if (navigation.loadingDir) {
+                restart()
+                return
+            }
             navigation.loadDirectory()
         }
     }

@@ -13,7 +13,7 @@ Rectangle {
     radius: width / 2
     color: !enabled ? Theme.background
                     : primary ? (mediaArea.containsMouse ? Theme.barBorderHover : Theme.surface)
-                              : (mediaArea.containsMouse ? Theme.separator : "transparent")
+                              : (mediaArea.containsMouse ? Theme.shellSeparator : "transparent")
     opacity: enabled ? 1 : 0.38
 
     Behavior on color { ColorAnimation { duration: Theme.animationQuick } }
@@ -22,7 +22,7 @@ Rectangle {
     Text {
         anchors.centerIn: parent
         text: mediaButton.icon
-        color: Theme.iconMain
+        color: Theme.shellIconMain
         font { family: Theme.fontFamily; pixelSize: mediaButton.primary ? Theme.fontSizeIconLarge : Theme.fontSizeIcon }
     }
 

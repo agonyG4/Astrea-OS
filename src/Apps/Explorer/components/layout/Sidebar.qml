@@ -1,9 +1,13 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Controls.impl 2.15
+import QtQuick.Layouts
+import QtQuick.Effects
+import Quickshell.Io
 import "../../AstreaFiles/DragDropSupport.js" as DragDropSupport
 import "../.."
 import "../common" as Common
+import "../../AstreaComponents" as UI
 import "../../AstreaFiles" as AstreaFiles
 import "../../AstreaI18n" as AstreaI18n
 
@@ -28,8 +32,33 @@ Item {
     property bool   driveMenuCanRemount:  false
     property bool   driveMenuAutoMount:   false
     property bool   driveMenuBusy:        false
+    property bool   sidebarMenuOpen:      false
+    property real   sidebarMenuX:         10
+    property real   sidebarMenuY:         10
+    property string sidebarMenuPath:      ""
+    property string sidebarMenuLabel:     ""
+    property string sidebarMenuIcon:      "inode-directory"
+    property bool   sidebarMenuCanPin:    false
+    property bool   sidebarMenuIsFavorite:false
+    property string desktopLinkPath:      ""
+
+    readonly property color sidebarIconIdle: Theme.isLight ? UI.Theme.textSecondary : Qt.rgba(1, 1, 1, 0.78)
+    readonly property color sidebarIconHover: UI.Theme.textPrimary
+    readonly property color sidebarIconActive: UI.Theme.accentForeground
+    readonly property var defaultFavoriteItems: [
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.desktop"]) || "Desktop"),    icon: "user-desktop",      path: AppState.homePath + "/Área de trabalho" },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.documentos"]) || "Documents"), icon: "folder-documents",  path: AppState.homePath + "/Documentos" },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.downloads"]) || "Downloads"),  icon: "folder-downloads",  path: AppState.homePath + "/Downloads" },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.imagens"]) || "Pictures"),    icon: "folder-pictures",   path: AppState.homePath + "/Imagens" },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.sidebar.music"]) || "Music"),    icon: "folder-music",      path: AppState.homePath + "/Músicas" },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.sidebar.videos"]) || "Videos"),     icon: "folder-videos",     path: AppState.homePath + "/Vídeos" },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.sidebar.public"]) || "Public"),    icon: "folder-publicshare",path: AppState.homePath + "/Público" },
+        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.modelos"]) || "Templates"),    icon: "folder-templates",  path: AppState.homePath + "/Modelos" }
+    ]
 
     function openDriveMenu(item, mouse) {
+        AppState.announceContextMenuOpening("sidebar")
+        sidebarMenuOpen = false
         driveMenuDeviceId    = item.deviceId
         driveMenuDevicePath  = item.devicePath
         driveMenuPath        = item.path
@@ -50,12 +79,63 @@ Item {
         driveMenuOpen = false
     }
 
+    function openSidebarMenu(item, mouse) {
+        AppState.announceContextMenuOpening("sidebar")
+        driveMenuOpen = false
+        sidebarMenuPath = item.path
+        sidebarMenuLabel = item.label
+        sidebarMenuIcon = item.icon
+        sidebarMenuCanPin = AppState.canPinSidebarFavorite(item.path)
+        sidebarMenuIsFavorite = AppState.isSidebarFavorite(item.path)
+
+        var point = item.mapToItem(driveMenuOverlay, mouse.x, mouse.y)
+        sidebarMenuX = Math.max(10, Math.min(point.x + 6, driveMenuOverlay.width - sidebarMenuCard.width - 10))
+        sidebarMenuY = Math.max(10, Math.min(point.y + 6, driveMenuOverlay.height - sidebarMenuCard.height - 10))
+        sidebarMenuOpen = true
+    }
+
+    function closeSidebarMenu() {
+        sidebarMenuOpen = false
+    }
+
+    function closeMenus() {
+        closeDriveMenu()
+        closeSidebarMenu()
+    }
+
+    function showSidebarProperties() {
+        var target = sidebarMenuPath
+        closeMenus()
+        sidebarProperties.targetPath = target
+        sidebarProperties.targetIsDir = true
+        sidebarProperties.show()
+        sidebarProperties.raise()
+        sidebarProperties.requestActivate()
+    }
+
+    function putSidebarItemOnDesktop() {
+        if (sidebarMenuPath === "" || sidebarMenuPath.indexOf("/") !== 0)
+            return
+        desktopLinkPath = sidebarMenuPath
+        closeMenus()
+        desktopLinkProcess.running = false
+        desktopLinkProcess.running = true
+    }
+
     function handleDroppedUrls(drop, destinationPath) {
         DragDropSupport.handleDroppedUrls(AppState, drop, destinationPath)
     }
 
+    Connections {
+        target: AppState
+        function onContextMenuOpening(owner) {
+            if (owner !== "sidebar")
+                root.closeMenus()
+        }
+    }
+
     // ── Card flutuante principal ───────────────────────────────────────────────
-    AstreaFiles.SidebarFrame {
+    UI.SidebarFrame {
         id: floatingCard
         anchors {
             fill:           parent
@@ -64,45 +144,63 @@ Item {
             leftMargin:     12
             rightMargin:    8
         }
-        backgroundColor: Qt.rgba(Theme.bg.r, Theme.bg.g, Theme.bg.b, 0.96)
-        washColor: Qt.rgba(1, 1, 1, 0.02)
-        borderColor: Qt.rgba(1, 1, 1, 0.09)
+        backgroundColor: UI.Theme.cardBg
+        washColor: UI.Theme.windowWash
+        borderColor: UI.Theme.cardBorder
+        cornerRadius: 20
+        contentTopPadding: 16
+        contentBottomPadding: 16
+        contentSpacing: 2
 
         // ── Header ────────────────────────────────────────────────────
         Item {
-            width:  parent.width - 28
-            x:      14
+            width: parent.width - 32
+            x: 16
             height: 36
 
             Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.verticalCenter:   parent.verticalCenter
+                anchors {
+                    left: parent.left
+                    right: searchBtn.left
+                    rightMargin: 10
+                    verticalCenter: parent.verticalCenter
+                }
                 text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.text.finder"]) || "Finder")
-                color: Theme.text
-                font { pixelSize: 22; weight: Font.Bold; letterSpacing: -0.5 }
+                color: UI.Theme.textPrimary
+                font.family: UI.Theme.fontFamily
+                font.pixelSize: UI.Theme.fontSizeLarge
+                font.weight: UI.Theme.fontWeightDemiBold
+                font.letterSpacing: 0
+                elide: Text.ElideRight
             }
 
             Rectangle {
                 id: searchBtn
                 anchors { right: parent.right; verticalCenter: parent.verticalCenter }
-                width:  28
+                width: 28
                 height: 28
                 radius: 9
                 color:  searchHover.containsMouse
-                            ? Qt.rgba(1, 1, 1, 0.10)
-                            : Qt.rgba(1, 1, 1, 0.04)
+                            ? (Theme.isLight ? Qt.rgba(0, 0, 0, 0.07) : Qt.rgba(1, 1, 1, 0.10))
+                            : (Theme.isLight ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(1, 1, 1, 0.05))
+                border.width: 1
+                border.color: UI.Theme.cardBorder
 
-                Behavior on color { ColorAnimation { duration: 100 } }
+                Behavior on color { ColorAnimation { duration: UI.Theme.animationQuick } }
 
                 Image {
                     source: AppState.sidebarIconSource("system-search", 16)
                     width: 14; height: 14
                     anchors.centerIn: parent
-                    opacity: 0.70
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     asynchronous: true
                     sourceSize: Qt.size(14, 14)
+                    layer.enabled: true
+                    layer.effect: MultiEffect {
+                        colorization: 1.0
+                        colorizationColor: searchHover.containsMouse ? UI.Theme.textPrimary : UI.Theme.textSecondary
+                    }
                 }
 
                 MouseArea {
@@ -115,7 +213,14 @@ Item {
             }
         }
 
-        Item { width: 1; height: 10 }
+        Rectangle {
+            width: parent.width - 32
+            x: 16
+            height: 1
+            color: UI.Theme.cardBorder
+        }
+
+        Item { width: 1; height: 8 }
 
         // ── Pessoal ───────────────────────────────────────────────────
         SidebarSection { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.pessoal"]) || "PERSONAL") }
@@ -127,17 +232,15 @@ Item {
         // ── Favoritos ─────────────────────────────────────────────────
         SidebarSection { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.favoritos"]) || "FAVORITES") }
         Repeater {
-            model: [
-                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.desktop"]) || "Desktop"),    icon: "user-desktop",      path: AppState.homePath + "/Área de trabalho" },
-                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.documentos"]) || "Documents"), icon: "folder-documents",  path: AppState.homePath + "/Documentos" },
-                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.downloads"]) || "Downloads"),  icon: "folder-downloads",  path: AppState.homePath + "/Downloads" },
-                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.imagens"]) || "Pictures"),    icon: "folder-pictures",   path: AppState.homePath + "/Imagens" },
-                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.sidebar.music"]) || "Music"),    icon: "folder-music",      path: AppState.homePath + "/Músicas" },
-                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.sidebar.videos"]) || "Videos"),     icon: "folder-videos",     path: AppState.homePath + "/Vídeos" },
-                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.sidebar.public"]) || "Public"),    icon: "folder-publicshare",path: AppState.homePath + "/Público" },
-                { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.modelos"]) || "Templates"),    icon: "folder-templates",  path: AppState.homePath + "/Modelos" }
-            ]
+            model: {
+                var revision = AppState.sidebarFavoritesRevision
+                return AppState.visibleDefaultSidebarFavorites(root.defaultFavoriteItems)
+            }
             SidebarItem { icon: modelData.icon; label: modelData.label; path: modelData.path }
+        }
+        Repeater {
+            model: AppState.sidebarFavorites
+            SidebarItem { icon: modelData.icon || "inode-directory"; label: modelData.label || AppState.sidebarLabelForPath(modelData.path); path: modelData.path }
         }
 
         Item { width: 1; height: 4 }
@@ -194,16 +297,23 @@ Item {
     // ── Drive context-menu overlay (sem alteração de lógica) ──────────────────
     Item {
         id: driveMenuOverlay
-        parent: root.parent ? root.parent : root
-        x: 0; y: 0
-        width:  parent ? parent.width  : 0
-        height: parent ? parent.height : 0
+        parent: Overlay.overlay
+        x: 0
+        y: 0
+        width: parent ? parent.width : root.width
+        height: parent ? parent.height : root.height
+        visible: root.driveMenuOpen || root.sidebarMenuOpen
         z: 999
 
         MouseArea {
             anchors.fill: parent
-            enabled: root.driveMenuOpen
-            onClicked: root.closeDriveMenu()
+            z: 0
+            enabled: root.driveMenuOpen || root.sidebarMenuOpen
+            acceptedButtons: Qt.AllButtons
+            onPressed: function(mouse) {
+                mouse.accepted = true
+                root.closeMenus()
+            }
         }
 
         Common.ContextMenuPopup {
@@ -211,6 +321,7 @@ Item {
             menuVisible: root.driveMenuOpen
             menuX:       root.driveMenuX
             menuY:       root.driveMenuY
+            z:           1
 
             Common.ContextMenuAction {
                 label: root.driveMenuMounted ? "Abrir" : "Montar"
@@ -254,6 +365,305 @@ Item {
                 }
             }
         }
+
+        Common.ContextMenuPopup {
+            id: sidebarMenuCard
+            menuVisible: root.sidebarMenuOpen
+            menuX:       root.sidebarMenuX
+            menuY:       root.sidebarMenuY
+            menuWidth:   212
+            z:           1
+
+            Common.ContextMenuAction {
+                label: "Abrir"
+                actionEnabled: root.sidebarMenuPath !== ""
+                onTriggered: {
+                    root.closeSidebarMenu()
+                    if (root.sidebarMenuPath === AppState.networkRootPath)
+                        AppState.openNetworkBrowser()
+                    else
+                        AppState.navigateTo(root.sidebarMenuPath)
+                }
+            }
+
+            Common.ContextMenuAction {
+                label: "Abrir em nova aba"
+                actionEnabled: root.sidebarMenuPath !== "" && root.sidebarMenuPath.indexOf("/") === 0
+                onTriggered: {
+                    root.closeSidebarMenu()
+                    AppState.createTab(root.sidebarMenuPath)
+                }
+            }
+
+            Common.ContextMenuDivider { visible: root.sidebarMenuCanPin }
+
+            Common.ContextMenuAction {
+                label: "Fixar na barra lateral"
+                visible: root.sidebarMenuCanPin && !root.sidebarMenuIsFavorite
+                actionEnabled: true
+                onTriggered: {
+                    root.closeSidebarMenu()
+                    AppState.pinSidebarFavorite(root.sidebarMenuPath, root.sidebarMenuLabel, root.sidebarMenuIcon)
+                }
+            }
+
+            Common.ContextMenuDivider {}
+
+            Common.ContextMenuAction {
+                label: "Criar atalho na Área de Trabalho"
+                actionEnabled: root.sidebarMenuPath !== "" && root.sidebarMenuPath.indexOf("/") === 0
+                onTriggered: root.putSidebarItemOnDesktop()
+            }
+
+            Common.ContextMenuAction {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.propriedades"]) || "Properties")
+                actionEnabled: root.sidebarMenuPath !== ""
+                onTriggered: root.showSidebarProperties()
+            }
+
+            Common.ContextMenuDivider { visible: root.sidebarMenuCanPin && root.sidebarMenuIsFavorite }
+
+            Common.ContextMenuAction {
+                label: "Remover dos Favoritos"
+                visible: root.sidebarMenuCanPin && root.sidebarMenuIsFavorite
+                actionEnabled: true
+                destructive: true
+                onTriggered: {
+                    root.closeSidebarMenu()
+                    AppState.removeSidebarFavorite(root.sidebarMenuPath)
+                }
+            }
+        }
+    }
+
+    Process {
+        id: desktopLinkProcess
+        command: [
+            "bash", "-lc",
+            "set -e; target=\"$1\"; " +
+            "[ -e \"$target\" ] || [ -L \"$target\" ] || exit 1; " +
+            "desktop=$(xdg-user-dir DESKTOP 2>/dev/null || true); " +
+            "[ -n \"$desktop\" ] && [ \"$desktop\" != \"$HOME\" ] || desktop=\"$HOME/Área de trabalho\"; " +
+            "[ -d \"$desktop\" ] || desktop=\"$HOME/Desktop\"; " +
+            "mkdir -p \"$desktop\"; " +
+            "name=$(basename -- \"$target\"); dest=\"$desktop/$name\"; " +
+            "if [ -e \"$dest\" ] || [ -L \"$dest\" ]; then " +
+            "  i=2; while [ -e \"$desktop/$name $i\" ] || [ -L \"$desktop/$name $i\" ]; do i=$((i+1)); done; dest=\"$desktop/$name $i\"; " +
+            "fi; " +
+            "ln -s -- \"$target\" \"$dest\"",
+            "_",
+            root.desktopLinkPath
+        ]
+        running: false
+        stdout: StdioCollector {}
+        stderr: StdioCollector {}
+        onExited: function(exitCode) {
+            if (exitCode === 0 && AppState.currentPath === AppState.defaultSidebarFavoritePaths[0])
+                AppState.refreshCurrentFolder()
+        }
+    }
+
+    Window {
+        id: sidebarProperties
+        title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.propriedades"]) || "Properties")
+        width: 440
+        height: 340
+        minimumWidth: 380
+        minimumHeight: 300
+        color: "#1c1c1e"
+        flags: Qt.Window | Qt.Dialog
+
+        property string targetPath: ""
+        property bool targetIsDir: true
+        property bool isLoading: false
+        property string errorText: ""
+        property string propType: ""
+        property string propSize: ""
+        property string propModified: ""
+        property string propPerms: ""
+        property string propContains: ""
+
+        function fmtDate(epochSeconds) {
+            var v = Number(epochSeconds)
+            if (!isFinite(v) || v <= 0) return "--"
+            return Qt.formatDateTime(new Date(v * 1000), "dd/MM/yyyy  HH:mm")
+        }
+
+        onVisibilityChanged: {
+            if (!visible) return
+            isLoading = true
+            errorText = ""
+            propType = ""
+            propSize = "Carregando..."
+            propModified = "Carregando..."
+            propPerms = "Carregando..."
+            propContains = targetIsDir ? "Carregando..." : ""
+            propProcess.command = [
+                "bash", "-lc",
+                "target=\"$1\"; " +
+                "[ -e \"$target\" ] || [ -L \"$target\" ] || { echo 'ERROR|Arquivo nao encontrado'; exit 1; }; " +
+                "meta=$(stat -Lc '%F|%s|%Y|%A' -- \"$target\" 2>/dev/null) || { echo 'ERROR|Erro ao ler metadados'; exit 1; }; " +
+                "IFS='|' read -r kind bytes modified perms <<EOF\n$meta\nEOF\n" +
+                "if [ -d \"$target\" ]; then " +
+                "  size=$(du -sb -- \"$target\" 2>/dev/null | cut -f1); " +
+                "  count=$(find \"$target\" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l); " +
+                "  printf 'OK|%s|%s|%s|%s|%s\\n' \"$kind\" \"${size:-0}\" \"$modified\" \"$perms\" \"$count\"; " +
+                "else " +
+                "  printf 'OK|%s|%s|%s|%s|\\n' \"$kind\" \"$bytes\" \"$modified\" \"$perms\"; " +
+                "fi",
+                "_",
+                sidebarProperties.targetPath
+            ]
+            propProcess.running = false
+            propProcess.running = true
+        }
+
+        Rectangle {
+            id: propTitleBar
+            anchors { top: parent.top; left: parent.left; right: parent.right }
+            height: 44
+            color: "#252527"
+
+            Text {
+                anchors {
+                    left: parent.left
+                    leftMargin: 16
+                    right: parent.right
+                    rightMargin: 16
+                    verticalCenter: parent.verticalCenter
+                }
+                text: sidebarProperties.targetPath.split("/").pop() || sidebarProperties.targetPath
+                color: "#f2f2f7"
+                font.pixelSize: 13
+                font.weight: Font.DemiBold
+                elide: Text.ElideMiddle
+            }
+
+            Rectangle {
+                anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
+                height: 1
+                color: "#2c2c2c"
+            }
+        }
+
+        Column {
+            id: sidebarPropInfo
+            anchors {
+                top: propTitleBar.bottom
+                topMargin: 16
+                left: parent.left
+                leftMargin: 16
+                right: parent.right
+                rightMargin: 16
+                bottom: propFooter.top
+                bottomMargin: 16
+            }
+            spacing: 10
+
+            Repeater {
+                model: [
+                    { lbl: "Caminho", val: sidebarProperties.targetPath },
+                    { lbl: "Tipo", val: sidebarProperties.propType },
+                    { lbl: "Tamanho", val: sidebarProperties.propSize },
+                    { lbl: "Conteúdo", val: sidebarProperties.propContains },
+                    { lbl: "Modificado", val: sidebarProperties.propModified },
+                    { lbl: "Permissões", val: sidebarProperties.propPerms }
+                ]
+
+                Row {
+                    width: sidebarPropInfo.width
+                    spacing: 12
+
+                    Text {
+                        text: modelData.lbl
+                        color: "#8e8e93"
+                        font.pixelSize: 12
+                        width: 90
+                    }
+
+                    Text {
+                        text: modelData.val
+                        color: "#f2f2f7"
+                        font.pixelSize: 12
+                        width: sidebarPropInfo.width - 102
+                        wrapMode: Text.WrapAnywhere
+                    }
+                }
+            }
+
+            Text {
+                visible: sidebarProperties.errorText !== ""
+                text: sidebarProperties.errorText
+                color: "#ff6b6b"
+                font.pixelSize: 12
+                wrapMode: Text.WordWrap
+                width: sidebarPropInfo.width
+            }
+        }
+
+        Rectangle {
+            id: propFooter
+            anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
+            height: 48
+            color: "#252527"
+
+            Rectangle {
+                anchors { top: parent.top; left: parent.left; right: parent.right }
+                height: 1
+                color: "#2c2c2c"
+            }
+
+            Rectangle {
+                anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 14 }
+                width: 80
+                height: 30
+                radius: 7
+                color: propCloseMouse.containsMouse ? "#3a3a3c" : "#2c2c2e"
+                border.color: "#48484a"
+                border.width: 1
+
+                Text {
+                    anchors.centerIn: parent
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.text.fechar"]) || "Close")
+                    color: "#f2f2f7"
+                    font.pixelSize: 13
+                }
+
+                MouseArea {
+                    id: propCloseMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: sidebarProperties.close()
+                }
+            }
+        }
+
+        Process {
+            id: propProcess
+            command: []
+            running: false
+            stdout: StdioCollector {
+                onStreamFinished: {
+                    var raw = text.trim()
+                    if (!raw) {
+                        sidebarProperties.errorText = "Sem resposta do sistema."
+                        return
+                    }
+                    var parts = raw.split("|")
+                    if (parts[0] !== "OK") {
+                        sidebarProperties.errorText = parts.length > 1 ? parts.slice(1).join("|") : "Erro ao carregar."
+                        return
+                    }
+                    sidebarProperties.errorText = ""
+                    sidebarProperties.propType = parts[1] || "Item"
+                    sidebarProperties.propSize = AppState.formatSize(Number(parts[2] || 0))
+                    sidebarProperties.propModified = sidebarProperties.fmtDate(parts[3])
+                    sidebarProperties.propPerms = parts[4] || "--"
+                    sidebarProperties.propContains = parts[5] ? (parts[5] + (Number(parts[5]) === 1 ? " item" : " itens")) : "--"
+                }
+            }
+        }
     }
 
     // ═════════════════════════════════════════════════════════════════════════
@@ -266,28 +676,18 @@ Item {
         width:  parent ? parent.width : 200
         height: 26
 
-        // Linha separadora discreta à esquerda do label
-        Rectangle {
-            anchors {
-                left:           parent.left
-                leftMargin:     14
-                verticalCenter: parent.verticalCenter
-            }
-            width:  18
-            height: 1
-            color:  Qt.rgba(1, 1, 1, 0.10)
-            visible: false   // opcional — descomente se quiser a linha
-        }
-
         Text {
             anchors {
                 left:           parent.left
-                leftMargin:     14
+                leftMargin:     18
                 verticalCenter: parent.verticalCenter
             }
             text:  label
-            color: Qt.rgba(Theme.textTer.r, Theme.textTer.g, Theme.textTer.b, 0.55)
-            font { pixelSize: 10; weight: Font.Bold; letterSpacing: 1.4 }
+            color: UI.Theme.textTertiary
+            font.family: UI.Theme.fontFamily
+            font.pixelSize: UI.Theme.fontSizeTiny
+            font.weight: UI.Theme.fontWeightBold
+            font.letterSpacing: 0
         }
     }
 
@@ -305,26 +705,43 @@ Item {
                AppState.currentPath.indexOf(AppState.networkRootPath + "/") === 0)
             : AppState.currentPath === path
 
-        width:  parent ? parent.width - 16 : 192
+        width: parent ? parent.width - 16 : 192
         height: 32
         anchors.horizontalCenter: parent ? parent.horizontalCenter : undefined
-        radius: 10
+        radius: 0
 
-        // Pill de fundo: ativo = azul suave, hover = branco ultra-sutil
-        color: active
-            ? Qt.rgba(0.20, 0.48, 0.95, 0.22)
-            : sidebarDropTarget.containsDrag ? Qt.rgba(0.49, 0.72, 0.97, 0.18)
-            : itemHover.hovered ? Qt.rgba(1, 1, 1, 0.055) : "transparent"
+        color: "transparent"
+        readonly property color itemBg: active
+            ? Qt.rgba(UI.Theme.accent.r, UI.Theme.accent.g, UI.Theme.accent.b, 0.12)
+            : sidebarDropTarget.containsDrag ? Qt.rgba(UI.Theme.accent.r, UI.Theme.accent.g, UI.Theme.accent.b, 0.16)
+            : itemHover.hovered ? (Theme.isLight ? Qt.rgba(0, 0, 0, 0.045) : Qt.rgba(1, 1, 1, 0.05)) : "transparent"
 
-        border.width: (active || sidebarDropTarget.containsDrag) ? 1 : 0
-        border.color: active
-            ? Qt.rgba(0.55, 0.78, 1, 0.20)
-            : sidebarDropTarget.containsDrag ? Qt.rgba(0.49, 0.72, 0.97, 0.45) : "transparent"
+        Rectangle {
+            anchors.fill: parent
+            radius: 8
+            color: sbItem.itemBg
+            border.width: (sbItem.active || sidebarDropTarget.containsDrag || itemHover.hovered) ? 1 : 0
+            border.color: sbItem.active
+                ? Qt.rgba(UI.Theme.accent.r, UI.Theme.accent.g, UI.Theme.accent.b, 0.25)
+                : sidebarDropTarget.containsDrag ? Qt.rgba(UI.Theme.accent.r, UI.Theme.accent.g, UI.Theme.accent.b, 0.45)
+                : (Theme.isLight ? Qt.rgba(0, 0, 0, 0.06) : Qt.rgba(1, 1, 1, 0.05))
 
-        Behavior on color       { ColorAnimation { duration: 110 } }
-        Behavior on border.color{ ColorAnimation { duration: 110 } }
+            Behavior on color { ColorAnimation { duration: UI.Theme.animationFast; easing.type: Easing.OutCubic } }
+            Behavior on border.color { ColorAnimation { duration: UI.Theme.animationFast; easing.type: Easing.OutCubic } }
 
-        Row {
+            Rectangle {
+                anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+                width: 2
+                height: sbItem.active ? parent.height * 0.5 : 0
+                radius: 1.5
+                color: UI.Theme.accent
+                opacity: sbItem.active ? 1 : 0
+                Behavior on height { NumberAnimation { duration: UI.Theme.animationNormal; easing.type: Easing.OutBack } }
+                Behavior on opacity { NumberAnimation { duration: UI.Theme.animationNormal } }
+            }
+        }
+
+        RowLayout {
             anchors {
                 left:           parent.left
                 right:          parent.right
@@ -334,27 +751,37 @@ Item {
             }
             spacing: 9
 
-            // Ícone com fundo pill
             Rectangle {
-                width:  22
-                height: 22
+                Layout.preferredWidth: 22
+                Layout.preferredHeight: 22
+                Layout.alignment: Qt.AlignVCenter
                 radius: 7
-                color: active
-                    ? Qt.rgba(1, 1, 1, 0.13)
-                    : itemHover.hovered ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(1, 1, 1, 0.05)
-                anchors.verticalCenter: parent.verticalCenter
-
-                Behavior on color { ColorAnimation { duration: 110 } }
+                color: sbItem.active
+                    ? UI.Theme.accent
+                    : itemHover.hovered ? (Theme.isLight ? Qt.rgba(0, 0, 0, 0.07) : Qt.rgba(1, 1, 1, 0.10))
+                    : (Theme.isLight ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(1, 1, 1, 0.05))
+                border.width: 1
+                border.color: Theme.isLight
+                    ? Qt.rgba(0, 0, 0, sbItem.active ? 0.08 : 0.05)
+                    : Qt.rgba(1, 1, 1, sbItem.active ? 0.20 : 0.08)
+                Behavior on color { ColorAnimation { duration: UI.Theme.animationFast; easing.type: Easing.OutCubic } }
 
                 Image {
                     source: AppState.sidebarIconSource(sbItem.icon, 16)
-                    width: 14; height: 14
+                    width: 16; height: 16
                     anchors.centerIn: parent
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     asynchronous: true
-                    sourceSize: Qt.size(14, 14)
-                    opacity: sbItem.active ? 0.98 : 0.74
+                    sourceSize: Qt.size(16, 16)
+                    opacity: sbItem.active ? 1.0 : 0.92
+                    layer.enabled: true
+                    layer.effect: MultiEffect {
+                        colorization: 1.0
+                        colorizationColor: sbItem.active ? root.sidebarIconActive
+                            : itemHover.hovered ? root.sidebarIconHover
+                            : root.sidebarIconIdle
+                    }
                 }
             }
 
@@ -362,28 +789,15 @@ Item {
             Text {
                 text:  sbItem.label
                 color: sbItem.active
-                    ? Theme.text
-                    : Qt.rgba(Theme.text.r, Theme.text.g, Theme.text.b, 0.78)
-                font {
-                    pixelSize: 13
-                    weight: sbItem.active ? Font.DemiBold : Font.Normal
-                }
-                anchors.verticalCenter: parent.verticalCenter
+                    ? UI.Theme.textPrimary
+                    : (itemHover.hovered ? UI.Theme.textPrimary : UI.Theme.textSecondary)
+                font.family: UI.Theme.fontFamily
+                font.pixelSize: UI.Theme.fontSizeNormal
+                font.weight: sbItem.active ? UI.Theme.fontWeightDemiBold : UI.Theme.fontWeightMedium
                 elide: Text.ElideRight
-                // Reserva espaço para o dot indicador quando ativo
-                width: parent.width - 22 - parent.spacing - (sbItem.active ? 10 : 0)
-            }
-
-            // Dot indicador de item ativo
-            Rectangle {
-                width:  5
-                height: 5
-                radius: 2.5
-                color:  Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.85)
-                visible: sbItem.active
-                anchors.verticalCenter: parent.verticalCenter
-
-                Behavior on opacity { NumberAnimation { duration: 120 } }
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                Behavior on color { ColorAnimation { duration: UI.Theme.animationFast } }
             }
         }
 
@@ -395,9 +809,18 @@ Item {
             id: hoverArea
             anchors.fill: parent
             z: 1
+            acceptedButtons: Qt.LeftButton | Qt.RightButton
             hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
-            onClicked: {
+            onPressed: function(mouse) {
+                if (mouse.button === Qt.RightButton) {
+                    mouse.accepted = true
+                    root.openSidebarMenu(sbItem, mouse)
+                }
+            }
+            onClicked: function(mouse) {
+                if (mouse.button === Qt.RightButton)
+                    return
                 if (sbItem.action === "network")
                     AppState.openNetworkBrowser()
                 else
@@ -437,14 +860,14 @@ Item {
 
         readonly property bool active: mounted && AppState.currentPath === path
 
-        width:  parent ? parent.width - 16 : 192
+        width: parent ? parent.width - 16 : 192
         height: 32
         anchors.horizontalCenter: parent ? parent.horizontalCenter : undefined
         radius: 10
 
         color: active
             ? Qt.rgba(0.20, 0.48, 0.95, 0.22)
-            : devHover.containsMouse ? Qt.rgba(1, 1, 1, 0.055) : "transparent"
+            : devHover.containsMouse ? Theme.hover : "transparent"
 
         border.width: active ? 1 : 0
         border.color: active ? Qt.rgba(0.55, 0.78, 1, 0.20) : "transparent"
@@ -466,22 +889,25 @@ Item {
                 width:  22
                 height: 22
                 radius: 7
-                color: active
-                    ? Qt.rgba(1, 1, 1, 0.13)
-                    : devHover.containsMouse ? Qt.rgba(1, 1, 1, 0.07) : Qt.rgba(1, 1, 1, 0.05)
+                color: "transparent"
                 anchors.verticalCenter: parent.verticalCenter
-
-                Behavior on color { ColorAnimation { duration: 110 } }
 
                 Image {
                     source: AppState.sidebarIconSource(deviceItem.icon, 16)
-                    width: 14; height: 14
+                    width: 16; height: 16
                     anchors.centerIn: parent
                     fillMode: Image.PreserveAspectFit
                     smooth: true
                     asynchronous: true
-                    sourceSize: Qt.size(14, 14)
-                    opacity: deviceItem.busy ? 0.40 : (deviceItem.active ? 0.98 : 0.70)
+                    sourceSize: Qt.size(16, 16)
+                    opacity: deviceItem.busy ? 0.40 : (deviceItem.active ? 1.0 : 0.88)
+                    layer.enabled: true
+                    layer.effect: MultiEffect {
+                        colorization: 1.0
+                        colorizationColor: deviceItem.active ? root.sidebarIconActive
+                            : devHover.containsMouse ? root.sidebarIconHover
+                            : root.sidebarIconIdle
+                    }
                     Behavior on opacity { NumberAnimation { duration: 160 } }
                 }
             }
@@ -515,11 +941,15 @@ Item {
             enabled:     !busy
             hoverEnabled: true
             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-            onClicked: function(mouse) {
+            onPressed: function(mouse) {
                 if (mouse.button === Qt.RightButton) {
+                    mouse.accepted = true
                     root.openDriveMenu(deviceItem, mouse)
-                    return
                 }
+            }
+            onClicked: function(mouse) {
+                if (mouse.button === Qt.RightButton)
+                    return
                 if (mounted)
                     AppState.navigateTo(deviceItem.path)
                 else if (canMount)

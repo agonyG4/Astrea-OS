@@ -17,7 +17,7 @@ Rectangle {
     radius: compact ? height / 2 : Theme.radiusMedium
     color: compact ? "transparent"
                    : (error ? Qt.rgba(1, 0.23, 0.19, 0.16)
-                            : (tileMouse.containsMouse ? Theme.separator : Theme.background))
+                            : (tileMouse.containsMouse ? Theme.shellSeparator : Theme.background))
     border.width: compact ? 0 : 1
     border.color: error ? Qt.rgba(1, 0.23, 0.19, 0.28)
                         : (active ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.28) : Theme.border)
@@ -42,7 +42,7 @@ Rectangle {
             Text {
                 anchors.centerIn: parent
                 text: tile.icon
-                color: tile.active && !tile.error ? "#ffffff" : (tile.error ? Theme.iconWarning : Theme.iconMain)
+                color: tile.active && !tile.error ? "#ffffff" : (tile.error ? Theme.iconWarning : Theme.shellIconMain)
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
                 RotationAnimation on rotation {
                     running: tile.busy
@@ -62,7 +62,7 @@ Rectangle {
             Text {
                 width: parent.width
                 text: tile.title
-                color: Theme.textActive
+                color: Theme.shellTextActive
                 elide: Text.ElideRight
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.DemiBold }
             }
@@ -70,7 +70,7 @@ Rectangle {
             Text {
                 width: parent.width
                 text: tile.subtitle
-                color: tile.error ? Theme.iconWarning : Theme.textSecondary
+                color: tile.error ? Theme.iconWarning : Theme.shellTextSecondary
                 opacity: Theme.opacityEmphasis
                 elide: Text.ElideRight
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption }
@@ -86,7 +86,7 @@ Rectangle {
         anchors.centerIn: parent
         color: tile.error ? Qt.rgba(1, 0.23, 0.19, tileMouse.containsMouse ? 0.38 : 0.30)
                           : tile.active ? Theme.accent
-                                        : (tileMouse.containsMouse ? Theme.separator : Theme.background)
+                                        : (tileMouse.containsMouse ? Theme.shellSeparator : Theme.background)
         border.width: 1
         border.color: tile.error ? Qt.rgba(1, 0.23, 0.19, 0.34)
                                  : (tile.active ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.42) : Theme.border)
@@ -97,7 +97,7 @@ Rectangle {
         Text {
             anchors.centerIn: parent
             text: tile.icon
-            color: tile.active && !tile.error ? "#ffffff" : (tile.error ? Theme.iconWarning : Theme.iconMain)
+            color: tile.active && !tile.error ? "#ffffff" : (tile.error ? Theme.iconWarning : Theme.shellIconMain)
             font { family: Theme.fontFamily; pixelSize: Math.max(12, tile.circleSize * 0.48) }
             RotationAnimation on rotation {
                 running: tile.busy

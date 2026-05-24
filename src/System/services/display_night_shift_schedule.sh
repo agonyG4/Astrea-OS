@@ -28,9 +28,18 @@ read_conf_value() {
 
 write_units() {
 	mkdir -p "${unit_dir}"
-	local tmp_service tmp_timer
+	local tmp_service tmp_timer start_time end_time calendar_lines
 	tmp_service="$(mktemp "${service_path}.XXXXXX")"
 	tmp_timer="$(mktemp "${timer_path}.XXXXXX")"
+	start_time="$(minutes_to_time "$(time_to_minutes "$(read_conf_value night_shift_start 20:00)")")"
+	end_time="$(minutes_to_time "$(time_to_minutes "$(read_conf_value night_shift_end 07:00)")")"
+	if [ "${start_time}" = "${end_time}" ]; then
+		calendar_lines="OnCalendar=*-*-* 00:00:00"
+	else
+		calendar_lines="OnCalendar=*-*-* ${start_time}:00
+OnCalendar=*-*-* ${end_time}:00"
+	fi
+
 	cat >"${tmp_service}" <<EOF
 [Unit]
 Description=Apply Astrea Night Shift schedule
@@ -46,13 +55,12 @@ EOF
 
 	cat >"${tmp_timer}" <<EOF
 [Unit]
-Description=Check Astrea Night Shift schedule
+Description=Apply Astrea Night Shift at scheduled transitions
 
 [Timer]
 OnBootSec=20s
-OnUnitActiveSec=60s
-OnCalendar=*-*-* *:*:00
-AccuracySec=15s
+${calendar_lines}
+AccuracySec=30s
 Persistent=true
 
 [Install]
@@ -89,6 +97,15 @@ time_to_minutes() {
 	echo $((hour * 60 + minute))
 }
 
+minutes_to_time() {
+	local value="${1:-0}"
+	if ! [[ "${value}" =~ ^[0-9]+$ ]]; then
+		value=0
+	fi
+	((value = value % 1440))
+	printf '%02d:%02d\n' $((value / 60)) $((value % 60))
+}
+
 apply_identity() {
 	"${night_shift_color}" off >/dev/null 2>&1 || true
 }
@@ -108,11 +125,16 @@ apply_if_changed() {
 	local state="$1"
 	local strength="${2:-0}"
 	local temperature="identity"
+	local boot_id=""
 	if [ "${state}" = "on" ]; then
 		temperature="$(temperature_for_strength "${strength}")"
+		boot_id="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
 	fi
 
 	local desired="${state}:${temperature}"
+	if [ -n "${boot_id}" ]; then
+		desired="${desired}:boot=${boot_id}"
+	fi
 	if [ -f "${state_path}" ] && [ "$(cat "${state_path}" 2>/dev/null)" = "${desired}" ]; then
 		return 0
 	fi

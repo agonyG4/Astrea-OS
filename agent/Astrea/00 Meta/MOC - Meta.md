@@ -6,6 +6,7 @@ Parent: [[Astrea]]
 Meta notes track uncertainty, unresolved boundaries, and vault/project-level navigation.
 
 ## Notes
+- [[AGENT_START_HERE]]
 - [[Astrea - AI Project Brain]]
 - [[Astrea - Code Agent Guide]]
 - [[Astrea - Agent Working Rules]]

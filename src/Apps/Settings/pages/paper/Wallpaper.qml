@@ -22,8 +22,10 @@ Item {
 
     // ── Constantes e Caminhos ────────────────────────────────────────────────
     readonly property string _featureBase: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Features/Paper"
-    readonly property string _userBase:    (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Data/user"
-    readonly property string _configBase:  Quickshell.env("HOME") + "/.config/AstreaOS/user"
+    readonly property string _dataBase:    Quickshell.env("XDG_DATA_HOME") || (Quickshell.env("HOME") + "/.local/share")
+    readonly property string _configBaseRoot: Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+    readonly property string _userBase:    _dataBase + "/AstreaOS/user"
+    readonly property string _configBase:  _configBaseRoot + "/AstreaOS/user"
     readonly property string _prefsBase:   _configBase + "/paper"
     readonly property string _scripts:     (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/wallpaper"
     readonly property string wpFull:       _prefsBase + "/wallpaper/wallpaper.jpg"

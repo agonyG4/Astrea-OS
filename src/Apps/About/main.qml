@@ -32,6 +32,41 @@ ApplicationWindow {
     property string sysVersion: "..."
     property string _infoBuf:   ""
     readonly property string infoScript: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/system/info.py"
+    readonly property string themePath: (Quickshell.env("HOME") || "") + "/.config/AstreaOS/ui/theme.json"
+    property int themeMode: 0
+    property int shellStyle: 0
+    readonly property bool isLight: themeMode === 1
+    readonly property color textPrimary: isLight ? Qt.rgba(0.05, 0.06, 0.07, 0.94) : Qt.rgba(0.96, 0.96, 0.98, 0.94)
+    readonly property color textSecondary: isLight ? Qt.rgba(0.13, 0.15, 0.18, 0.68) : Qt.rgba(0.92, 0.94, 0.96, 0.72)
+    readonly property color textTertiary: isLight ? Qt.rgba(0.13, 0.15, 0.18, 0.48) : Qt.rgba(0.92, 0.94, 0.96, 0.48)
+    readonly property color surfaceColor: isLight ? Qt.rgba(0.965, 0.968, 0.98, 1) : Qt.rgba(0.11, 0.11, 0.12, 1)
+    readonly property color cardColor: isLight ? Qt.rgba(1, 1, 1, 0.72) : Qt.rgba(1, 1, 1, 0.05)
+    readonly property color sideColor: isLight ? Qt.rgba(1, 1, 1, 0.62) : Qt.rgba(1, 1, 1, 0.015)
+    readonly property color borderColor: isLight ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.08)
+    readonly property color hoverColor: isLight ? Qt.rgba(0, 0, 0, 0.055) : Qt.rgba(1, 1, 1, 0.07)
+
+    function applyThemeConfig(text) {
+        try {
+            var cfg = JSON.parse(text || "{}")
+            themeMode = (cfg.theme === "light" || cfg.theme_mode === 1) ? 1 : 0
+            var nextShellStyle = typeof cfg.shell_style === "number" ? cfg.shell_style : 0
+            shellStyle = nextShellStyle >= 0 && nextShellStyle <= 2 ? nextShellStyle : 0
+        } catch (e) {
+            themeMode = 0
+            shellStyle = 0
+        }
+    }
+
+    FileView {
+        id: themeFile
+        path: window.themePath
+        preload: true
+        blockLoading: true
+        watchChanges: true
+        printErrors: false
+        onFileChanged: reload()
+        onLoaded: window.applyThemeConfig(text())
+    }
 
     Process {
         id: infoProc
@@ -69,7 +104,7 @@ ApplicationWindow {
     Rectangle {
         anchors.fill: parent
         radius: 0
-        color: "#1c1c1e"
+        color: window.surfaceColor
 
         // Subtle inner top highlight
         Rectangle {
@@ -135,7 +170,7 @@ ApplicationWindow {
                 // Big "A" logo zone
                 Rectangle {
                     anchors.fill: parent
-                    color: Qt.rgba(1,1,1,0.015)
+                    color: window.sideColor
                     radius: 14
                 }
 
@@ -147,7 +182,7 @@ ApplicationWindow {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: "A"
-                        color: "#f2f2f7"
+                        color: window.textPrimary
                         font { pixelSize: 96; weight: Font.Light; letterSpacing: -4 }
                     }
 
@@ -157,7 +192,7 @@ ApplicationWindow {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: window.sysOs
-                        color: "#f2f2f7"
+                        color: window.textPrimary
                         font { pixelSize: 17; weight: Font.DemiBold; letterSpacing: -0.3 }
                     }
 
@@ -167,7 +202,7 @@ ApplicationWindow {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["about.version"]) || "Version {version}").replace("{version}", window.sysVersion)
-                        color: "#636366"
+                        color: window.textTertiary
                         font { pixelSize: 12 }
                     }
 
@@ -177,7 +212,7 @@ ApplicationWindow {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: window.sysName !== "..." ? window.sysName : ""
-                        color: "#48484a"
+                        color: window.textTertiary
                         font { pixelSize: 11; italic: true }
                         visible: window.sysName !== "..." && window.sysName !== ""
                     }
@@ -188,8 +223,8 @@ ApplicationWindow {
                     Rectangle {
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: 156; height: 28; radius: 8
-                        color: softBtn.containsMouse ? "#2c2c2e" : "#252527"
-                        border.color: "#3a3a3c"; border.width: 1
+                        color: softBtn.containsMouse ? window.hoverColor : window.cardColor
+                        border.color: window.borderColor; border.width: 1
                         Behavior on color { ColorAnimation { duration: 80 } }
 
                         Row {
@@ -204,7 +239,7 @@ ApplicationWindow {
 
                             Text {
                                 text: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["about.software_updated"]) || "Software up to date"
-                                color: "#8e8e93"
+                                color: window.textSecondary
                                 font { pixelSize: 11 }
                                 anchors.verticalCenter: parent.verticalCenter
                             }
@@ -225,7 +260,7 @@ ApplicationWindow {
                 width: 1
                 height: parent.height - 48
                 anchors.verticalCenter: parent.verticalCenter
-                color: "#2c2c2c"
+                color: window.borderColor
             }
 
             // RIGHT — specs list
@@ -259,7 +294,7 @@ ApplicationWindow {
                             Rectangle {
                                 anchors { bottom: parent.bottom; left: parent.left; right: parent.right }
                                 height: 1
-                                color: "#252527"
+                                color: window.borderColor
                                 visible: index < 5
                             }
 
@@ -274,7 +309,7 @@ ApplicationWindow {
                                 // Label
                                 Text {
                                     text: modelData.label
-                                    color: "#636366"
+                                    color: window.textTertiary
                                     font { pixelSize: 12 }
                                     width: 90
                                 }
@@ -282,7 +317,7 @@ ApplicationWindow {
                                 // Value
                                 Text {
                                     text: modelData.value
-                                    color: "#e5e5ea"
+                                    color: window.textPrimary
                                     font { pixelSize: 12 }
                                     width: parent.width - 90
                                     elide: Text.ElideRight

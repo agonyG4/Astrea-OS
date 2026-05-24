@@ -2,8 +2,8 @@ use serde_json::json;
 use std::env;
 use std::process;
 use weather_core::{
-    check_and_notify, fetch_weather_json, load_settings, notify_alert, save_settings, summary_json,
-    WeatherAlert, WeatherSettings, DEFAULT_CITY,
+    DEFAULT_CITY, WeatherAlert, WeatherSettings, check_and_notify, fetch_weather_json,
+    load_settings, notify_alert, save_settings, summary_json,
 };
 
 fn print_json(value: serde_json::Value) {

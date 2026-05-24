@@ -6,7 +6,11 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+
+MAX_ART_BYTES = 8 * 1024 * 1024
+ALLOWED_SCHEMES = {"http", "https"}
 
 
 def cache_dir() -> Path:
@@ -17,6 +21,10 @@ def cache_dir() -> Path:
 
 
 def fetch(url: str) -> Path:
+    parsed = urlparse(url)
+    if parsed.scheme not in ALLOWED_SCHEMES:
+        raise ValueError("unsupported artwork URL scheme")
+
     target_dir = cache_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / "island-art-current.jpg"
@@ -27,10 +35,17 @@ def fetch(url: str) -> Path:
     try:
         with os.fdopen(fd, "wb") as handle:
             with urlopen(request, timeout=10) as response:
+                length = response.headers.get("Content-Length")
+                if length is not None and int(length) > MAX_ART_BYTES:
+                    raise ValueError("artwork too large")
+                downloaded = 0
                 while True:
                     chunk = response.read(128 * 1024)
                     if not chunk:
                         break
+                    downloaded += len(chunk)
+                    if downloaded > MAX_ART_BYTES:
+                        raise ValueError("artwork too large")
                     handle.write(chunk)
             handle.flush()
             os.fsync(handle.fileno())

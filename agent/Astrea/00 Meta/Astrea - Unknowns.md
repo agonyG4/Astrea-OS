@@ -25,6 +25,8 @@ Some runtime state lives inside the Astrea tree:
 
 Other runtime state lives under:
 - `~/.local/state/Astrea`
+- `~/.local/share/AstreaOS`
+- `~/.cache/Astrea`
 
 The intended boundary is unclear.
 
@@ -33,6 +35,7 @@ Potentially duplicated/transitional areas:
 - `Core/components` top-level files and categorized subfolders.
 - Bluetooth process modules exist under both `modules/bluetooth` and `modules/network`, but the active top bar imports `modules/network`.
 - Paper/lockscreen files under multiple paths.
+- `Apps/Wallpapers/main.qml.bak-before-polish` and `Backups/wallpapers-app` are backup material, not active app code.
 
 ## Absolute Paths
 Many QML files hardcode `/home/agony/.local/share/Astrea`.
@@ -41,8 +44,9 @@ That is correct for the live runtime inspected here, but portability is unclear.
 
 ## External Bench Dependencies
 Astrea currently references:
-- `/home/agony/GitHub/Bench/Look/quicklook.qml`
-- `/home/agony/GitHub/Bench/StorageSense/sense.py`
+- `/home/agony/GitHub/Bench/StorageSense/sense.py` as an optional StorageSense scanner candidate.
+
+Quick Look is disabled in Explorer. It is future work, not an active runtime dependency.
 
 See [[Astrea - External Dependencies]].
 
@@ -53,6 +57,11 @@ The current API payload shape was not revalidated in this documentation pass.
 
 ## Network Backend Detail
 `Core/bridge/network/manager.py` is used by Internet settings, but exact command/config behavior was not fully expanded.
+
+## Session Daemon Detail
+`Core/bridge/astrea_sessiond.py` currently exposes a heartbeat/status scaffold and health domain. The reported socket path should not be assumed to serve requests until the implementation grows a real socket loop.
+
+Current tests cover the status payload shape and the stable `health` state contract; they do not imply a full socket daemon.
 
 ## About App
 Resolved in the current snapshot: `Apps/About/main.qml` is a standalone About window opened from the Astrea top-bar popup. See [[Astrea - About App]].

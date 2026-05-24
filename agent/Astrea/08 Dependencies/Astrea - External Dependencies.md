@@ -5,13 +5,12 @@ Related notes: [[Astrea]], [[Astrea - Explorer App]], [[Astrea - Settings App]],
 ## External Project Paths
 Observed dependencies outside `/home/agony/.local/share/Astrea`:
 
-- `/home/agony/GitHub/Bench/Look/quicklook.qml`
-  - referenced by [[Astrea - Explorer App]] Quick Look.
-
 - `/home/agony/GitHub/Bench/StorageSense/sense.py`
   - optional StorageSense scanner source used by `Core/bridge/system/storage.py` when present.
   - the bridge should also support bundled or alternate scanner locations and a JSON cache fallback.
   - consumed by [[Astrea - Settings App]] Storage page.
+
+Explorer Quick Look is disabled and should not depend on an external Bench checkout.
 
 ## External Config and State
 - `~/.config/AstreaOS`
@@ -28,9 +27,10 @@ Observed dependencies outside `/home/agony/.local/share/Astrea`:
 - `~/.local/share/xdg-desktop-portal/portals/astrea.portal`
 - `~/.local/share/dbus-1/services/org.freedesktop.Notifications.service`
 - `~/.local/share/dbus-1/services/org.freedesktop.impl.portal.desktop.astrea.service`
-- `/tmp/explorer-quicklook-*`
+- `~/.cache/Astrea/media-viewer/previews`
 - `/run/user/1000/Astrea/astrea-launchd.sock`
 - `/run/user/1000/Astrea/astrea-latencyd.sock`
+- `$XDG_RUNTIME_DIR/Astrea/sessiond.sock`
 - `/usr/local/libexec/astrea-latency-burst-helper`
 
 ## External System Services and Commands
@@ -47,6 +47,9 @@ Observed dependencies outside `/home/agony/.local/share/Astrea`:
 - `gsettings`
 - `hyprsunset`
 - `nvibrant`
+- ImageMagick `magick` or `convert`
+- `ffmpeg`
+- Python GI / GTK / Polkit bindings
 
 ## Risk Boundary
-Astrea is not fully self-contained because some runtime paths still point to Bench project files and some launch burst behavior depends on a privileged helper outside the runtime tree.
+Astrea is not fully self-contained because StorageSense can still use an optional Bench scanner source and launch burst behavior depends on a privileged helper outside the runtime tree.

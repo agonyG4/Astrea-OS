@@ -273,9 +273,37 @@ Item {
     }
 
     function setIconsHidden(hidden) {
+        if (iconsHidden === hidden)
+            return
+
         iconsHidden = hidden
-        layoutVersion += 1
         saveState()
+    }
+
+    function stopDesktopIconWork() {
+        refreshDebounce.stop()
+        if (appLoadProcess.running)
+            appLoadProcess.running = false
+        if (desktopSignatureProbe.running)
+            desktopSignatureProbe.running = false
+    }
+
+    function unloadDesktopIcons() {
+        stopDesktopIconWork()
+        apps = []
+        desktopSignature = ""
+        selectedDesktop = ""
+        contextApp = null
+        appLoadStatus = "Oculto"
+        layoutVersion += 1
+    }
+
+    function loadDesktopIconsIfVisible() {
+        if (!stateLoaded || iconsHidden || performancePaused)
+            return
+
+        refreshApps()
+        refreshDesktopSignature()
     }
 
     function normalizeGridPositions() {
@@ -287,6 +315,11 @@ Item {
     }
 
     function refreshApps() {
+        if (iconsHidden) {
+            unloadDesktopIcons()
+            return
+        }
+
         if (appLoadProcess.running)
             appLoadProcess.running = false
         appLoadStatus = "Atualizando..."
@@ -295,6 +328,8 @@ Item {
     }
 
     function applyDesktopSignature(next) {
+        if (iconsHidden)
+            return
         if (!next)
             return
 
@@ -310,7 +345,7 @@ Item {
     }
 
     function refreshDesktopSignature() {
-        if (performancePaused)
+        if (performancePaused || iconsHidden)
             return
         if (!desktopSignatureProbe.running)
             desktopSignatureProbe.running = true
@@ -356,8 +391,11 @@ Item {
         running: false
         stdout: StdioCollector { id: stateLoadStdout }
         onExited: function(exitCode) {
-            if (exitCode !== 0)
+            if (exitCode !== 0) {
+                root.stateLoaded = true
+                root.loadDesktopIconsIfVisible()
                 return
+            }
 
             try {
                 var state = JSON.parse(stateLoadStdout.text || "{}")
@@ -380,8 +418,13 @@ Item {
                 root.stateLoaded = true
                 root.normalizeGridPositions()
                 root.layoutVersion += 1
+                if (root.iconsHidden)
+                    root.unloadDesktopIcons()
+                else
+                    root.loadDesktopIconsIfVisible()
             } catch (error) {
                 root.stateLoaded = true
+                root.loadDesktopIconsIfVisible()
             }
         }
     }
@@ -392,6 +435,11 @@ Item {
         running: false
         stdout: StdioCollector { id: appLoadStdout }
         onExited: function(exitCode) {
+            if (root.iconsHidden) {
+                root.unloadDesktopIcons()
+                return
+            }
+
             if (exitCode !== 0) {
                 root.appLoadStatus = "Falha ao atualizar"
                 return
@@ -412,8 +460,6 @@ Item {
 
     Component.onCompleted: {
         stateLoadProcess.running = true
-        refreshApps()
-        refreshDesktopSignature()
     }
 
     function launchDesktop(path) {
@@ -519,13 +565,22 @@ Item {
     Timer {
         interval: 5000
         repeat: true
-        running: root.stateLoaded && !root.performancePaused
+        running: root.stateLoaded && !root.performancePaused && !root.iconsHidden
         onTriggered: root.refreshDesktopSignature()
     }
 
     onPerformancePausedChanged: {
         if (!performancePaused)
-            refreshDesktopSignature()
+            loadDesktopIconsIfVisible()
+        else
+            stopDesktopIconWork()
+    }
+
+    onIconsHiddenChanged: {
+        if (iconsHidden)
+            unloadDesktopIcons()
+        else
+            loadDesktopIconsIfVisible()
     }
 
     DesktopComponents.ClipboardProxy {

@@ -1,6 +1,5 @@
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import "../../AstreaComponents"
@@ -19,52 +18,105 @@ Item {
     property color popupBg: Theme.popupBg
 
     property string userName: ""
+    property string displayName: ""
     property string avatarPath: ""
     property string homeDir: Quickshell.env("HOME") || ""
     property int userId: parseInt(Quickshell.env("UID") || "0")
     property int avatarVersion: 0
     property bool avatarBusy: false
-    property real spinnerAngle: 0
+    property bool profileBusy: false
+    property bool autologinEnabled: false
+    property string profileStatusText: ""
     property string avatarStatusText: ""
     property string pickedAvatarPath: ""
     readonly property string avatarApplyScript: "/usr/local/bin/astrea-set-profile-image"
+    readonly property string userProfileScript: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/system/user_profile.py"
 
     Component.onCompleted: {
         userName = Quickshell.env("USER") || Quickshell.env("LOGNAME") || "user"
+        displayName = userName
         avatarPath = "/var/lib/AccountsService/icons/" + userName
+        profileStateProc.running = true
     }
 
-    ScrollView {
+    function parseProfilePayload(raw, source) {
+        const text = (raw || "").trim()
+        if (text === "")
+            return
+        try {
+            const payload = JSON.parse(text)
+            if (payload.displayName !== undefined)
+                displayName = payload.displayName || userName
+            if (payload.autologinEnabled !== undefined)
+                autologinEnabled = payload.autologinEnabled === true
+        } catch (e) {
+            profileStatusText = "Failed to parse " + source + " state."
+        }
+    }
+
+    function applyDisplayName(name) {
+        const trimmed = (name || "").trim().replace(/\s+/g, " ")
+        if (trimmed === "" || trimmed === displayName)
+            return
+        profileBusy = true
+        profileStatusText = "Waiting for authentication..."
+        displayNameProc.command = [
+            "python3",
+            userProfileScript,
+            "set-display-name",
+            "--user",
+            userName,
+            "--name",
+            trimmed
+        ]
+        displayNameProc.running = false
+        displayNameProc.running = true
+    }
+
+    function setSddmAutologin(enabled) {
+        profileBusy = true
+        profileStatusText = "Waiting for authentication..."
+        autologinProc.command = [
+            "python3",
+            userProfileScript,
+            "set-sddm-autologin",
+            "--user",
+            userName,
+            "--enabled",
+            enabled ? "1" : "0"
+        ]
+        autologinProc.running = false
+        autologinProc.running = true
+    }
+
+    ScrollPage {
         anchors.fill: parent
-        anchors.margins: 28
-        contentWidth: availableWidth
-        clip: true
+        contentMargins: 28
+        maxWidth: 900
 
-        ColumnLayout {
-            width: parent.width
-            spacing: 0
+        SectionHeader {
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.text.user_profile"]) || "USER PROFILE")
+            Layout.bottomMargin: 12
+            textSecondary: root.textSecondary
+        }
 
-            SectionHeader {
-                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.text.user_profile"]) || "USER PROFILE")
-                Layout.bottomMargin: 12
-                textSecondary: root.textSecondary
-            }
+        FormCard {
+            Layout.bottomMargin: 28
 
-            Rectangle {
+            Item {
                 Layout.fillWidth: true
-                Layout.bottomMargin: 28
-                radius: 12
-                color: root.cardBg
-                border.width: 1
-                border.color: root.cardBorder
-                implicitHeight: profileCardCol.implicitHeight + 40
+                implicitHeight: profileHeader.implicitHeight + 32
 
                 ColumnLayout {
-                    id: profileCardCol
-                    anchors { left: parent.left; right: parent.right; top: parent.top; topMargin: 20 }
-                    spacing: 16
+                    id: profileHeader
+                    anchors {
+                        left: parent.left
+                        right: parent.right
+                        top: parent.top
+                        margins: 20
+                    }
+                    spacing: 14
 
-                    // Big Avatar
                     Item {
                         Layout.alignment: Qt.AlignHCenter
                         width: 96
@@ -74,8 +126,8 @@ Item {
                             anchors.fill: parent
                             imagePath: root.avatarPath
                             imageVersion: root.avatarVersion
-                            fallbackText: root.userName.length > 0
-                                ? root.userName[0].toUpperCase()
+                            fallbackText: root.displayName.length > 0
+                                ? root.displayName[0].toUpperCase()
                                 : "?"
                             fallbackFontPixelSize: 40
                             fallbackFontWeight: Font.Medium
@@ -85,7 +137,6 @@ Item {
                             borderColor: Qt.rgba(1, 1, 1, 0.16)
                         }
 
-                        // Edit Button Overlay
                         Rectangle {
                             anchors { right: parent.right; bottom: parent.bottom; rightMargin: 0; bottomMargin: 0 }
                             width: 30
@@ -95,10 +146,10 @@ Item {
                             border.width: 1
                             border.color: Qt.rgba(1, 1, 1, 0.12)
                             antialiasing: true
-                            
+
                             Text {
                                 anchors.centerIn: parent
-                                text: "\uf040" // nf-fa-pencil
+                                text: root.avatarBusy ? "\uf110" : "\uf040"
                                 font.family: "JetBrainsMono Nerd Font"
                                 font.pixelSize: 14
                                 color: root.textPrimary
@@ -106,7 +157,7 @@ Item {
 
                             MouseArea {
                                 anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
+                                cursorShape: root.avatarBusy ? Qt.ArrowCursor : Qt.PointingHandCursor
                                 enabled: !root.avatarBusy
                                 onClicked: {
                                     root.avatarStatusText = ""
@@ -118,15 +169,14 @@ Item {
                         }
                     }
 
-                    // User Name Main
                     Text {
                         Layout.alignment: Qt.AlignHCenter
-                        text: root.userName
+                        text: root.displayName || root.userName
                         font.pixelSize: 24
                         font.weight: Font.DemiBold
                         color: root.textPrimary
                     }
-                    
+
                     Text {
                         Layout.alignment: Qt.AlignHCenter
                         text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.text.administrator"]) || "Administrator")
@@ -134,53 +184,6 @@ Item {
                         font.weight: Font.Normal
                         color: root.textSecondary
                         Layout.topMargin: -8
-                    }
-
-                    Rectangle {
-                        Layout.alignment: Qt.AlignHCenter
-                        implicitWidth: 144
-                        implicitHeight: 34
-                        radius: 8
-                        color: avatarChangeArea.containsMouse
-                               ? Qt.rgba(1, 1, 1, 0.10)
-                               : Qt.rgba(1, 1, 1, 0.06)
-                        border.width: 1
-                        border.color: Qt.rgba(1, 1, 1, 0.10)
-                        opacity: root.avatarBusy ? 0.75 : 1
-
-                        RowLayout {
-                            anchors.centerIn: parent
-                            spacing: 8
-
-                            Text {
-                                text: root.avatarBusy ? "\uf110" : "\uf030"
-                                color: root.textPrimary
-                                font.family: "JetBrainsMono Nerd Font"
-                                font.pixelSize: 12
-                                rotation: root.avatarBusy ? root.spinnerAngle : 0
-                            }
-
-                            Text {
-                                text: root.avatarBusy ? "Applying..." : "Change photo"
-                                color: root.textPrimary
-                                font.pixelSize: 13
-                                font.weight: Font.Medium
-                            }
-                        }
-
-                        MouseArea {
-                            id: avatarChangeArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            enabled: !root.avatarBusy
-                            onClicked: {
-                                root.avatarStatusText = ""
-                                root.pickedAvatarPath = ""
-                                avatarPickerProc.running = false
-                                avatarPickerProc.running = true
-                            }
-                        }
                     }
 
                     Text {
@@ -193,103 +196,119 @@ Item {
                         color: text.indexOf("Failed") === 0 ? "#ff7b72" : root.textSecondary
                         font.pixelSize: 11
                     }
+                }
+            }
 
-                    RotationAnimation {
-                        id: spinner
-                        target: root
-                        property: "spinnerAngle"
-                        running: root.avatarBusy
-                        loops: Animation.Infinite
-                        from: 0
-                        to: 360
-                        duration: 900
-                    }
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.label.display_name"]) || "Display Name")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.sublabel.name_shown_on_lockscreen_and_menus"]) || "Name shown on lockscreen and menus")
+                textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
 
-                    Item { Layout.preferredHeight: 4 } // Spacer
+                RowLayout {
+                    spacing: 8
 
-                    SettingRow {
-                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.label.display_name"]) || "Display Name")
-                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.sublabel.name_shown_on_lockscreen_and_menus"]) || "Name shown on lockscreen and menus")
-                        textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
-                        
-                        Rectangle {
-                            implicitWidth: 160
-                            implicitHeight: 32
-                            radius: 6
-                            color: Qt.rgba(1, 1, 1, 0.05)
-                            border.width: 1
-                            border.color: Qt.rgba(1, 1, 1, 0.1)
+                    Rectangle {
+                        implicitWidth: 250
+                        implicitHeight: 32
+                        radius: Theme.controlRadius
+                        color: Qt.rgba(1, 1, 1, 0.05)
+                        border.width: 1
+                        border.color: root.cardBorder
 
-                            TextInput {
-                                anchors.fill: parent
-                                anchors.leftMargin: 12
-                                anchors.rightMargin: 12
-                                verticalAlignment: TextInput.AlignVCenter
-                                text: root.userName
-                                color: root.textPrimary
-                                font.pixelSize: 13
-                                selectionColor: root.accent
-                            }
+                        TextInput {
+                            id: displayNameInput
+                            anchors.fill: parent
+                            anchors.leftMargin: 12
+                            anchors.rightMargin: 12
+                            verticalAlignment: TextInput.AlignVCenter
+                            text: root.displayName
+                            color: root.textPrimary
+                            font.pixelSize: Theme.fontSizeSmall
+                            selectionColor: root.accent
+                            enabled: !root.profileBusy
+                            onEditingFinished: root.applyDisplayName(text)
                         }
                     }
 
-                    SettingRow {
-                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.label.change_password"]) || "Change Password")
-                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.sublabel.update_your_login_and_sudo_password"]) || "Update your login and sudo password")
-                        textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
-                        
-                        Rectangle {
-                            implicitWidth: 120
-                            implicitHeight: 32
-                            radius: 6
-                            color: Qt.rgba(1, 1, 1, 0.05)
-                            border.width: 1
-                            border.color: Qt.rgba(1, 1, 1, 0.1)
-                            
-                            Text {
-                                anchors.centerIn: parent
-                                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.text.change"]) || "Change...")
-                                color: root.textPrimary
-                                font.pixelSize: 13
-                                font.weight: Font.Medium
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                            }
-                        }
-                    }
-
-                    SettingRow {
-                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.label.automatic_login"]) || "Automatic Login")
-                        sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.sublabel.login_without_asking_for_password"]) || "Login without asking for password")
-                        isLast: true
-                        textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
-                        
-                        Rectangle {
-                            implicitWidth: 44
-                            implicitHeight: 24
-                            radius: 12
-                            color: Qt.rgba(1, 1, 1, 0.1)
-                            border.width: 1
-                            border.color: Qt.rgba(1, 1, 1, 0.1)
-                            
-                            Rectangle {
-                                anchors { left: parent.left; leftMargin: 2; verticalCenter: parent.verticalCenter }
-                                width: 20
-                                height: 20
-                                radius: 10
-                                color: "#8e8e93"
-                            }
-
-                            MouseArea {
-                                anchors.fill: parent
-                                cursorShape: Qt.PointingHandCursor
-                            }
-                        }
+                    Button {
+                        label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.text.save"]) || "Save")
+                        controlWidth: 72
+                        controlHeight: 32
+                        enabled: !root.profileBusy
+                        onClicked: root.applyDisplayName(displayNameInput.text)
                     }
                 }
+            }
+
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.label.change_password"]) || "Change Password")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.sublabel.update_your_login_and_sudo_password"]) || "Update your login and sudo password")
+                textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
+
+                Button {
+                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.text.change"]) || "Change...")
+                    controlWidth: 120
+                    controlHeight: 32
+                }
+            }
+
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.label.automatic_login"]) || "Automatic Login SDDM")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.user.sublabel.login_without_asking_for_password"]) || "Create SDDM autologin for this user")
+                isLast: true
+                textPrimary: root.textPrimary; textSecondary: root.textSecondary; cardBorder: root.cardBorder
+
+                ToggleSwitch {
+                    id: autologinToggle
+                    checked: root.autologinEnabled
+                    enabled: !root.profileBusy
+                    onToggled: (targetChecked) => root.setSddmAutologin(targetChecked)
+                }
+            }
+
+            Text {
+                Layout.fillWidth: true
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                Layout.bottomMargin: 16
+                visible: text.length > 0
+                text: root.profileStatusText
+                color: text.indexOf("Failed") === 0 ? "#ff7b72" : root.textSecondary
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+            }
+        }
+    }
+
+    Process {
+        id: profileStateProc
+        running: false
+        command: ["python3", root.userProfileScript, "state", "--user", root.userName]
+        stdout: SplitParser { onRead: (line) => root.parseProfilePayload(line, "profile") }
+    }
+
+    Process {
+        id: displayNameProc
+        running: false
+        stdout: SplitParser { onRead: (line) => root.parseProfilePayload(line, "display name") }
+        onExited: (code) => {
+            root.profileBusy = false
+            root.profileStatusText = code === 0 ? "Display name updated." : "Failed to update display name."
+            if (code !== 0)
+                profileStateProc.running = true
+        }
+    }
+
+    Process {
+        id: autologinProc
+        running: false
+        stdout: SplitParser { onRead: (line) => root.parseProfilePayload(line, "SDDM autologin") }
+        onExited: (code) => {
+            root.profileBusy = false
+            root.profileStatusText = code === 0 ? "SDDM autologin updated." : "Failed to update SDDM autologin."
+            if (code !== 0) {
+                autologinToggle.visualChecked = root.autologinEnabled
+                profileStateProc.running = true
             }
         }
     }

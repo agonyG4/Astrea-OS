@@ -8,6 +8,11 @@ Related notes: [[Astrea]], [[Astrea - Core Components]], [[Astrea - Core Bridge]
 ## Main Entry
 `Apps/Settings/main.qml`
 
+Top-bar launch entry:
+- `~/.local/bin/astrea-settings-open`
+
+The top bar should use the wrapper rather than calling `quickshell -p` directly. The wrapper opens Settings on the currently active Hyprland workspace and uses `ASTREA_SETTINGS_DIRECT=1` only for its own recursion guard.
+
 ## Responsibility
 Settings is the user-facing control center for system and Astrea configuration.
 
@@ -36,16 +41,19 @@ Observed sections:
 ## Dependencies
 - [[Astrea - Core Components]]
 - [[Astrea - Core Bridge]]
+- [[Astrea - App Manager Bridge]]
 - [[Astrea - Display Bridge]]
 - [[Astrea - Audio Bridge]]
 - [[Astrea - Bluetooth Manager]]
 - [[Astrea - Wallpaper Bridge]]
+- [[Astrea - I18n]]
 - [[Astrea - System Layer]]
 - Settings icons under `Assets/icons/settings`.
 
 ## Shared Component Import
 Settings uses a local module link:
 - `Apps/Settings/AstreaComponents -> Core/components`
+- `Apps/Settings/AstreaI18n -> System/i18n`
 
 Pages import this link with relative paths, for example:
 - `import "AstreaComponents"` from `main.qml`
@@ -59,7 +67,8 @@ Observed config/state paths:
 - `~/.local/state/Astrea`
 - `~/.local/state/Astrea/desktop-icons/config.json`
 - `~/.local/state/Astrea/desktop-icons/state.json`
-- `System/config/display/monitor-settings.conf`
+- `~/.config/AstreaOS/system/settings.json`
+- `~/.config/AstreaOS/ui/theme.json`
 - WirePlumber config under `~/.config/wireplumber`
 
 ## Desktop Icons Page
@@ -117,8 +126,10 @@ The cache-backed approach is intentional. Opening Settings should read the exist
 
 The bridge must not depend on a single loose Bench checkout path. It resolves the StorageSense scanner from stable candidates and, for `json`, can still render from `~/.cache/storagesense/metadata_cache.db` when the scanner code is temporarily unavailable. This keeps the Storage page visible instead of turning a moved backend into an empty page.
 
-If the backend returns `No cache found`, the page should automatically start `storage.py scan --quiet`, then reload `storage.py json` when the scan exits. It should not expose a manual scan button or keep the overview stuck on `Calculando`.
+`storage.py json` owns the automatic refresh contract. It should return stable fields such as `refresh_running`, `refresh_started`, `cache_stale`, `error`, and `data`. When a scanner backend is available and the cache is missing or stale, the bridge starts a background refresh and the QML page polls `json` until it finishes. If no backend exists, `json` falls back cleanly to cache/error metadata instead of pretending a scan is running.
 
-The overview line also shows an approximate compression saving beside the used-storage text. It calculates this from StorageSense totals as `scanned_total - disk_used`, for example `647 GB scanned` versus `536 GB used` becomes about `111 GB compressed`.
+The UI should show the scanning/updating state from those fields and must not keep the overview stuck on `Calculando` when there is no cache.
+
+The overview line also shows compressed storage beside the used-storage text. Prefer exact `compsize`/zstd fields when present; fall back to the StorageSense allocated-size estimate only when exact compression data is unavailable.
 
 Storage values are formatted with decimal units (`1 GB = 1,000,000,000 bytes`) so they match disk/vendor-style numbers instead of showing binary GiB values with a `GB` label.

@@ -16,6 +16,7 @@ Item {
     property string itemUrl: ""
     property bool itemIsDir: false
     property var clipboardProxy
+    property string menuOwner: "file-context"
     property bool creatingFolder: false
     property bool renamingItem: false
     property bool compressionSubmenuOpen: false
@@ -27,7 +28,9 @@ Item {
     readonly property bool isBackgroundTarget: itemPath === AppState.currentPath && itemIsDir
     readonly property bool isArchiveTarget: !itemIsDir && /\.(zip|tar|tgz|tar\.gz|tar\.bz2|tbz2|tar\.xz|txz|7z|rar)$/i.test(itemPath)
     readonly property bool isAppImageTarget: !itemIsDir && AppState.isAppImageFileName(itemPath)
+    readonly property bool isWallpaperImageTarget: !itemIsDir && !isBackgroundTarget && !AppState.inTrashView && AppState.isWallpaperImageFileName(itemPath)
     readonly property bool canCompressTarget: itemIsDir && !isBackgroundTarget && !AppState.inTrashView
+    readonly property bool canToggleSidebarFavorite: itemIsDir && !isBackgroundTarget && !AppState.inTrashView && AppState.canPinSidebarFavorite(itemPath)
     readonly property var compressionFormats: [
         { "label": "ZIP", "format": "zip" },
         { "label": "RAR", "format": "rar" },
@@ -44,6 +47,7 @@ Item {
     }
 
     function openAt(x, y, path, isDir, url) {
+        AppState.announceContextMenuOpening(menuOwner)
         itemPath = path
         itemIsDir = isDir
         itemUrl = url
@@ -62,6 +66,14 @@ Item {
         onActivated: menuRoot.dismissTransientUi()
     }
 
+    Connections {
+        target: AppState
+        function onContextMenuOpening(owner) {
+            if (owner !== menuRoot.menuOwner)
+                menuRoot.closeMenu()
+        }
+    }
+
     Component.onCompleted: rarProbe.running = true
 
     function runOpen() {
@@ -69,9 +81,28 @@ Item {
         AppState.openItem(itemPath, itemIsDir, itemUrl)
     }
 
+    function runOpenWith() {
+        if (isBackgroundTarget)
+            return
+        var point = menuRoot.mapToItem(openWithMenu, menuFrame.menuX + menuFrame.menuWidth - 8, menuFrame.menuY + 4)
+        closeMenu()
+        openWithMenu.openAt(point.x, point.y, itemPath)
+    }
+
     function runCopyPath() {
         if (clipboardProxy && itemPath !== "")
             clipboardProxy.copyPath(itemPath)
+        closeMenu()
+    }
+
+    function runToggleSidebarFavorite() {
+        if (!canToggleSidebarFavorite)
+            return
+        var name = itemPath.split("/").filter(Boolean).pop() || itemPath
+        if (AppState.isSidebarFavorite(itemPath))
+            AppState.removeSidebarFavorite(itemPath)
+        else
+            AppState.pinSidebarFavorite(itemPath, name, AppState.fileIconName(name, true, false))
         closeMenu()
     }
 
@@ -141,6 +172,13 @@ Item {
         AppState.installAppImage(itemPath)
     }
 
+    function runSetAsWallpaper() {
+        if (!isWallpaperImageTarget || AppState.wallpaperApplyRunning)
+            return
+        closeMenu()
+        AppState.setAsWallpaper(itemPath)
+    }
+
     function runShowProperties() {
         closeMenu()
         var selected = AppState.selectedFiles
@@ -148,7 +186,7 @@ Item {
 
         if (inSelection && selected.length > 1) {
             propertiesWin.isMulti = true
-            propertiesWin.targetPaths = selected.map(function(n) { return AppState.currentPath + "/" + n })
+            propertiesWin.targetPaths = selected.map(function(n) { return AppState.joinPath(AppState.currentPath, n) })
             propertiesWin.targetPath = ""
             propertiesWin.targetIsDir = false
         } else {
@@ -208,6 +246,12 @@ Item {
             onTriggered: menuRoot.runOpen()
         }
         Common.ContextMenuAction {
+            label: "Abrir com"
+            actionEnabled: true
+            visible: !menuRoot.isBackgroundTarget
+            onTriggered: menuRoot.runOpenWith()
+        }
+        Common.ContextMenuAction {
             label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.nova_pasta"]) || "New Folder")
             actionEnabled: true
             onTriggered: menuRoot.runCreateFolder()
@@ -217,6 +261,13 @@ Item {
             label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.copiar_caminho"]) || "Copy Path")
             actionEnabled: true
             onTriggered: menuRoot.runCopyPath()
+        }
+        Common.ContextMenuAction {
+            label: AppState.isSidebarFavorite(menuRoot.itemPath) ? "Remover dos Favoritos" : "Fixar na sidebar"
+            actionEnabled: true
+            visible: menuRoot.canToggleSidebarFavorite
+            destructive: AppState.isSidebarFavorite(menuRoot.itemPath)
+            onTriggered: menuRoot.runToggleSidebarFavorite()
         }
         Common.ContextMenuAction {
             label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.renomear"]) || "Rename")
@@ -249,6 +300,12 @@ Item {
             actionEnabled: !AppState.appImageInstallRunning
             visible: menuRoot.isAppImageTarget
             onTriggered: menuRoot.runInstallAppImage()
+        }
+        Common.ContextMenuAction {
+            label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.definir_como_wallpaper"]) || "Definir como wallpaper")
+            actionEnabled: !AppState.wallpaperApplyRunning
+            visible: menuRoot.isWallpaperImageTarget
+            onTriggered: menuRoot.runSetAsWallpaper()
         }
         Common.ContextMenuAction {
             label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.restaurar"]) || "Restore")
@@ -335,6 +392,11 @@ Item {
         }
     }
 
+    Common.OpenWithMenu {
+        id: openWithMenu
+        anchors.fill: parent
+    }
+
     Window {
         id: propertiesWin
         title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.file_context_menu.label.propriedades"]) || "Properties")
@@ -390,7 +452,7 @@ Item {
                 "    s=$(du -sb -- \"$f\" 2>/dev/null | cut -f1); " +
                 "    total_size=$((total_size + s)); " +
                 "  done; " +
-                "  printf 'OK|%s itens|%s|—|—|—|%s\\n' \"$count\" \"$total_size\" \"—\" \"—\" \"—\" \"$count\"; " +
+                "  printf 'OK|%s itens|%s|—|—|—|%s\\n' \"$count\" \"$total_size\" \"$count\"; " +
                 "else " +
                 "  target=\"$1\"; " +
                 "  [ -e \"$target\" ] || { echo 'ERROR|Arquivo nao encontrado'; exit 1; }; " +
@@ -446,7 +508,7 @@ Item {
             Image {
                 anchors { fill: parent; margins: 8 }
                 source: propertiesWin.visible && propertiesWin.isImageFile
-                    ? ("file://" + propertiesWin.targetPath) : ""
+                    ? AppState.fileUrlForPath(propertiesWin.targetPath) : ""
                 fillMode: Image.PreserveAspectFit
                 smooth: true
                 asynchronous: true

@@ -107,7 +107,7 @@ ApplicationWindow {
         layer.enabled: true
         layer.effect: MultiEffect {
             shadowEnabled:        true
-            shadowColor:          Qt.rgba(0, 0, 0, 0.6)
+            shadowColor:          Theme.themeMode === 1 ? Qt.rgba(0, 0, 0, 0.24) : Qt.rgba(0, 0, 0, 0.6)
             shadowBlur:           1.0
             shadowVerticalOffset: 8
         }
@@ -133,7 +133,9 @@ ApplicationWindow {
             radius: parent.radius
             color: "transparent"
             border.width: 1
-            border.color: Qt.rgba(1, 1, 1, Theme.shellStyle === 0 ? 0.04 : 0.02)
+            border.color: Theme.themeMode === 1
+                ? Qt.rgba(1, 1, 1, Theme.shellStyle === 0 ? 0.22 : Theme.shellStyle === 2 ? 0.30 : 0.14)
+                : Qt.rgba(1, 1, 1, Theme.shellStyle === 0 ? 0.04 : 0.02)
         }
 
         // ── Drag handle (barra fina no topo, não bloqueia conteúdo) ───────

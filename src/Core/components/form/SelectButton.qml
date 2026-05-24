@@ -29,13 +29,21 @@ Item {
     readonly property int itemH:      36
     readonly property int popupPad:   Components.Theme.spacingSmall
     readonly property int listH: Math.min(sel.options.length, sel.maxVisible) * sel.itemH + popupPad * 2
+    readonly property bool isLight: Components.Theme.themeMode === 1
+    readonly property bool isDefaultLight: isLight && Components.Theme.shellStyle === 1
+    readonly property color restingBg: isDefaultLight ? Qt.rgba(0.975, 0.978, 0.986, 1) : sel.cardBg
+    readonly property color hoverBg: isLight ? Qt.rgba(0, 0, 0, 0.045) : Qt.rgba(1, 1, 1, 0.09)
+    readonly property color pressedBg: isLight ? Qt.rgba(0, 0, 0, 0.07) : Qt.rgba(1, 1, 1, 0.12)
+    readonly property color popupHoverBg: isLight ? Qt.rgba(0, 0, 0, 0.055) : Qt.rgba(1, 1, 1, 0.08)
+    readonly property color popupBorder: isLight ? Qt.rgba(0, 0, 0, 0.12) : Qt.rgba(1, 1, 1, 0.10)
+    readonly property color popupShadow: isLight ? Qt.rgba(0, 0, 0, 0.22) : Qt.rgba(0, 0, 0, 0.73)
 
     // ── Main Button ───────────────────────────────────────────────────────
     Rectangle {
         id: btnRect
         anchors.fill: parent
         radius: Components.Theme.controlRadius
-        color: btnArea.containsMouse ? Qt.rgba(1, 1, 1, 0.09) : sel.cardBg
+        color: btnArea.pressed ? sel.pressedBg : (btnArea.containsMouse ? sel.hoverBg : sel.restingBg)
         border.width: 1
         border.color: (dropdown.visible || btnArea.pressed) ? sel.accent : sel.cardBorder
         
@@ -51,7 +59,7 @@ Item {
             Text {
                 Layout.fillWidth: true
                 text: sel.label
-                color: (dropdown.visible || btnArea.pressed) ? sel.textPrimary : (btnArea.containsMouse ? "#ffffff" : sel.textPrimary)
+                color: sel.textPrimary
                 font.family: Components.Theme.fontFamily
                 font.pixelSize: Components.Theme.fontSizeNormal
                 font.weight: Components.Theme.fontWeightMedium
@@ -110,13 +118,13 @@ Item {
             radius: Components.Theme.cornerRadiusLarge
             color: sel.popupBg
             border.width: 1
-            border.color: Qt.rgba(1, 1, 1, 0.1) // slightly brighter than cardBorder for elevation
+            border.color: sel.popupBorder
             
             // Drop shadow directly attached using layer if MultiEffect isn't globally available here
             layer.enabled: true
             layer.effect: MultiEffect {
                 shadowEnabled: true
-                shadowColor: "#bb000000"
+                shadowColor: sel.popupShadow
                 shadowBlur: 1.5
                 shadowHorizontalOffset: 0
                 shadowVerticalOffset: 6
@@ -159,7 +167,7 @@ Item {
                 color: rowArea.pressed 
                        ? Qt.rgba(sel.accent.r, sel.accent.g, sel.accent.b, 0.25)
                        : (active ? Qt.rgba(sel.accent.r, sel.accent.g, sel.accent.b, 0.15) 
-                                 : (rowArea.containsMouse ? Qt.rgba(1, 1, 1, 0.08) : "transparent"))
+                                 : (rowArea.containsMouse ? sel.popupHoverBg : "transparent"))
                 
                 scale: rowArea.pressed ? 0.97 : 1.0
                 Behavior on scale { NumberAnimation { duration: Components.Theme.animationMicro } }
@@ -170,7 +178,7 @@ Item {
                     Text {
                         Layout.fillWidth: true
                         text: modelData
-                        color: active ? sel.accent : (rowArea.containsMouse ? "#ffffff" : sel.textPrimary)
+                        color: active ? sel.accent : sel.textPrimary
                         font.family: Components.Theme.fontFamily
                         font.pixelSize: Components.Theme.fontSizeNormal
                         font.weight: active ? Components.Theme.fontWeightDemiBold : Components.Theme.fontWeightMedium

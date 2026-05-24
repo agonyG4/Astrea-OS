@@ -57,7 +57,7 @@ ColumnLayout {
         font.pixelSize: 14
         font.weight: 600
         horizontalAlignment: Text.AlignHCenter
-        textColor: "#F2F2F7"
+        textColor: UI.Theme.textPrimary
         topPadding: 2
         bottomPadding: 2
     }
@@ -69,8 +69,8 @@ ColumnLayout {
         Layout.bottomMargin: 8
         implicitHeight: 52
         radius: 18
-        color: "#252529"
-        border.color: "#34343A"
+        color: UI.Theme.cardBg
+        border.color: UI.Theme.cardBorder
         border.width: 1
 
         property bool isAfterSunset: {
@@ -113,7 +113,7 @@ ColumnLayout {
                         text: weatherData ? weatherData.wind + " km/h" : "--"
                         font.pixelSize: 13
                         font.weight: 500
-                        textColor: "#F2F2F7"
+                        textColor: UI.Theme.textPrimary
                     }
                 }
             }
@@ -123,7 +123,7 @@ ColumnLayout {
                 Layout.fillHeight: true
                 Layout.topMargin: 12
                 Layout.bottomMargin: 12
-                color: "#3A3A40"
+                color: UI.Theme.cardBorder
             }
 
             RowLayout {
@@ -150,7 +150,7 @@ ColumnLayout {
                         text: nextSunEventTime
                         font.pixelSize: 13
                         font.weight: 500
-                        textColor: "#F2F2F7"
+                        textColor: UI.Theme.textPrimary
                     }
                 }
             }

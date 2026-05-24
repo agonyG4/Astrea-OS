@@ -121,17 +121,21 @@ Item {
     readonly property color accentForeground: (accent.r * 0.299 + accent.g * 0.587 + accent.b * 0.114) > 0.62
         ? "#111111"
         : "#ffffff"
-    readonly property color textPrimary:   themeMode === 1 ? "#111111" : "#ffffff"
-    readonly property color textSecondary: themeMode === 1 ? "#5f6368" : "#98989f"
-    readonly property color textTertiary:  themeMode === 1 ? "#8e8e93" : "#b9b9c2"
+    readonly property color textPrimary:   themeMode === 1 ? Qt.rgba(0.05, 0.06, 0.07, 0.94) : Qt.rgba(0.96, 0.96, 0.98, 0.94)
+    readonly property color textSecondary: themeMode === 1 ? Qt.rgba(0.13, 0.15, 0.18, 0.76) : Qt.rgba(0.92, 0.94, 0.96, 0.72)
+    readonly property color textTertiary:  themeMode === 1 ? Qt.rgba(0.13, 0.15, 0.18, 0.50) : Qt.rgba(0.92, 0.94, 0.96, 0.48)
     readonly property color cardBg: {
-        if (shellStyle === 0 || shellStyle === 2)
-            return themeMode === 1 ? Qt.rgba(1, 1, 1, 0.28) : Qt.rgba(1, 1, 1, 0.035)
-        return themeMode === 1 ? Qt.rgba(0, 0, 0, 0.035) : Qt.rgba(1, 1, 1, 0.05)
+        if (shellStyle === 0)
+            return themeMode === 1 ? Qt.rgba(1, 1, 1, 0.24) : Qt.rgba(1, 1, 1, 0.035)
+        if (shellStyle === 2)
+            return themeMode === 1 ? Qt.rgba(0.98, 0.99, 1, 0.36) : Qt.rgba(1, 1, 1, 0.035)
+        return themeMode === 1 ? Qt.rgba(1, 1, 1, 0.72) : Qt.rgba(1, 1, 1, 0.05)
     }
     readonly property color cardBorder: {
-        if (shellStyle === 0 || shellStyle === 2)
+        if (shellStyle === 0)
             return themeMode === 1 ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.06)
+        if (shellStyle === 2)
+            return themeMode === 1 ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.06)
         return themeMode === 1 ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.08)
     }
     readonly property color popupBg: {
@@ -140,18 +144,24 @@ Item {
         return themeMode === 1 ? Qt.rgba(0.98, 0.98, 0.99, 1) : Qt.rgba(0.11, 0.11, 0.12, 1)
     }
     readonly property color windowBackground: {
-        if (shellStyle === 0 || shellStyle === 2)
-            return themeMode === 1 ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.06)
-        return themeMode === 1 ? Qt.rgba(0.97, 0.97, 0.99, 1.0) : Qt.rgba(0.11, 0.11, 0.12, 1.0)
+        if (shellStyle === 0)
+            return themeMode === 1 ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.06)
+        if (shellStyle === 2)
+            return themeMode === 1 ? Qt.rgba(0.96, 0.985, 1, 0.24) : Qt.rgba(0, 0, 0, 0.06)
+        return themeMode === 1 ? Qt.rgba(0.965, 0.968, 0.98, 1.0) : Qt.rgba(0.11, 0.11, 0.12, 1.0)
     }
     readonly property color windowBorder: {
-        if (shellStyle === 0 || shellStyle === 2)
-            return themeMode === 1 ? Qt.rgba(0, 0, 0, 0.07) : Qt.rgba(1, 1, 1, 0.06)
+        if (shellStyle === 0)
+            return themeMode === 1 ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.06)
+        if (shellStyle === 2)
+            return themeMode === 1 ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.06)
         return themeMode === 1 ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.08)
     }
     readonly property color windowWash: {
-        if (shellStyle === 0 || shellStyle === 2)
-            return "transparent"
+        if (shellStyle === 0)
+            return themeMode === 1 ? Qt.rgba(1, 1, 1, 0.04) : "transparent"
+        if (shellStyle === 2)
+            return themeMode === 1 ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
         return themeMode === 1 ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(1, 1, 1, 0.02)
     }
     readonly property color errorColor:    "#ff453a"

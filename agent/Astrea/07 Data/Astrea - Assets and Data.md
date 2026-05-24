@@ -15,6 +15,8 @@ Observed assets:
 - `Assets/images/weather/backgrounds/cloudy.mp4`
 - `Assets/ui/quickshell/bar/astrea.png`
 - `Assets/ui/quickshell/island/*`
+- `Apps/Weather/assets/icons/weather/*`
+- `audio/hrir.wav`
 
 ## Data
 Folder: `Data/`
@@ -26,6 +28,11 @@ Observed data:
 - `Data/user/wallpapers/Persona_3`
 - `Data/user/wallpapers/Persona_5`
 
+Current wallpaper user data has moved toward:
+- `~/.local/share/AstreaOS/user/wallpapers`
+
+The wallpaper bridge can migrate legacy user wallpapers from the runtime tree.
+
 ## Related External State
 Astrea also stores state/config outside this tree:
 - `~/.config/AstreaOS`
@@ -33,7 +40,8 @@ Astrea also stores state/config outside this tree:
 - `~/.local/state/Astrea/weather/settings.json`
 - `~/.local/state/Astrea/weather/current.json`
 - `~/.local/state/Astrea/weather/alerts-seen.json`
+- `~/.local/state/Astrea/sessiond-status.json`
+- `~/.cache/Astrea/media-viewer/previews`
 - `~/.cache/weather`
-- `/tmp/explorer-quicklook-*`
 
 See [[Astrea - Data Flow]] and [[Astrea - Unknowns]].

@@ -16,8 +16,8 @@ ColumnLayout {
         Layout.fillWidth: true
         implicitHeight: hourlyContent.implicitHeight + 26
         radius: 20
-        color: "#252529"
-        border.color: "#34343A"
+        color: UI.Theme.cardBg
+        border.color: UI.Theme.cardBorder
         border.width: 1
 
         ColumnLayout {
@@ -33,11 +33,11 @@ ColumnLayout {
                 font.pixelSize: 13
                 font.weight: 400
                 lineHeight: 1.16
-                textColor: "#F2F2F7"
+                textColor: UI.Theme.textPrimary
             }
 
             UI.Divider {
-                lineColor: "#3A3A40"
+                lineColor: UI.Theme.cardBorder
             }
 
             RowLayout {
@@ -81,7 +81,7 @@ ColumnLayout {
                             text: index === 0 ? "Agora" : modelData.time
                             font.pixelSize: 11
                             font.weight: 500
-                            textColor: "#C7C7CF"
+                            textColor: UI.Theme.textSecondary
                             Layout.alignment: Qt.AlignHCenter
                         }
 
@@ -97,7 +97,7 @@ ColumnLayout {
                             visible: modelData.rain > 0
                             font.pixelSize: UI.Theme.fontSizeMicro
                             font.weight: 600
-                            textColor: "#9CC7FF"
+                            textColor: UI.Theme.accent
                             Layout.alignment: Qt.AlignHCenter
                         }
 

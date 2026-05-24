@@ -26,7 +26,7 @@ QtObject {
             return null
 
         var fileName = item.fileName || item.filePath.split("/").pop() || item.filePath
-        var fileUrl = item.fileUrl || ("file://" + item.filePath)
+        var fileUrl = item.fileUrl || app.fileUrlForPath(item.filePath)
         var isDir = Boolean(item.fileIsDir)
         var previewUrl = item.filePreviewUrl || ""
         if (!previewUrl && isPreviewablePath(item.filePath, isDir))
@@ -81,7 +81,7 @@ QtObject {
 
         var entry = {
             filePath: path,
-            fileUrl: fileUrl || ("file://" + path),
+            fileUrl: fileUrl || app.fileUrlForPath(path),
             fileIsDir: Boolean(isDir),
             fileExecutable: false,
             fileName: path.split("/").pop() || path,

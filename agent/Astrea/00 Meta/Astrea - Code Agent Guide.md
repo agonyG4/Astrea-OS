@@ -42,6 +42,7 @@ For example:
 - Settings pages should use `AstreaComponents`.
 - Explorer file UI should use `AstreaFiles`.
 - Explorer context menu actions should be added inside the existing wrapper around `AstreaFiles.FileContextMenu`.
+- Apps that need translations should use the app-local `AstreaI18n` link or `System/i18n/i18n.py`.
 - New reusable visuals should live in the matching shared module and be exported through that module's `qmldir`.
 
 ## Reading Order
@@ -78,12 +79,18 @@ For a targeted bug or feature:
 | Settings app | [[MOC - Apps]] | [[Astrea - Settings App]], [[Astrea - Core Components]] |
 | Explorer app | [[MOC - Apps]] | [[Astrea - Explorer App]], [[Astrea - Explorer Backend]] |
 | Weather app | [[MOC - Apps]] | [[Astrea - Weather App]], [[Astrea - Weather Bridge]] |
+| Media Viewer app | [[MOC - Apps]] | [[Astrea - Media Viewer App]] |
+| Wallpapers app | [[MOC - Apps]] | [[Astrea - Wallpapers App]], [[Astrea - Wallpaper Bridge]] |
 | About app | [[MOC - Apps]] | [[Astrea - About App]], [[Astrea - Core Bridge]] |
 | Shared QML controls | [[MOC - Core]] | [[Astrea - Core Components]] |
 | Python bridge | [[MOC - Bridges and Backends]] | [[Astrea - Core Bridge]] |
+| App manager bridge | [[MOC - Bridges and Backends]] | [[Astrea - App Manager Bridge]] |
+| Session/state JSON helpers | [[MOC - Bridges and Backends]] | [[Astrea - Session Daemon]], [[Astrea - State JSON Bridge]] |
 | Audio | [[MOC - Bridges and Backends]] | [[Astrea - Audio Bridge]] |
 | Display | [[MOC - Bridges and Backends]] | [[Astrea - Display Bridge]] |
 | Wallpaper | [[MOC - Bridges and Backends]] | [[Astrea - Wallpaper Bridge]] |
+| I18n/language | [[MOC - System]] | [[Astrea - I18n]] |
+| Polkit/auth prompts | [[MOC - System]] | [[Astrea - Polkit Auth]] |
 | Bluetooth | [[MOC - System]] | [[Astrea - Bluetooth Manager]] |
 | Launch and latency | [[MOC - System]] | [[Astrea - Launcher and Latency]] |
 | Runtime state/data | [[MOC - Data]] | [[Astrea - Assets and Data]] |
@@ -96,6 +103,8 @@ For a targeted bug or feature:
 - Quickshell runtime: `/home/agony/.local/share/Astrea/Quickshell`
 - Shared QML components: `/home/agony/.local/share/Astrea/Core/components`
 - Bridges: `/home/agony/.local/share/Astrea/Core/bridge`
+- I18n catalogs: `/home/agony/.local/share/Astrea/System/i18n`
+- Media Viewer cache: `~/.cache/Astrea/media-viewer/previews`
 - User config: `~/.config/AstreaOS`
 - Runtime state: `~/.local/state/Astrea`
 - Weather cache: `~/.cache/weather`

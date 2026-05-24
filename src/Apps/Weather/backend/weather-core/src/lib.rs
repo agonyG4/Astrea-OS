@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::fs;
@@ -77,8 +77,7 @@ pub fn home_dir() -> PathBuf {
     env::var_os("HOME")
         .map(PathBuf::from)
         .or_else(|| {
-            env::var_os("XDG_STATE_HOME")
-                .and_then(|p| PathBuf::from(p).parent().map(PathBuf::from))
+            env::var_os("XDG_STATE_HOME").and_then(|p| PathBuf::from(p).parent().map(PathBuf::from))
         })
         .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("/tmp")))
 }
@@ -199,16 +198,52 @@ pub fn cached_current(max_age_seconds: u64) -> Option<Value> {
     load_json(path)
 }
 
+fn normalized_city(value: &str) -> String {
+    value
+        .chars()
+        .filter_map(|ch| {
+            let lower = ch.to_lowercase().next().unwrap_or(ch);
+            match lower {
+                'á' | 'à' | 'â' | 'ã' | 'ä' => Some('a'),
+                'é' | 'è' | 'ê' | 'ë' => Some('e'),
+                'í' | 'ì' | 'î' | 'ï' => Some('i'),
+                'ó' | 'ò' | 'ô' | 'õ' | 'ö' => Some('o'),
+                'ú' | 'ù' | 'û' | 'ü' => Some('u'),
+                'ç' => Some('c'),
+                ch if ch.is_ascii_alphanumeric() => Some(ch),
+                ch if ch.is_whitespace() || ch == '-' || ch == '_' => Some(' '),
+                _ => None,
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn cached_current_for_city(city: &str, max_age_seconds: u64) -> Option<Value> {
+    let cached = cached_current(max_age_seconds)?;
+    let cached_city = cached.get("city").and_then(Value::as_str).unwrap_or("");
+    if normalized_city(cached_city) == normalized_city(city) {
+        Some(cached)
+    } else {
+        None
+    }
+}
+
 pub fn fetch_weather_json(city: &str, force: bool) -> Result<Value, String> {
     if !force {
-        if let Some(cached) = cached_current(CACHE_MAX_AGE_SECONDS) {
+        if let Some(cached) = cached_current_for_city(city, CACHE_MAX_AGE_SECONDS) {
             return Ok(cached);
         }
     }
 
     let weather_py = weather_py_path();
     if !weather_py.is_file() {
-        return Err(format!("weather backend not found: {}", weather_py.display()));
+        return Err(format!(
+            "weather backend not found: {}",
+            weather_py.display()
+        ));
     }
 
     let mut command = Command::new("/usr/bin/env");
@@ -252,7 +287,10 @@ pub fn evaluate_weather_alerts(data: &Value) -> Vec<WeatherAlert> {
                 .get("title")
                 .and_then(Value::as_str)
                 .unwrap_or("Aviso meteorológico");
-            let source = item.get("source").and_then(Value::as_str).unwrap_or("INMET");
+            let source = item
+                .get("source")
+                .and_then(Value::as_str)
+                .unwrap_or("INMET");
             let severity = item.get("severity").and_then(Value::as_str).unwrap_or("");
             let risks = text_from_value(item.get("risks"));
             let when = match (
@@ -291,7 +329,10 @@ pub fn evaluate_weather_alerts(data: &Value) -> Vec<WeatherAlert> {
         alerts.push(WeatherAlert::new(
             "heat",
             "Astrea Weather: calor extremo",
-            &format!("{city}: temperatura pode chegar a {}°C", temp.max(temp_max).round()),
+            &format!(
+                "{city}: temperatura pode chegar a {}°C",
+                temp.max(temp_max).round()
+            ),
             "normal",
         ));
     }
@@ -299,7 +340,10 @@ pub fn evaluate_weather_alerts(data: &Value) -> Vec<WeatherAlert> {
         alerts.push(WeatherAlert::new(
             "cold",
             "Astrea Weather: frio intenso",
-            &format!("{city}: temperatura mínima de {}°C", temp.min(temp_min).round()),
+            &format!(
+                "{city}: temperatura mínima de {}°C",
+                temp.min(temp_min).round()
+            ),
             "normal",
         ));
     }
@@ -316,7 +360,11 @@ pub fn evaluate_weather_alerts(data: &Value) -> Vec<WeatherAlert> {
     }
 
     if let Some(hourly) = data.get("hourly").and_then(Value::as_array) {
-        if let Some(hour) = hourly.iter().take(6).find(|hour| number(hour.get("rain")) >= 70.0) {
+        if let Some(hour) = hourly
+            .iter()
+            .take(6)
+            .find(|hour| number(hour.get("rain")) >= 70.0)
+        {
             let rain = number(hour.get("rain")).round();
             let time = hour.get("time").and_then(Value::as_str).unwrap_or("");
             alerts.push(WeatherAlert::new(
@@ -377,7 +425,10 @@ pub fn notify_alert(alert: &WeatherAlert, dry_run: bool) -> bool {
     if dry_run {
         command.arg("--dry-run");
     }
-    command.status().map(|status| status.success()).unwrap_or(false)
+    command
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 pub fn check_and_notify(data: &Value, dry_run: bool) -> CheckResult {
@@ -487,7 +538,11 @@ fn compact_text(text: &str, limit: usize) -> String {
     if compact.chars().count() <= limit {
         return compact;
     }
-    compact.chars().take(limit.saturating_sub(1)).collect::<String>() + "…"
+    compact
+        .chars()
+        .take(limit.saturating_sub(1))
+        .collect::<String>()
+        + "…"
 }
 
 fn urgency_from_text(text: &str) -> String {
@@ -556,5 +611,14 @@ mod tests {
 
         assert_eq!(first.len(), 2);
         assert!(second.is_empty());
+    }
+
+    #[test]
+    fn normalizes_city_names_for_cache_matching() {
+        assert_eq!(normalized_city("Itajaí"), normalized_city("itajai"));
+        assert_eq!(
+            normalized_city("São   José-dos_Pinhais"),
+            "sao jose dos pinhais"
+        );
     }
 }

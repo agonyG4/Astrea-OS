@@ -10,11 +10,11 @@ QtObject {
 
     readonly property bool isPortalDialog: (Quickshell.env("ASTREA_FILE_DIALOG_OPTIONS") || Quickshell.env("BENCH_FILE_DIALOG_OPTIONS") || "") !== ""
     readonly property string homePath: Quickshell.env("HOME") || ""
-    readonly property string quickLookPathFile: "/tmp/explorer-quicklook-path"
-    readonly property string quickLookPidFile: "/tmp/explorer-quicklook.pid"
     readonly property string backendPath: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/apps/explorer_backend"
     readonly property string helperPath: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Apps/Explorer/explorer_helper.py"
+    readonly property string wallpaperManagerPath: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/wallpaper/wallpaper_manager.py"
     readonly property string astreaLaunch: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/bin/astrea-launch"
+    readonly property string windowsRun: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/System/scripts/astrea-windows-run"
     readonly property string networkRootPath: (Quickshell.env("XDG_RUNTIME_DIR") || ("/run/user/" + Quickshell.env("UID"))) + "/gvfs"
     readonly property string trashFilesPath: homePath + "/.local/share/Trash/files"
     readonly property string trashInfoPath: homePath + "/.local/share/Trash/info"
@@ -33,7 +33,22 @@ QtObject {
     property bool showHidden: false
     property bool foldersFirst: true
     property bool groupingEnabled: true
+    property string sidebarFavoritesJson: "[]"
+    property string sidebarHiddenDefaultFavoritesJson: "[]"
+    property var sidebarFavorites: []
+    property var sidebarHiddenDefaultFavorites: []
+    property int sidebarFavoritesRevision: 0
     readonly property bool inTrashView: isTrashPath(currentPath)
+    readonly property var defaultSidebarFavoritePaths: [
+        homePath + "/Área de trabalho",
+        homePath + "/Documentos",
+        homePath + "/Downloads",
+        homePath + "/Imagens",
+        homePath + "/Músicas",
+        homePath + "/Vídeos",
+        homePath + "/Público",
+        homePath + "/Modelos"
+    ]
 
     property alias currentPath: navigationObj.currentPath
     property alias history: navigationObj.history
@@ -77,6 +92,13 @@ QtObject {
     property alias archiveExtractionDestination: fileOpsObj.archiveExtractionDestination
     property alias archiveExtractionDoneCount: fileOpsObj.archiveExtractionDoneCount
     property alias archiveExtractionTotalCount: fileOpsObj.archiveExtractionTotalCount
+    property alias archiveExtractionRemainingText: fileOpsObj.archiveExtractionRemainingText
+    property alias archivePasswordPromptVisible: fileOpsObj.archivePasswordPromptVisible
+    property alias archivePassword: fileOpsObj.archivePassword
+    property alias archivePasswordError: fileOpsObj.archivePasswordError
+    property alias archiveConflictVisible: fileOpsObj.archiveConflictVisible
+    property alias archiveConflictDestination: fileOpsObj.archiveConflictDestination
+    property alias archiveConflictName: fileOpsObj.archiveConflictName
     property alias fileOperationRunning: fileOpsObj.fileOperationRunning
     property alias fileOperationProgress: fileOpsObj.fileOperationProgress
     property alias fileOperationPercent: fileOpsObj.fileOperationPercent
@@ -88,6 +110,7 @@ QtObject {
     property alias fileOperationTotalCount: fileOpsObj.fileOperationTotalCount
     property alias fileOperationMode: fileOpsObj.fileOperationMode
     property alias appImageInstallRunning: fileOpsObj.appImageInstallRunning
+    property alias wallpaperApplyRunning: fileOpsObj.wallpaperApplyRunning
 
     property alias showPreview: previewObj.showPreview
     property alias viewMode: previewObj.viewMode
@@ -96,7 +119,6 @@ QtObject {
     property alias activeThumbnailWarmRequest: previewObj.activeThumbnailWarmRequest
     property alias activePreviewRefreshPath: previewObj.activePreviewRefreshPath
     property alias startupWarmQueue: previewObj.startupWarmQueue
-    property alias quickLookCooldown: previewObj.quickLookCooldown
     property alias zoomLevel: previewObj.zoomLevel
 
     property alias deviceModel: deviceNetObj.deviceModel
@@ -126,6 +148,8 @@ QtObject {
         property alias groupingEnabled: state.groupingEnabled
         property alias zoomLevel: state.zoomLevel
         property alias autoMountDeviceIdsJson: state.autoMountDeviceIdsJson
+        property alias sidebarFavoritesJson: state.sidebarFavoritesJson
+        property alias sidebarHiddenDefaultFavoritesJson: state.sidebarHiddenDefaultFavoritesJson
     }
 
     property QtObject selection: StateModules.SelectionState {
@@ -159,6 +183,7 @@ QtObject {
     }
 
     Component.onCompleted: {
+        loadSidebarFavorites()
         navigation.initialize()
         deferredStartupTimer.restart()
     }
@@ -182,6 +207,11 @@ QtObject {
 
     function createTab(initialPath) { navigation.createTab(initialPath) }
     function closeTab(index) { navigation.closeTab(index) }
+    function closeTabById(tabId) { navigation.closeTabById(tabId) }
+    function switchTabById(tabId) { navigation.switchTabById(tabId) }
+    function tabIndexById(tabId) { return navigation.tabIndexById(tabId) }
+    function activeTabId() { return navigation.activeTabId() }
+    function moveTab(fromIndex, toIndex) { navigation.moveTab(fromIndex, toIndex) }
     function switchTab(index) { navigation.switchTab(index) }
     function navigateTo(path) { navigation.navigateTo(path) }
     function goBack() { navigation.goBack() }
@@ -200,6 +230,8 @@ QtObject {
     function clearSearch() { navigation.clearSearch() }
 
     function isCutPending(name) { return fileOps.isCutPending(name) }
+    function joinPath(dirPath, fileName) { return fileOps.joinPath(dirPath, fileName) }
+    function fileUrlForPath(path) { return fileOps.fileUrlForPath(path) }
     function selectedPathsInCurrentFolder() { return fileOps.selectedPathsInCurrentFolder() }
     function selectedUriListInCurrentFolder() { return fileOps.selectedUriListInCurrentFolder() }
     function copySelected() { fileOps.copySelected() }
@@ -213,13 +245,17 @@ QtObject {
     function restoreSelected() { fileOps.restoreSelected() }
     function emptyTrash() { fileOps.emptyTrash() }
     function startArchiveExtraction(archivePath, folderName) { fileOps.startArchiveExtraction(archivePath, folderName) }
+    function submitArchivePassword(password) { fileOps.submitArchivePassword(password) }
+    function cancelArchivePassword() { fileOps.cancelArchivePassword() }
+    function submitArchiveConflict(policy) { fileOps.submitArchiveConflict(policy) }
+    function cancelArchiveConflict() { fileOps.cancelArchiveConflict() }
     function startFolderCompression(folderPath, format) { fileOps.startFolderCompression(folderPath, format) }
     function isAppImageFileName(fileName) { return String(fileName || "").toLowerCase().endsWith(".appimage") }
+    function isWallpaperImageFileName(fileName) { return /\.(avif|bmp|gif|heic|heif|jpe?g|png|tif|tiff|webp)$/i.test(String(fileName || "")) }
     function installAppImage(path) { fileOps.installAppImage(path) }
+    function setAsWallpaper(path) { fileOps.setAsWallpaper(path) }
 
     function refreshPreviewMetadata() { preview.refreshPreviewMetadata() }
-    function openQuickLook() { preview.openQuickLook() }
-    function syncQuickLookSelection() { preview.syncQuickLookSelection() }
     function fileIconName(fileName, isFolder, isExecutable) { return preview.fileIconName(fileName, isFolder, isExecutable) }
     function portalIconSource(iconName, size) { return preview.portalIconSource(iconName, size) }
     function sidebarIconSource(iconName, size) { return preview.sidebarIconSource(iconName, size) }
@@ -245,6 +281,182 @@ QtObject {
     function openItem(path, isDir, fileUrl) { preview.openItem(path, isDir, fileUrl) }
     function recordRecentItem(path, isDir, fileUrl) { recent.recordAccess(path, isDir, fileUrl) }
     function recentModelItems() { return recent.recentModelItems() }
+
+    signal contextMenuOpening(string owner)
+
+    function announceContextMenuOpening(owner) {
+        contextMenuOpening(owner || "")
+    }
+
+    function normalizeSidebarPath(path) {
+        var text = String(path || "")
+        if (text.length > 1)
+            text = text.replace(/\/+$/, "")
+        return text
+    }
+
+    function sidebarLabelForPath(path) {
+        var cleanPath = normalizeSidebarPath(path)
+        if (cleanPath === homePath)
+            return "Home Folder"
+        if (cleanPath === "/")
+            return "System"
+        var parts = cleanPath.split("/").filter(Boolean)
+        return parts.length > 0 ? parts[parts.length - 1] : cleanPath
+    }
+
+    function parseSidebarArray(text) {
+        try {
+            var parsed = JSON.parse(text || "[]")
+            return Array.isArray(parsed) ? parsed : []
+        } catch (error) {
+            return []
+        }
+    }
+
+    function loadSidebarFavorites() {
+        var parsedFavorites = parseSidebarArray(sidebarFavoritesJson)
+        var nextFavorites = []
+        var seen = {}
+
+        for (var i = 0; i < parsedFavorites.length; i++) {
+            var entry = parsedFavorites[i] || {}
+            var path = normalizeSidebarPath(entry.path)
+            if (!path || seen[path] || isDefaultSidebarFavoritePath(path))
+                continue
+            seen[path] = true
+            nextFavorites.push({
+                label: entry.label || sidebarLabelForPath(path),
+                icon: entry.icon || "inode-directory",
+                path: path
+            })
+        }
+
+        var parsedHidden = parseSidebarArray(sidebarHiddenDefaultFavoritesJson)
+        var nextHidden = []
+        seen = {}
+        for (var h = 0; h < parsedHidden.length; h++) {
+            var hiddenPath = normalizeSidebarPath(parsedHidden[h])
+            if (!hiddenPath || seen[hiddenPath] || !isDefaultSidebarFavoritePath(hiddenPath))
+                continue
+            seen[hiddenPath] = true
+            nextHidden.push(hiddenPath)
+        }
+
+        sidebarFavorites = nextFavorites
+        sidebarHiddenDefaultFavorites = nextHidden
+        sidebarFavoritesRevision++
+    }
+
+    function saveSidebarFavorites() {
+        sidebarFavoritesJson = JSON.stringify(sidebarFavorites)
+        sidebarHiddenDefaultFavoritesJson = JSON.stringify(sidebarHiddenDefaultFavorites)
+        sidebarFavoritesRevision++
+    }
+
+    function isDefaultSidebarFavoritePath(path) {
+        var cleanPath = normalizeSidebarPath(path)
+        for (var i = 0; i < defaultSidebarFavoritePaths.length; i++) {
+            if (normalizeSidebarPath(defaultSidebarFavoritePaths[i]) === cleanPath)
+                return true
+        }
+        return false
+    }
+
+    function isDefaultSidebarFavoriteHidden(path) {
+        var cleanPath = normalizeSidebarPath(path)
+        for (var i = 0; i < sidebarHiddenDefaultFavorites.length; i++) {
+            if (normalizeSidebarPath(sidebarHiddenDefaultFavorites[i]) === cleanPath)
+                return true
+        }
+        return false
+    }
+
+    function isCustomSidebarFavorite(path) {
+        var cleanPath = normalizeSidebarPath(path)
+        for (var i = 0; i < sidebarFavorites.length; i++) {
+            if (normalizeSidebarPath(sidebarFavorites[i].path) === cleanPath)
+                return true
+        }
+        return false
+    }
+
+    function isSidebarFavorite(path) {
+        var cleanPath = normalizeSidebarPath(path)
+        if (isCustomSidebarFavorite(cleanPath))
+            return true
+        return isDefaultSidebarFavoritePath(cleanPath) && !isDefaultSidebarFavoriteHidden(cleanPath)
+    }
+
+    function canPinSidebarFavorite(path) {
+        var cleanPath = normalizeSidebarPath(path)
+        return cleanPath !== "" && cleanPath.indexOf("/") === 0 && !isTrashPath(cleanPath)
+    }
+
+    function visibleDefaultSidebarFavorites(items) {
+        var visibleItems = []
+        for (var i = 0; i < items.length; i++) {
+            if (!isDefaultSidebarFavoriteHidden(items[i].path))
+                visibleItems.push(items[i])
+        }
+        return visibleItems
+    }
+
+    function pinSidebarFavorite(path, label, icon) {
+        var cleanPath = normalizeSidebarPath(path)
+        if (!canPinSidebarFavorite(cleanPath))
+            return
+
+        if (isDefaultSidebarFavoritePath(cleanPath)) {
+            var hidden = []
+            for (var h = 0; h < sidebarHiddenDefaultFavorites.length; h++) {
+                var hiddenPath = normalizeSidebarPath(sidebarHiddenDefaultFavorites[h])
+                if (hiddenPath !== cleanPath)
+                    hidden.push(hiddenPath)
+            }
+            sidebarHiddenDefaultFavorites = hidden
+            saveSidebarFavorites()
+            return
+        }
+
+        if (isCustomSidebarFavorite(cleanPath))
+            return
+
+        var next = sidebarFavorites.slice()
+        next.push({
+            label: label || sidebarLabelForPath(cleanPath),
+            icon: icon || "inode-directory",
+            path: cleanPath
+        })
+        sidebarFavorites = next
+        saveSidebarFavorites()
+    }
+
+    function removeSidebarFavorite(path) {
+        var cleanPath = normalizeSidebarPath(path)
+        if (!cleanPath)
+            return
+
+        if (isDefaultSidebarFavoritePath(cleanPath)) {
+            if (!isDefaultSidebarFavoriteHidden(cleanPath)) {
+                var hidden = sidebarHiddenDefaultFavorites.slice()
+                hidden.push(cleanPath)
+                sidebarHiddenDefaultFavorites = hidden
+                saveSidebarFavorites()
+            }
+            return
+        }
+
+        var next = []
+        for (var i = 0; i < sidebarFavorites.length; i++) {
+            if (normalizeSidebarPath(sidebarFavorites[i].path) !== cleanPath)
+                next.push(sidebarFavorites[i])
+        }
+        if (next.length !== sidebarFavorites.length) {
+            sidebarFavorites = next
+            saveSidebarFavorites()
+        }
+    }
 
     function isTrashPath(path) {
         return (path || "").replace(/\/+$/, "") === trashFilesPath
@@ -307,6 +519,5 @@ QtObject {
     onSortAscChanged: if (currentPath !== "") loadDirectory()
     onShowHiddenChanged: if (currentPath !== "") loadDirectory()
     onFoldersFirstChanged: if (currentPath !== "") loadDirectory()
-    onSelectedFileChanged: syncQuickLookSelection()
     onAutoMountDeviceIdsJsonChanged: loadSavedAutoMounts()
 }

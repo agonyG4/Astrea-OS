@@ -12,9 +12,24 @@ from PIL import Image
 # ── Configurações de Qualidade Estilo Apple ───────────────────────────────────
 THUMB_SIZE = (900, 500)
 THUMB_QUALITY = 85
-PROJECT_DIR = Path.home() / ".local/share/Astrea"
-USER_DATA_DIR = PROJECT_DIR / "Data/user"
-USER_CONFIG_DIR = Path.home() / ".config/AstreaOS/user"
+
+BRIDGE_DIR = Path(__file__).resolve().parents[1]
+
+
+def _load_astrea_shared():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("astrea_shared_runtime", BRIDGE_DIR / "astrea_shared.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    return module
+
+
+ASTREA_SHARED = _load_astrea_shared()
+
+PROJECT_DIR = ASTREA_SHARED.astrea_root()
+USER_DATA_DIR = ASTREA_SHARED.xdg_data_home() / "AstreaOS/user"
+USER_CONFIG_DIR = ASTREA_SHARED.xdg_config_home() / "AstreaOS/user"
 USER_WP_DIR = USER_DATA_DIR / "wallpapers"
 LOCKSCREEN_WP_DIR = USER_CONFIG_DIR / "paper/lockscreen"
 WP_THUMB_SRC = USER_CONFIG_DIR / "paper/wallpaper/wallpaper.jpg"

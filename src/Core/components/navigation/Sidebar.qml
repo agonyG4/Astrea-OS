@@ -32,9 +32,21 @@ Item {
 
     Components.SidebarFrame {
         anchors.fill: parent
-        backgroundColor: Qt.rgba(1, 1, 1, 0.05)
-        washColor: Qt.rgba(1, 1, 1, 0.015)
-        borderColor: Qt.rgba(1, 1, 1, 0.08)
+        backgroundColor: Components.Theme.themeMode === 1
+            ? (Components.Theme.shellStyle === 0 ? Qt.rgba(1, 1, 1, 0.18)
+                : Components.Theme.shellStyle === 2 ? Qt.rgba(0.98, 0.99, 1, 0.28)
+                : Qt.rgba(0.985, 0.987, 0.994, 0.96))
+            : Qt.rgba(1, 1, 1, 0.05)
+        washColor: Components.Theme.themeMode === 1
+            ? (Components.Theme.shellStyle === 0 ? Qt.rgba(1, 1, 1, 0.04)
+                : Components.Theme.shellStyle === 2 ? Qt.rgba(1, 1, 1, 0.10)
+                : Qt.rgba(1, 1, 1, 0.04))
+            : Qt.rgba(1, 1, 1, 0.015)
+        borderColor: Components.Theme.themeMode === 1
+            ? (Components.Theme.shellStyle === 0 ? Qt.rgba(0, 0, 0, 0.08)
+                : Components.Theme.shellStyle === 2 ? Qt.rgba(0, 0, 0, 0.10)
+                : Qt.rgba(0, 0, 0, 0.09))
+            : Qt.rgba(1, 1, 1, 0.08)
         contentTopPadding: 16
         contentBottomPadding: 16
         contentSpacing: 2
@@ -91,7 +103,7 @@ Item {
                         font.family: Components.Theme.fontFamily
                         font.pixelSize: Components.Theme.fontSizeLarge
                         font.weight: Components.Theme.fontWeightMedium
-                        color: "#ffffff"
+                        color: Components.Theme.textPrimary
                         elide: Text.ElideRight
                         maximumLineCount: 1
                     }
@@ -102,7 +114,7 @@ Item {
                         font.family: Components.Theme.fontFamily
                         font.pixelSize: Components.Theme.fontSizeTiny
                         font.weight: Components.Theme.fontWeightNormal
-                        color: Qt.rgba(1, 1, 1, 0.45)
+                        color: Components.Theme.textTertiary
                         visible: root.isSudo
                     }
                 }
@@ -114,7 +126,7 @@ Item {
             width: parent.width - 32
             x: 16
             height: 1
-            color: Qt.rgba(1, 1, 1, 0.07)
+            color: Components.Theme.cardBorder
         }
 
         Item { width: 1; height: 4 }

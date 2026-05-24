@@ -130,6 +130,7 @@ fn parse_conflict_policy(policy: &str) -> Result<ConflictPolicy, String> {
     match policy {
         "skip" => Ok(ConflictPolicy::Skip),
         "overwrite" => Ok(ConflictPolicy::Overwrite),
+        "merge" => Ok(ConflictPolicy::Overwrite),
         "rename" => Ok(ConflictPolicy::Rename),
         "keep-both" => Ok(ConflictPolicy::KeepBoth),
         other => Err(format!("unsupported conflict policy: {other}")),
@@ -398,35 +399,114 @@ fn remove_existing(path: &Path) -> Result<(), String> {
     }
 }
 
+fn remove_existing_if_present(path: &Path) -> Result<(), String> {
+    if path.exists() || path.is_symlink() {
+        remove_existing(path)
+    } else {
+        Ok(())
+    }
+}
+
+fn hidden_sibling(path: &Path, label: &str) -> Result<PathBuf, String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("target has no parent: {}", path.display()))?;
+    let file_name = path
+        .file_name()
+        .and_then(|v| v.to_str())
+        .unwrap_or("item");
+    Ok(unique_path(&parent.join(format!(
+        ".{file_name}.astrea-{label}-{}-{}",
+        process::id(),
+        unix_millis()
+    ))))
+}
+
+fn move_existing_aside(target: &Path) -> Result<Option<PathBuf>, String> {
+    if !target.exists() && !target.is_symlink() {
+        return Ok(None);
+    }
+    let backup = hidden_sibling(target, "overwrite-backup")?;
+    fs::rename(target, &backup).map_err(|e| {
+        format!(
+            "move existing {} to backup {}: {e}",
+            target.display(),
+            backup.display()
+        )
+    })?;
+    Ok(Some(backup))
+}
+
+fn restore_backup(target: &Path, backup: Option<&Path>) {
+    if let Some(backup_path) = backup {
+        let _ = remove_existing_if_present(target);
+        let _ = fs::rename(backup_path, target);
+    }
+}
+
+fn discard_backup(backup: Option<PathBuf>) -> Result<(), String> {
+    if let Some(backup_path) = backup {
+        remove_existing_if_present(&backup_path)?;
+    }
+    Ok(())
+}
+
+fn publish_staged_path(staged: &Path, target: &Path) -> Result<(), String> {
+    let backup = move_existing_aside(target)?;
+    match fs::rename(staged, target) {
+        Ok(()) => discard_backup(backup),
+        Err(err) => {
+            restore_backup(target, backup.as_deref());
+            let _ = remove_existing_if_present(staged);
+            Err(format!(
+                "publish temporary {} to {}: {err}",
+                staged.display(),
+                target.display()
+            ))
+        }
+    }
+}
+
 fn move_path(source: &Path, target: &Path, overwrite: bool) -> Result<(), String> {
-    let target_existed_before_copy = target.exists();
-    if overwrite && target.exists() && (source.is_dir() || target.is_dir()) {
-        // Directory overwrite is intentionally non-atomic in this scoped fix. File overwrites use
-        // a temporary sibling in copy_file(), but full atomic directory replacement would require
-        // a larger staging/rename strategy that is outside this PR.
-        remove_existing(target)?;
+    if source.is_dir() && !source.is_symlink() && is_self_or_descendant_target(source, target) {
+        return Err(format!(
+            "refusing to move directory into itself: {} -> {}",
+            source.display(),
+            target.display()
+        ));
     }
 
+    if overwrite && source.is_dir() && !source.is_symlink() && target.is_dir() && !target.is_symlink() {
+        return move_dir_recursive_overwrite(source, target);
+    }
+
+    let backup = if overwrite {
+        move_existing_aside(target)?
+    } else {
+        None
+    };
+
     match fs::rename(source, target) {
-        Ok(()) => Ok(()),
+        Ok(()) => discard_backup(backup),
         Err(rename_err) => {
-            if let Err(copy_err) = copy_path(source, target, overwrite) {
-                if !target_existed_before_copy && target.exists() {
-                    let _ = remove_existing(target);
-                }
+            if let Err(copy_err) = copy_path(source, target, false) {
+                restore_backup(target, backup.as_deref());
                 return Err(format!(
                     "move {} to {}: rename failed ({rename_err}); copy fallback failed ({copy_err})",
                     source.display(),
                     target.display()
                 ));
             }
-            remove_existing(source).map_err(|remove_err| {
-                format!(
-                    "move partially completed: copied to target but failed to remove source: {} -> {}: {remove_err}",
+            if let Err(remove_err) = remove_existing(source) {
+                let _ = remove_existing_if_present(target);
+                restore_backup(target, backup.as_deref());
+                return Err(format!(
+                    "move failed after copy because source could not be removed: {} -> {}: {remove_err}",
                     source.display(),
                     target.display()
-                )
-            })
+                ));
+            }
+            discard_backup(backup)
         }
     }
 }
@@ -434,17 +514,20 @@ fn move_path(source: &Path, target: &Path, overwrite: bool) -> Result<(), String
 fn copy_path(source: &Path, target: &Path, overwrite: bool) -> Result<(), String> {
     let meta =
         fs::symlink_metadata(source).map_err(|e| format!("metadata {}: {e}", source.display()))?;
-    if meta.file_type().is_symlink() {
-        if overwrite && target.exists() {
-            remove_existing(target)?;
+    if overwrite && meta.is_dir() && target.is_dir() && !target.is_symlink() {
+        return copy_dir_recursive_overwrite(source, target);
+    }
+    if overwrite && (target.exists() || target.is_symlink()) {
+        let staged = hidden_sibling(target, "copy")?;
+        if let Err(err) = copy_path(source, &staged, false) {
+            let _ = remove_existing_if_present(&staged);
+            return Err(err);
         }
+        return publish_staged_path(&staged, target);
+    }
+    if meta.file_type().is_symlink() {
         copy_symlink(source, target)
     } else if meta.is_dir() {
-        if overwrite && target.exists() {
-            // Directory overwrite remains non-atomic; see the move_path() comment for why this is
-            // intentionally limited to preserving regular files safely in this PR.
-            remove_existing(target)?;
-        }
         copy_dir_recursive(source, target)
     } else if meta.is_file() {
         copy_file(source, target, overwrite)
@@ -542,6 +625,51 @@ fn copy_dir_recursive(source: &Path, target: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn copy_dir_recursive_overwrite(source: &Path, target: &Path) -> Result<(), String> {
+    if is_self_or_descendant_target(source, target) {
+        return Err(format!(
+            "refusing to copy directory into itself: {} -> {}",
+            source.display(),
+            target.display()
+        ));
+    }
+
+    fs::create_dir_all(target).map_err(|e| format!("create {}: {e}", target.display()))?;
+    let meta = fs::metadata(source).map_err(|e| format!("metadata {}: {e}", source.display()))?;
+    let _ = fs::set_permissions(target, meta.permissions());
+
+    for entry in fs::read_dir(source).map_err(|e| format!("read {}: {e}", source.display()))? {
+        let entry = entry.map_err(|e| format!("read {}: {e}", source.display()))?;
+        let child_source = entry.path();
+        let child_target = target.join(entry.file_name());
+        copy_path(&child_source, &child_target, true)?;
+    }
+    Ok(())
+}
+
+fn move_dir_recursive_overwrite(source: &Path, target: &Path) -> Result<(), String> {
+    if is_self_or_descendant_target(source, target) {
+        return Err(format!(
+            "refusing to move directory into itself: {} -> {}",
+            source.display(),
+            target.display()
+        ));
+    }
+
+    fs::create_dir_all(target).map_err(|e| format!("create {}: {e}", target.display()))?;
+    let meta = fs::metadata(source).map_err(|e| format!("metadata {}: {e}", source.display()))?;
+    let _ = fs::set_permissions(target, meta.permissions());
+
+    for entry in fs::read_dir(source).map_err(|e| format!("read {}: {e}", source.display()))? {
+        let entry = entry.map_err(|e| format!("read {}: {e}", source.display()))?;
+        let child_source = entry.path();
+        let child_target = target.join(entry.file_name());
+        move_path(&child_source, &child_target, true)?;
+    }
+
+    fs::remove_dir(source).map_err(|e| format!("remove merged source {}: {e}", source.display()))
+}
+
 fn is_self_or_descendant_target(source: &Path, target: &Path) -> bool {
     if target.starts_with(source) {
         return true;
@@ -572,6 +700,7 @@ fn is_self_or_descendant_target(source: &Path, target: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     #[test]
     fn json_lines_escape_special_names() {
@@ -606,5 +735,104 @@ mod tests {
         assert_eq!(classify_error_code("already exists"), "already_exists");
         assert_eq!(classify_error_code("invalid source path"), "invalid_path");
         assert_eq!(classify_error_code("something else"), "operation_failed");
+    }
+
+    #[test]
+    fn failed_move_overwrite_restores_existing_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "astrea-file-op-test-{}",
+            unix_millis()
+        ));
+        let source = root.join("source");
+        let target = source.join("child/source");
+        fs::create_dir_all(&target).unwrap();
+        fs::write(target.join("keep.txt"), "old").unwrap();
+
+        let result = move_path(&source, &target, true);
+
+        assert!(result.is_err());
+        assert_eq!(fs::read_to_string(target.join("keep.txt")).unwrap(), "old");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn copy_overwrite_existing_directory_merges_contents() {
+        let root = std::env::temp_dir().join(format!(
+            "astrea-file-op-copy-merge-test-{}",
+            unix_millis()
+        ));
+        let source = root.join("source");
+        let target = root.join("target");
+        fs::create_dir_all(source.join("nested")).unwrap();
+        fs::create_dir_all(target.join("nested")).unwrap();
+        fs::write(source.join("same.txt"), "new").unwrap();
+        fs::write(source.join("nested/same.txt"), "nested-new").unwrap();
+        fs::write(source.join("only-source.txt"), "source").unwrap();
+        fs::write(target.join("same.txt"), "old").unwrap();
+        fs::write(target.join("nested/same.txt"), "nested-old").unwrap();
+        fs::write(target.join("only-target.txt"), "target").unwrap();
+        fs::write(target.join("nested/only-target.txt"), "nested-target").unwrap();
+
+        copy_path(&source, &target, true).unwrap();
+
+        assert_eq!(fs::read_to_string(target.join("same.txt")).unwrap(), "new");
+        assert_eq!(
+            fs::read_to_string(target.join("nested/same.txt")).unwrap(),
+            "nested-new"
+        );
+        assert_eq!(
+            fs::read_to_string(target.join("only-source.txt")).unwrap(),
+            "source"
+        );
+        assert_eq!(
+            fs::read_to_string(target.join("only-target.txt")).unwrap(),
+            "target"
+        );
+        assert_eq!(
+            fs::read_to_string(target.join("nested/only-target.txt")).unwrap(),
+            "nested-target"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn move_overwrite_existing_directory_merges_contents() {
+        let root = std::env::temp_dir().join(format!(
+            "astrea-file-op-move-merge-test-{}",
+            unix_millis()
+        ));
+        let source = root.join("source");
+        let target = root.join("target");
+        fs::create_dir_all(source.join("nested")).unwrap();
+        fs::create_dir_all(target.join("nested")).unwrap();
+        fs::write(source.join("same.txt"), "new").unwrap();
+        fs::write(source.join("nested/same.txt"), "nested-new").unwrap();
+        fs::write(source.join("only-source.txt"), "source").unwrap();
+        fs::write(target.join("same.txt"), "old").unwrap();
+        fs::write(target.join("nested/same.txt"), "nested-old").unwrap();
+        fs::write(target.join("only-target.txt"), "target").unwrap();
+        fs::write(target.join("nested/only-target.txt"), "nested-target").unwrap();
+
+        move_path(&source, &target, true).unwrap();
+
+        assert!(!source.exists());
+        assert_eq!(fs::read_to_string(target.join("same.txt")).unwrap(), "new");
+        assert_eq!(
+            fs::read_to_string(target.join("nested/same.txt")).unwrap(),
+            "nested-new"
+        );
+        assert_eq!(
+            fs::read_to_string(target.join("only-source.txt")).unwrap(),
+            "source"
+        );
+        assert_eq!(
+            fs::read_to_string(target.join("only-target.txt")).unwrap(),
+            "target"
+        );
+        assert_eq!(
+            fs::read_to_string(target.join("nested/only-target.txt")).unwrap(),
+            "nested-target"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 }

@@ -1,11 +1,17 @@
 module components
 singleton Theme 1.0 theme/Theme.qml
 NavItem 1.0 NavItem.qml
+Button 1.0 Button.qml
+ButtonCapsule 1.0 ButtonCapsule.qml
+DualButton 1.0 DualButton.qml
+FloatingButton 1.0 FloatingButton.qml
 SectionHeader 1.0 SectionHeader.qml
+SearchField 1.0 SearchField.qml
 SelectButton 1.0 SelectButton.qml
 SettingRow 1.0 SettingRow.qml
 Sidebar 1.0 Sidebar.qml
 SidebarFrame 1.0 SidebarFrame.qml
+SidebarCollapseButton 1.0 sidebar/SidebarCollapseButton.qml
 ScrollPage 1.0 ScrollPage.qml
 AvatarImage 1.0 AvatarImage.qml
 SpeedCard 1.0 SpeedCard.qml

@@ -101,14 +101,14 @@ SystemComponents.TopbarPopup {
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: control.customizeMode ? "󰅖" : "󰏫"
-                    color: control.customizeMode ? Theme.iconActive : Theme.iconMain
+                    color: control.customizeMode ? Theme.shellIconActive : Theme.shellIconMain
                     font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall }
                 }
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
                     text: control.customizeMode ? "OK" : "Editar controles"
-                    color: Theme.textActive
+                    color: Theme.shellTextActive
                     font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption; weight: Font.DemiBold }
                 }
             }
@@ -524,7 +524,7 @@ SystemComponents.TopbarPopup {
             editOverlayRadius: Theme.radiusLarge
             editOverlayColor: Qt.rgba(1, 1, 1, 0.035)
             editOverlayBorderColor: Theme.border
-            labelColor: Theme.textSecondary
+            labelColor: Theme.shellTextSecondary
             labelFontFamily: Theme.fontFamily
             labelPixelSize: Theme.fontSizeMicro
             onItemDropped: control.queueLayoutSave()

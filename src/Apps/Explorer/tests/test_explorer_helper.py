@@ -1,5 +1,6 @@
 import json
 import io
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -9,6 +10,13 @@ from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import explorer_helper as helper
+
+
+class FeatureRemovalTests(unittest.TestCase):
+    def test_quicklook_helper_entrypoints_are_removed(self):
+        self.assertFalse(hasattr(helper, "quicklook"))
+        self.assertFalse(hasattr(helper, "quicklook_sync"))
+        self.assertFalse(hasattr(helper, "_quicklook_command"))
 
 
 class ScanConflictsTests(unittest.TestCase):
@@ -54,6 +62,16 @@ class ScanConflictsTests(unittest.TestCase):
             (dst / "node").rmdir(); (dst / "node").write_text("b")
             rec2 = helper._conflict_record(src / "node", dst)
             self.assertEqual(rec2["conflict_kind"], "directory-over-file")
+
+    def test_directory_into_own_descendant_is_blocking_conflict(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            src = root / "src"
+            child = src / "child"
+            child.mkdir(parents=True)
+            rec = helper._conflict_record(src, child)
+            self.assertEqual(rec["conflict_kind"], "directory-into-self")
+            self.assertEqual(rec["supported_policies"], ["skip"])
 
 class TrashOpsTests(unittest.TestCase):
     def test_trash_and_restore_with_collision_and_unicode(self):
@@ -113,6 +131,20 @@ class TrashOpsTests(unittest.TestCase):
             self.assertEqual(list(trash_info.iterdir()), [])
 
 class PasteImageTests(unittest.TestCase):
+    def test_copy_uri_list_percent_encodes_paths(self):
+        calls = []
+
+        def fake_runner(cmd, input, text, check):
+            calls.append((cmd, input, text, check))
+            return subprocess.CompletedProcess(cmd, 0)
+
+        helper.copy_uri_list(["/tmp/a b/ç.txt", "/tmp/hash#file.txt"], runner=fake_runner)
+
+        self.assertEqual(calls[0][0], ["wl-copy", "--type", "text/uri-list"])
+        self.assertEqual(calls[0][1], "file:///tmp/a%20b/%C3%A7.txt\nfile:///tmp/hash%23file.txt\n")
+        self.assertTrue(calls[0][2])
+        self.assertTrue(calls[0][3])
+
     def test_image_extension_mapping(self):
         self.assertEqual(helper.image_extension_for_mime("image/png"), "png")
         self.assertEqual(helper.image_extension_for_mime("image/jpeg"), "jpg")
@@ -158,7 +190,392 @@ class PasteImageTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 helper.paste_image(str(root / "missing"), "image/png", paste_runner=lambda *a, **k: None)
 
+class OpenWithTests(unittest.TestCase):
+    def test_desktop_entry_parser_keeps_visible_mime_apps(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            app = root / "browser.desktop"
+            app.write_text(
+                "\n".join([
+                    "[Desktop Entry]",
+                    "Type=Application",
+                    "Name=Browser",
+                    "Exec=browser %u",
+                    "Icon=browser",
+                    "MimeType=text/html;x-scheme-handler/http;",
+                ]),
+                encoding="utf-8",
+            )
+            parsed = helper.parse_desktop_entry(app)
+            self.assertEqual(parsed["name"], "Browser")
+            self.assertIn("text/html", parsed["mime_types"])
+            self.assertFalse(parsed["hidden"])
+
+    def test_open_with_apps_returns_only_recommended_desktop_entries(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            apps = root / "applications"
+            apps.mkdir()
+            (apps / "browser.desktop").write_text(
+                "[Desktop Entry]\nType=Application\nName=Browser\nExec=browser %u\nMimeType=text/html;x-scheme-handler/http;\n",
+                encoding="utf-8",
+            )
+            (apps / "editor.desktop").write_text(
+                "[Desktop Entry]\nType=Application\nName=Editor\nExec=editor %f\nMimeType=text/html;\nNoDisplay=true\n",
+                encoding="utf-8",
+            )
+            (apps / "notes.desktop").write_text(
+                "[Desktop Entry]\nType=Application\nName=Notes\nExec=notes %f\nMimeType=text/plain;\n",
+                encoding="utf-8",
+            )
+            (apps / "service.desktop").write_text(
+                "[Desktop Entry]\nType=Application\nName=Service\nExec=service %f\nNoDisplay=true\n",
+                encoding="utf-8",
+            )
+            (apps / "hidden.desktop").write_text(
+                "[Desktop Entry]\nType=Application\nName=Hidden\nHidden=true\nExec=hidden %f\nMimeType=text/html;\n",
+                encoding="utf-8",
+            )
+            target = root / "index.html"
+            target.write_text("<html></html>", encoding="utf-8")
+
+            result = helper.open_with_apps(
+                str(target),
+                app_dirs=[apps],
+                mime_runner=lambda path: "text/html",
+                default_runner=lambda mime: "browser.desktop",
+            )
+
+            self.assertEqual(result["mime"], "text/html")
+            self.assertEqual(
+                [(section["id"], [app["desktop_id"] for app in section["apps"]]) for section in result["sections"]],
+                [
+                    ("recommended", ["browser.desktop", "editor.desktop"]),
+                ],
+            )
+            self.assertEqual([app["desktop_id"] for app in result["apps"]], ["browser.desktop", "editor.desktop"])
+            self.assertTrue(result["sections"][0]["apps"][0]["is_default"])
+
+    def test_open_with_apps_accepts_directories(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            apps = root / "applications"
+            apps.mkdir()
+            (apps / "files.desktop").write_text(
+                "[Desktop Entry]\nType=Application\nName=Files\nExec=files %U\nMimeType=inode/directory;\nCategories=System;FileManager;\n",
+                encoding="utf-8",
+            )
+            (apps / "other.desktop").write_text(
+                "[Desktop Entry]\nType=Application\nName=Other\nExec=other %f\nCategories=Utility;\n",
+                encoding="utf-8",
+            )
+            target = root / "Documents"
+            target.mkdir()
+
+            result = helper.open_with_apps(
+                str(target),
+                app_dirs=[apps],
+                mime_runner=lambda path: "inode/directory",
+                default_runner=lambda mime: "files.desktop",
+            )
+
+            self.assertTrue(result["ok"])
+            self.assertTrue(result["is_directory"])
+            self.assertEqual(result["mime"], "inode/directory")
+            self.assertEqual(result["sections"][0]["title"], "Aplicativos recomendados")
+            self.assertEqual(result["sections"][0]["apps"][0]["desktop_id"], "files.desktop")
+            self.assertEqual(len(result["sections"]), 1)
+
+    def test_open_with_apps_deduplicates_generated_desktop_copies_after_default(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            apps = root / "applications"
+            apps.mkdir()
+            for desktop_id in ["loupe-2.desktop", "loupe-5.desktop", "loupe.desktop"]:
+                (apps / desktop_id).write_text(
+                    "[Desktop Entry]\nType=Application\nName=loupe\nExec=loupe %U\nMimeType=image/png;\nNoDisplay=true\n",
+                    encoding="utf-8",
+                )
+            target = root / "photo.png"
+            target.write_bytes(b"png")
+
+            result = helper.open_with_apps(
+                str(target),
+                app_dirs=[apps],
+                mime_runner=lambda path: "image/png",
+                default_runner=lambda mime: "loupe-5.desktop",
+            )
+
+            recommended_ids = [app["desktop_id"] for app in result["sections"][0]["apps"]]
+            self.assertEqual(recommended_ids, ["loupe-5.desktop"])
+
+    def test_launch_open_with_uses_gio_without_shell(self):
+        calls = []
+
+        def fake_popen(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+
+            class Proc:
+                pid = 77
+
+            return Proc()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            desktop = root / "viewer.desktop"
+            target = root / "photo.png"
+            desktop.write_text("[Desktop Entry]\nType=Application\nName=Viewer\nExec=viewer %f\n", encoding="utf-8")
+            target.write_bytes(b"png")
+
+            result = helper.launch_open_with(str(target), str(desktop), popen=fake_popen)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(calls[0][0][0], "gio")
+        self.assertEqual(calls[0][0][1], "launch")
+        self.assertIn(target.resolve().as_uri(), calls[0][0])
+        self.assertFalse(calls[0][1].get("shell", False))
+
+    def test_set_default_open_with_updates_mime_default(self):
+        calls = []
+
+        def fake_runner(cmd, **kwargs):
+            calls.append((cmd, kwargs))
+
+            class Result:
+                stdout = ""
+
+            return Result()
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            desktop = root / "viewer.desktop"
+            target = root / "photo.png"
+            desktop.write_text("[Desktop Entry]\nType=Application\nName=Viewer\nExec=viewer %f\n", encoding="utf-8")
+            target.write_bytes(b"png")
+
+            result = helper.set_default_open_with(
+                str(target),
+                str(desktop),
+                mime_runner=lambda path: "image/png",
+                default_runner=fake_runner,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["mime"], "image/png")
+        self.assertEqual(result["default"], "viewer.desktop")
+        self.assertEqual(calls[0][0], ["xdg-mime", "default", "viewer.desktop", "image/png"])
+
+class DirectoryMonitorTests(unittest.TestCase):
+    def event_bytes(self, mask):
+        return struct.pack("iIII", 1, mask, 0, 0)
+
+    def test_created_file_emits_refresh_but_attrib_alone_does_not(self):
+        self.assertTrue(helper._should_emit_directory_change([helper.IN_CREATE]))
+        self.assertFalse(helper._should_emit_directory_change([helper.IN_ATTRIB]))
+
+    def test_created_directory_still_emits_refresh(self):
+        self.assertTrue(helper._should_emit_directory_change([helper.IN_CREATE | helper.IN_ISDIR]))
+
+    def test_close_write_or_moved_to_emits_thumbnail_refresh(self):
+        self.assertTrue(helper._should_emit_directory_change([helper.IN_CLOSE_WRITE]))
+        self.assertTrue(helper._should_emit_directory_change([helper.IN_MOVED_TO]))
+
+    def test_delete_and_directory_self_events_still_emit_refresh(self):
+        self.assertTrue(helper._should_emit_directory_change([helper.IN_DELETE]))
+        self.assertTrue(helper._should_emit_directory_change([helper.IN_DELETE_SELF]))
+
 class ArchiveHelperTests(unittest.TestCase):
+    def test_count_extracted_entries_matches_archive_file_entries(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            dest = root / "dest"
+            (dest / "nested").mkdir(parents=True)
+            (dest / "nested" / "one.txt").write_text("1")
+            (dest / "two.txt").write_text("2")
+
+            self.assertEqual(helper._count_extracted_entries(dest), 2)
+
+    def test_archive_password_args_are_passed_to_tools(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            archive = root / "private.7z"
+            archive.write_bytes(b"x")
+
+            captured = {}
+
+            def fake_run(cmd, **kwargs):
+                captured["cmd"] = cmd
+                return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+            helper.extract_archive(
+                str(archive),
+                "dest",
+                password="secret",
+                run_cmd=fake_run,
+                list_runner=lambda *a, **k: ["one.txt", "two.txt"],
+                which_runner=lambda name: "/usr/bin/7z" if name == "7z" else None,
+            )
+
+            self.assertIn("-psecret", captured["cmd"])
+
+    def test_extract_archive_emits_password_required_without_password(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            archive = root / "private.zip"
+            archive.write_bytes(b"x")
+
+            buf = io.StringIO()
+            with self.assertRaises(SystemExit) as raised:
+                with redirect_stdout(buf):
+                    helper.extract_archive(
+                        str(archive),
+                        "dest",
+                        run_cmd=lambda *a, **k: subprocess.CompletedProcess([], 0, b"", b""),
+                        list_runner=lambda *a, **k: ["one.txt"],
+                        password_probe=lambda path: True,
+                        which_runner=lambda name: "/usr/bin/" + name if name in ("unzip", "7z") else None,
+                    )
+
+            self.assertEqual(raised.exception.code, 3)
+            event = json.loads(buf.getvalue().splitlines()[-1])
+            self.assertEqual(event["event"], "password_required")
+            self.assertEqual(event["mode"], "extract")
+            self.assertFalse((root / "dest").exists())
+
+    def test_extract_archive_emits_eta_progress_events(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            archive = root / "archive.zip"
+            archive.write_bytes(b"x")
+
+            tick = iter([100.0, 102.0, 104.0])
+
+            def fake_run(cmd, **kwargs):
+                destination = Path(cmd[-1])
+                (destination / "one.txt").write_text("1")
+                (destination / "two.txt").write_text("2")
+                return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                helper.extract_archive(
+                    str(archive),
+                    "dest",
+                    run_cmd=fake_run,
+                    list_runner=lambda *a, **k: ["one.txt", "two.txt", "three.txt", "four.txt"],
+                    now=lambda: next(tick),
+                    which_runner=lambda name: "/usr/bin/" + name if name in ("unzip", "7z") else None,
+                )
+
+            events = [json.loads(line) for line in buf.getvalue().splitlines() if line.strip()]
+            progress = [event for event in events if event["event"] == "progress"]
+            self.assertTrue(progress)
+            self.assertEqual(progress[-1]["done"], 4)
+            self.assertEqual(progress[-1]["total"], 4)
+            self.assertIn("eta_seconds", progress[-1])
+
+    def test_extract_archive_ask_policy_reports_existing_destination(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            archive = root / "archive.zip"
+            archive.write_bytes(b"x")
+            (root / "dest").mkdir()
+
+            buf = io.StringIO()
+            with self.assertRaises(SystemExit) as raised:
+                with redirect_stdout(buf):
+                    helper.extract_archive(
+                        str(archive),
+                        "dest",
+                        conflict_policy="ask",
+                        password_probe=lambda path: False,
+                        which_runner=lambda name: "/usr/bin/unzip" if name == "unzip" else None,
+                    )
+
+            self.assertEqual(raised.exception.code, 4)
+            event = json.loads(buf.getvalue().splitlines()[-1])
+            self.assertEqual(event["event"], "conflict")
+            self.assertEqual(event["destination"], str(root / "dest"))
+
+    def test_extract_archive_merge_uses_existing_destination(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            archive = root / "archive.zip"
+            archive.write_bytes(b"x")
+            dest = root / "dest"
+            dest.mkdir()
+            (dest / "old.txt").write_text("old")
+            captured = {}
+
+            def fake_run(cmd, **kwargs):
+                captured["cmd"] = cmd
+                (dest / "new.txt").write_text("new")
+                return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+            helper.extract_archive(
+                str(archive),
+                "dest",
+                conflict_policy="merge",
+                run_cmd=fake_run,
+                list_runner=lambda *a, **k: ["new.txt"],
+                password_probe=lambda path: False,
+                which_runner=lambda name: "/usr/bin/unzip" if name == "unzip" else None,
+            )
+
+            self.assertEqual(Path(captured["cmd"][-1]), dest)
+            self.assertTrue((dest / "old.txt").exists())
+            self.assertTrue((dest / "new.txt").exists())
+
+    def test_extract_archive_overwrite_restores_destination_on_failure(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            archive = root / "archive.zip"
+            archive.write_bytes(b"x")
+            dest = root / "dest"
+            dest.mkdir()
+            (dest / "old.txt").write_text("old")
+
+            def fake_run(cmd, **kwargs):
+                raise subprocess.CalledProcessError(2, cmd, stderr=b"boom")
+
+            with self.assertRaises(SystemExit):
+                helper.extract_archive(
+                    str(archive),
+                    "dest",
+                    conflict_policy="overwrite",
+                    run_cmd=fake_run,
+                    list_runner=lambda *a, **k: ["new.txt"],
+                    password_probe=lambda path: False,
+                    which_runner=lambda name: "/usr/bin/unzip" if name == "unzip" else None,
+                )
+
+            self.assertTrue((dest / "old.txt").exists())
+
+    def test_extract_archive_merge_failure_keeps_existing_destination(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            archive = root / "archive.zip"
+            archive.write_bytes(b"x")
+            dest = root / "dest"
+            dest.mkdir()
+            (dest / "old.txt").write_text("old")
+
+            def fake_run(cmd, **kwargs):
+                raise subprocess.CalledProcessError(2, cmd, stderr=b"boom")
+
+            with self.assertRaises(SystemExit):
+                helper.extract_archive(
+                    str(archive),
+                    "dest",
+                    conflict_policy="merge",
+                    run_cmd=fake_run,
+                    list_runner=lambda *a, **k: ["new.txt"],
+                    password_probe=lambda path: False,
+                    which_runner=lambda name: "/usr/bin/unzip" if name == "unzip" else None,
+                )
+
+            self.assertTrue((dest / "old.txt").exists())
+
     def test_extract_archive_emits_json_and_unique_destination(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -174,6 +591,7 @@ class ArchiveHelperTests(unittest.TestCase):
                     str(archive),
                     "out",
                     run_cmd=lambda cmd, **kwargs: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, b"", b""),
+                    password_probe=lambda path: False,
                     which_runner=lambda name: "/usr/bin/" + name if name in ("unzip", "tar", "bsdtar") else None,
                 )
             lines = [json.loads(line) for line in buf.getvalue().splitlines() if line.strip()]
@@ -201,6 +619,66 @@ class ArchiveHelperTests(unittest.TestCase):
                     helper.compress_folder(str(folder), "zip", run_cmd=lambda *a, **k: None, which_runner=lambda _: None)
             err2 = json.loads(buf2.getvalue().splitlines()[-1])
             self.assertEqual(err2["code"], "missing_tool")
+
+    def test_compress_folder_zip_emits_done_event_and_writes_next_to_folder(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            folder = root / "pasta"
+            folder.mkdir()
+            (folder / "one.txt").write_text("1", encoding="utf-8")
+            calls = []
+
+            def fake_run(cmd, **kwargs):
+                calls.append((cmd, kwargs))
+                Path(cmd[2]).write_bytes(b"zip")
+                return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                helper.compress_folder(
+                    str(folder),
+                    "zip",
+                    run_cmd=fake_run,
+                    which_runner=lambda name: "/usr/bin/zip" if name == "zip" else None,
+                )
+
+            events = [json.loads(line) for line in buf.getvalue().splitlines() if line.strip()]
+            destination = root / "pasta.zip"
+            self.assertEqual(calls[0][0][:3], ["zip", "-qr", str(destination)])
+            self.assertEqual(calls[0][1]["cwd"], str(root))
+            self.assertTrue(destination.exists())
+            self.assertEqual(events[-1]["event"], "done")
+            self.assertEqual(events[-1]["destination"], str(destination))
+            self.assertEqual(events[-1]["percent"], 100)
+
+    def test_compress_folder_tar_uses_unique_destination(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            folder = root / "pasta"
+            folder.mkdir()
+            (root / "pasta.tar").write_bytes(b"old")
+            calls = []
+
+            def fake_run(cmd, **kwargs):
+                calls.append((cmd, kwargs))
+                Path(cmd[2]).write_bytes(b"tar")
+                return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                helper.compress_folder(
+                    str(folder),
+                    "tar",
+                    run_cmd=fake_run,
+                    which_runner=lambda name: "/usr/bin/tar" if name == "tar" else None,
+                )
+
+            events = [json.loads(line) for line in buf.getvalue().splitlines() if line.strip()]
+            destination = root / "pasta 2.tar"
+            self.assertEqual(calls[0][0][:3], ["tar", "-cf", str(destination)])
+            self.assertTrue(destination.exists())
+            self.assertEqual(events[0]["destination"], str(destination))
+            self.assertEqual(events[-1]["event"], "done")
 
     def test_extract_7z_uses_joined_output_flag(self):
         with tempfile.TemporaryDirectory() as td:

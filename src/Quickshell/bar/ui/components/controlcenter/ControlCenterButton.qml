@@ -13,8 +13,8 @@ SystemComponents.TopbarIndicator {
     height: 36
     backgroundMargin: 4
     backgroundRadius: Theme.radiusMedium
-    hoverColor: Qt.rgba(1, 1, 1, 0.05)
-    pressedColor: Qt.rgba(1, 1, 1, 0.10)
+    hoverColor: Theme.shellHover
+    pressedColor: Theme.shellPressed
 
     Image {
         id: icon
@@ -28,7 +28,7 @@ SystemComponents.TopbarIndicator {
         layer.enabled: true
         layer.smooth: true
         layer.effect: ColorOverlay {
-            color: Theme.iconActive
+            color: Theme.shellIconActive
         }
     }
 }

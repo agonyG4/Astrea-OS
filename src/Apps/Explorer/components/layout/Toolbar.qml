@@ -5,19 +5,19 @@ import QtQuick.Layouts 1.15
 import QtQuick.Window 2.15
 import Quickshell.Io
 import "../.."
-import "../common" as CommonComponents
+import "../../AstreaComponents" as UI
 import "../../AstreaFiles" as AstreaFiles
 import "../../AstreaI18n" as AstreaI18n
 
 Rectangle {
     id: toolbar
-    height: 46
+    height: 56
     color: Theme.bg
     readonly property Item overlayParent: Window.window && Window.window.contentItem
                                           ? Window.window.contentItem
                                           : toolbar
-    readonly property int locationFieldHeight: 32
-    readonly property int locationFieldRadius: 10
+    readonly property int locationFieldHeight: 38
+    readonly property int locationFieldRadius: 12
     property bool editingPath: false
     property int selectedSuggestionIndex: -1
     readonly property bool searching: AppState.searchVisible || AppState.searchActive
@@ -143,18 +143,30 @@ Rectangle {
         spacing: 6
 
         // ── Nav Buttons ─────────────────────────────────────────
-        Row {
-            spacing: 2
-            CommonComponents.NavButton {
-                text: "‹"; tooltip: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.tooltip.voltar"]) || "Back")
-                enabled: AppState.historyIdx > 0
-                onClicked: AppState.goBack()
-            }
-            CommonComponents.NavButton {
-                text: "›"; tooltip: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.toolbar.tooltip.avanaar"]) || "Forward")
-                enabled: AppState.historyIdx < AppState.history.length - 1
-                onClicked: AppState.goForward()
-            }
+        UI.DualButton {
+            Layout.preferredWidth: 88
+            Layout.preferredHeight: 40
+            Layout.alignment: Qt.AlignVCenter
+            controlWidth: 88
+            controlHeight: 40
+            segmentWidth: 44
+            leftIconText: "‹"
+            rightIconText: "›"
+            iconSize: 25
+            leftIconOutline: true
+            rightIconOutline: true
+            iconOutlineSize: 30
+            iconOutlineRadius: 15
+            iconOutlineBorderWidth: 0
+            iconOutlineFillColor: Qt.rgba(1, 1, 1, 0.13)
+            iconOutlinePressedFillColor: Qt.rgba(1, 1, 1, 0.19)
+            separatorVisible: true
+            separatorInset: 10
+            separatorColor: Qt.rgba(1, 1, 1, 0.12)
+            leftEnabled: AppState.historyIdx > 0
+            rightEnabled: AppState.historyIdx < AppState.history.length - 1
+            onLeftClicked: AppState.goBack()
+            onRightClicked: AppState.goForward()
         }
 
         // ── Location Pill ───────────────────────────────────────

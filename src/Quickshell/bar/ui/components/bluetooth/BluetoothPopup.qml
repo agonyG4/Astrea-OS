@@ -78,7 +78,7 @@ SystemComponents.TopbarPopup {
             width: 44; height: 24; radius: height / 2
             color: root.btOn
                 ? Qt.rgba(0.20, 0.60, 1.0, 0.30)
-                : (powerArea.containsMouse && !root.powerPending ? Theme.separator : Qt.rgba(1, 1, 1, 0.07))
+                : (powerArea.containsMouse && !root.powerPending ? Theme.shellSeparator : Qt.rgba(1, 1, 1, 0.07))
             border { width: 1; color: root.btOn ? Qt.rgba(0.20, 0.60, 1.0, 0.50) : Qt.rgba(1, 1, 1, 0.08) }
             opacity: root.powerPending ? 0.55 : 1.0
             Behavior on color        { ColorAnimation { duration: Theme.animationFast } }
@@ -88,7 +88,7 @@ SystemComponents.TopbarPopup {
             Text {
                 anchors.centerIn: parent
                 text:  root.powerPending ? "󰑐" : "󰂯"
-                color: root.btOn ? Theme.iconAccent : Theme.iconMuted
+                color: root.btOn ? Theme.shellIconAccent : Theme.shellIconMuted
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeBody }
                 Behavior on color { ColorAnimation { duration: Theme.animationFast } }
                 RotationAnimation on rotation {
@@ -114,7 +114,7 @@ SystemComponents.TopbarPopup {
         }
     }
 
-    Rectangle { width: parent.width; height: 1; color: Theme.separator }
+    Rectangle { width: parent.width; height: 1; color: Theme.shellSeparator }
 
     Column {
         id: deviceList
@@ -124,7 +124,7 @@ SystemComponents.TopbarPopup {
             visible: root.parsedDevices.length === 0
             width:   parent.width; height: 36
             text:    root.powerError !== "" ? root.powerError : (root.btOn ? "No paired devices" : "Bluetooth off")
-            color:   root.powerError !== "" ? Theme.errorColor : Theme.textSecondary
+            color:   root.powerError !== "" ? Theme.errorColor : Theme.shellTextSecondary
             font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall }
             verticalAlignment:   Text.AlignVCenter
             horizontalAlignment: Text.AlignHCenter
@@ -147,14 +147,14 @@ SystemComponents.TopbarPopup {
         }
     }
 
-    Rectangle { visible: root.btOn; width: parent.width; height: 1; color: Theme.separator }
+    Rectangle { visible: root.btOn; width: parent.width; height: 1; color: Theme.shellSeparator }
 
     Rectangle {
         visible: root.btOn
         width: parent.width; height: 32; radius: Theme.controlRadius
         color: root.scanning
             ? Qt.rgba(0.20, 0.60, 1.0, 0.10)
-            : (scanBtnArea.containsMouse ? Theme.separator : "transparent")
+            : (scanBtnArea.containsMouse ? Theme.shellSeparator : "transparent")
         border { width: root.scanning ? 1 : 0; color: Qt.rgba(0.20, 0.60, 1.0, 0.25) }
         Behavior on color { ColorAnimation { duration: Theme.animationFast } }
 
@@ -164,7 +164,7 @@ SystemComponents.TopbarPopup {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text:  root.scanning ? "󰑐" : "󰍉"
-                color: root.scanning ? Theme.iconAccent : Theme.textSecondary
+                color: root.scanning ? Theme.shellIconAccent : Theme.shellTextSecondary
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
                 RotationAnimation on rotation {
                     running: root.scanning
@@ -176,7 +176,7 @@ SystemComponents.TopbarPopup {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text:  root.scanning ? "Searching…" : "Search for devices"
-                color: root.scanning ? Theme.iconAccent : Theme.textDim
+                color: root.scanning ? Theme.shellIconAccent : Theme.shellTextDim
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.Medium; letterSpacing: 0.2 }
             }
         }
@@ -198,7 +198,7 @@ SystemComponents.TopbarPopup {
         Text {
             visible: root.parsedScanned.length > 0
             text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.bluetooth.bluetooth_popup.text.available"]) || "Available")
-            color: Theme.textSecondary
+            color: Theme.shellTextSecondary
             font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption; weight: Font.DemiBold; letterSpacing: 0.5 }
             bottomPadding: 2
         }
@@ -207,7 +207,7 @@ SystemComponents.TopbarPopup {
             visible: root.scanning && root.parsedScanned.length === 0
             width: parent.width; height: 30
             text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.bluetooth.bluetooth_popup.text.waiting_for_devicesa"]) || "Waiting for devices…")
-            color: Theme.textSecondary
+            color: Theme.shellTextSecondary
             font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; italic: true }
             verticalAlignment: Text.AlignVCenter
         }
@@ -234,23 +234,23 @@ SystemComponents.TopbarPopup {
         }
     }
 
-    Rectangle { width: parent.width; height: 1; color: Theme.separator }
+    Rectangle { width: parent.width; height: 1; color: Theme.shellSeparator }
 
     Rectangle {
         width: parent.width; height: 32; radius: Theme.controlRadius
-        color: settingsArea.containsMouse ? Theme.separator : "transparent"
+        color: settingsArea.containsMouse ? Theme.shellSeparator : "transparent"
         Behavior on color { ColorAnimation { duration: Theme.animationFast } }
 
         Row {
             anchors.centerIn: parent; spacing: Theme.spacingSmall
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: "󰒓"; color: Theme.textSecondary; font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+                text: "󰒓"; color: Theme.shellTextSecondary; font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.bluetooth.bluetooth_popup.text.bluetooth_settings"]) || "Bluetooth Settings")
-                color: Theme.textDim
+                color: Theme.shellTextDim
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.Medium; letterSpacing: 0.2 }
             }
         }
@@ -279,7 +279,7 @@ SystemComponents.TopbarPopup {
 
         color: isConnected
             ? Qt.rgba(0.20, 0.60, 1.0, 0.12)
-            : (rowHover.containsMouse ? Theme.separator : "transparent")
+            : (rowHover.containsMouse ? Theme.shellSeparator : "transparent")
         border { width: 1; color: isConnected ? Qt.rgba(0.20, 0.60, 1.0, 0.25) : "transparent" }
         Behavior on color        { ColorAnimation { duration: Theme.animationFast } }
         Behavior on border.color { ColorAnimation { duration: Theme.animationFast } }
@@ -291,7 +291,7 @@ SystemComponents.TopbarPopup {
             Text {
                 anchors.verticalCenter: parent.verticalCenter
                 text:  rowRoot.isPaired ? "󰂱" : "󰂴"
-                color: rowRoot.isConnected ? Theme.iconAccent : Theme.iconMain
+                color: rowRoot.isConnected ? Theme.shellIconAccent : Theme.shellIconMain
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
                 Behavior on color { ColorAnimation { duration: Theme.animationFast } }
             }
@@ -319,7 +319,7 @@ SystemComponents.TopbarPopup {
                 color: Qt.rgba(0.20, 0.60, 1.0, 0.20)
                 Text {
                     anchors.centerIn: parent
-                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.bluetooth.bluetooth_popup.text.connected"]) || "connected"); color: Theme.iconAccent
+                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.bluetooth.bluetooth_popup.text.connected"]) || "connected"); color: Theme.shellIconAccent
                     font { family: Theme.fontFamily; pixelSize: Theme.fontSizeMicro; weight: Font.DemiBold; letterSpacing: 0.3 }
                 }
             }
@@ -335,7 +335,7 @@ SystemComponents.TopbarPopup {
                 Text {
                     anchors.centerIn: parent
                     text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.bluetooth.bluetooth_popup.text.pair"]) || "pair")
-                    color: rowHover.containsMouse ? Theme.iconAccent : Qt.rgba(1, 1, 1, 0.40)
+                    color: rowHover.containsMouse ? Theme.shellIconAccent : Qt.rgba(1, 1, 1, 0.40)
                     font { family: Theme.fontFamily; pixelSize: Theme.fontSizeMicro; weight: Font.DemiBold; letterSpacing: 0.3 }
                     Behavior on color { ColorAnimation { duration: Theme.animationFast } }
                 }

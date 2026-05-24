@@ -11,6 +11,7 @@ Rectangle {
     property int percent: Math.round(Math.max(0, Math.min(1, progress)) * 100)
     property int completedItems: 0
     property int totalItems: 0
+    property string remainingText: ""
     property bool indeterminate: totalItems <= 0 && percent <= 0 && !failed
     property bool failed: false
     property color panelColor: "#1e1e20"
@@ -100,7 +101,7 @@ Rectangle {
 
             Text {
                 Layout.preferredWidth: 96
-                text: card.failed ? "Falhou" : (card.totalItems > 0 ? (card.completedItems + " / " + card.totalItems) : (card.completedItems > 0 ? (card.completedItems + " itens") : "Preparando"))
+                text: card.failed ? "Falhou" : (card.remainingText !== "" ? card.remainingText : (card.totalItems > 0 ? (card.completedItems + " / " + card.totalItems) : (card.completedItems > 0 ? (card.completedItems + " itens") : "Preparando")))
                 color: card.secondaryTextColor
                 font.pixelSize: 11
                 elide: Text.ElideRight

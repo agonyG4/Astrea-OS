@@ -6,7 +6,7 @@ Item {
 
     property string title: ""
     property string icon: ""
-    property color iconColor: Theme.textDim
+    property color iconColor: Theme.shellTextDim
     property int iconSize: Theme.fontSizeIcon
     property int trailingGap: 8
     property int trailingWidth: iconText.visible ? iconText.implicitWidth : 0
@@ -23,7 +23,7 @@ Item {
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
         text: control.title
-        color: Theme.textActive
+        color: Theme.shellTextActive
         opacity: Theme.opacitySecondary
         width: parent.width - trailingSlot.width - control.trailingGap
         elide: Text.ElideRight
