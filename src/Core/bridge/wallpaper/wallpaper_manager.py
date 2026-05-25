@@ -267,10 +267,17 @@ def set_transition(index: int) -> None:
 
 
 def state_payload(scope: str) -> dict:
+    if scope == "lockscreen":
+        try:
+            refresh_active_assets(scope)
+        except Exception as exc:
+            print(f"[wallpaper] lockscreen asset refresh failed: {exc}", file=sys.stderr)
+
     state_dir = STATE_DIRS[scope]
     wallpaper = state_dir / "wallpaper.jpg"
     thumb = state_dir / "wallpaper_thumb.jpg"
     active_source = current_source(scope)
+    active_blur = active_blur_source(scope, active_source)
     defaults = {
         "wallpaper": "My Wallpaper",
         "lockscreen": "Lockscreen Wallpaper",
@@ -282,6 +289,10 @@ def state_payload(scope: str) -> dict:
         "thumbPath": str(thumb),
         "previewPath": str(thumb if thumb.exists() else (active_source or wallpaper)),
         "previewMtime": int(thumb.stat().st_mtime) if thumb.exists() else int(wallpaper.stat().st_mtime) if wallpaper.exists() else 0,
+        "activeSourcePath": str(active_source) if active_source else "",
+        "activeSourceExists": bool(active_source and active_source.exists()),
+        "activeBlurPath": str(active_blur) if active_blur else "",
+        "activeBlurExists": bool(active_blur and active_blur.exists()),
     }
     if scope == "wallpaper":
         payload["transitionIndex"] = transition_index()
@@ -393,6 +404,22 @@ def current_source(scope: str) -> Path | None:
         return None
 
 
+def active_blur_source(scope: str, active_source: Path | None = None) -> Path | None:
+    if scope == "lockscreen":
+        blurred = STATE_DIRS[scope] / "blurred.jpg"
+        if not blurred.exists():
+            return None
+        try:
+            return blurred.resolve()
+        except FileNotFoundError:
+            return None
+
+    active = active_source or current_source(scope)
+    if not active:
+        return None
+    return blurred_variant(active.parent)
+
+
 def refresh_assets(scope: str, expected_src: str) -> None:
     from blur_lockscreen import generate_blur
 
@@ -416,6 +443,13 @@ def refresh_assets(scope: str, expected_src: str) -> None:
         generate_blur(wallpaper, state_dir / "blurred.jpg")
 
 
+def refresh_active_assets(scope: str) -> None:
+    active = current_source(scope)
+    if not active:
+        return
+    refresh_assets(scope, str(active))
+
+
 def apply_scope(scope: str, src: str, name: str, transition_idx: int | None, no_animate: bool = False) -> None:
     source = Path(src).expanduser().resolve()
     if not source.exists():
@@ -433,6 +467,12 @@ def apply_scope(scope: str, src: str, name: str, transition_idx: int | None, no_
         ensure_thumb(wallpaper, thumb)
     except Exception as exc:
         print(f"[wallpaper] thumbnail refresh failed: {exc}", file=sys.stderr)
+
+    if scope == "lockscreen":
+        try:
+            refresh_assets(scope, str(source))
+        except Exception as exc:
+            print(f"[wallpaper] lockscreen asset refresh failed: {exc}", file=sys.stderr)
 
     preview = thumb if thumb.exists() else wallpaper
     preview_mtime = preview.stat().st_mtime if preview.exists() else source.stat().st_mtime
@@ -475,19 +515,6 @@ def apply_scope(scope: str, src: str, name: str, transition_idx: int | None, no_
                 str(source),
             ]
         )
-    else:
-        spawn_detached(
-            [
-                sys.executable,
-                str(Path(__file__).resolve()),
-                "refresh-assets",
-                "--scope",
-                scope,
-                "--expected-src",
-                str(source),
-            ]
-        )
-
     emit_json(payload)
 
 

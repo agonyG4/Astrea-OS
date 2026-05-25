@@ -30,7 +30,6 @@ Item {
     readonly property string _scripts:     (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/wallpaper"
     readonly property string _base:        _prefsBase + "/lockscreen"
     readonly property string wpFull:      _base + "/wallpaper.jpg"
-    readonly property string wpName_f:    _base + "/wallpaper_name.txt"
     readonly property string userDir:       _userBase + "/wallpapers"
     readonly property string dynamicDir:    _featureBase + "/library/dynamic"
     readonly property string landscapesDir: _featureBase + "/library/landscapes"
@@ -132,20 +131,6 @@ Item {
     // ── Processes ─────────────────────────────────────────────────────────────
 
     Process {
-        id: nameProc
-        running: false
-        property string _buf: ""
-        command: ["cat", root.wpName_f]
-        stdout: SplitParser { onRead: (line) => nameProc._buf += line }
-        onExited: () => {
-            const name = nameProc._buf.trim()
-            if (name)
-                root.wpName = name
-            nameProc._buf = ""
-        }
-    }
-
-    Process {
         id: stateProc
         running: false
         property string _json: ""
@@ -241,7 +226,6 @@ Item {
     // ── Init ──────────────────────────────────────────────────────────────────
 
     Component.onCompleted: {
-        root._runProcess(nameProc)
         root.loadState()
         Qt.callLater(root.scanAll)
     }

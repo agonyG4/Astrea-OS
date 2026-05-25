@@ -35,6 +35,10 @@ ApplicationWindow {
     property string errorText: ""
     property string pendingSlug: ""
     property string pendingName: ""
+    property string pendingImportPath: ""
+    property string selectionAfterLoad: ""
+    property string activeWallpaperSource: ""
+    property string activeLockscreenSource: ""
     property bool sidebarCollapsed: false
     property int selectedIndex: -1
     property var selectedItem: selectedIndex >= 0 && selectedIndex < wallpaperModel.count ? wallpaperModel.get(selectedIndex) : null
@@ -60,10 +64,29 @@ ApplicationWindow {
         }
     }
 
-    function loadWallpapers() {
+    function loadWallpapers(selectionSlug) {
+        if (selectionSlug !== undefined)
+            selectionAfterLoad = selectionSlug
         errorText = ""
         statusText = "Loading..."
         runProcess(listProc)
+    }
+
+    function refreshActiveStates() {
+        runProcess(wallpaperStateProc)
+        runProcess(lockscreenStateProc)
+    }
+
+    function matchesSource(source, wallpaperPath, blurredPath) {
+        return !!source && (source === wallpaperPath || (!!blurredPath && source === blurredPath))
+    }
+
+    function isWallpaperActive(wallpaperPath, blurredPath) {
+        return matchesSource(activeWallpaperSource, wallpaperPath, blurredPath)
+    }
+
+    function isLockscreenActive(wallpaperPath, blurredPath) {
+        return matchesSource(activeLockscreenSource, wallpaperPath, blurredPath)
     }
 
     function setSelectedBySlug(slug) {
@@ -119,6 +142,22 @@ ApplicationWindow {
         runProcess(deleteProc)
     }
 
+    function importWallpaper() {
+        errorText = ""
+        pendingImportPath = ""
+        statusText = "Choose an image..."
+        runProcess(importPickerProc)
+    }
+
+    function addPendingImport(name) {
+        if (!pendingImportPath)
+            return
+        addProc.sourcePath = pendingImportPath
+        addProc.wallpaperName = name.trim() || "Wallpaper"
+        statusText = "Importing..."
+        runProcess(addProc)
+    }
+
     onClosing: Qt.quit()
 
     ListModel {
@@ -153,10 +192,46 @@ ApplicationWindow {
                     })
                 }
             }
-            if (wallpaperModel.count > 0 && grid.currentIndex < 0)
+            if (selectionAfterLoad) {
+                setSelectedBySlug(selectionAfterLoad)
+                selectionAfterLoad = ""
+            } else if (wallpaperModel.count > 0 && grid.currentIndex < 0) {
                 grid.currentIndex = 0
+            }
             statusText = wallpaperModel.count + " wallpapers"
             listProc.output = ""
+        }
+    }
+
+    Process {
+        id: wallpaperStateProc
+        running: false
+        property string output: ""
+        command: ["python3", window.wallpaperManager, "state", "--scope", "wallpaper"]
+        stdout: SplitParser { onRead: data => wallpaperStateProc.output += data }
+        stderr: SplitParser { onRead: data => window.errorText = data.trim() }
+        onExited: code => {
+            if (code === 0) {
+                const payload = window.parseJson(wallpaperStateProc.output, "wallpaper state")
+                window.activeWallpaperSource = payload ? (payload.activeSourcePath || "") : ""
+            }
+            wallpaperStateProc.output = ""
+        }
+    }
+
+    Process {
+        id: lockscreenStateProc
+        running: false
+        property string output: ""
+        command: ["python3", window.wallpaperManager, "state", "--scope", "lockscreen"]
+        stdout: SplitParser { onRead: data => lockscreenStateProc.output += data }
+        stderr: SplitParser { onRead: data => window.errorText = data.trim() }
+        onExited: code => {
+            if (code === 0) {
+                const payload = window.parseJson(lockscreenStateProc.output, "lockscreen state")
+                window.activeLockscreenSource = payload ? (payload.activeSourcePath || "") : ""
+            }
+            lockscreenStateProc.output = ""
         }
     }
 
@@ -174,7 +249,56 @@ ApplicationWindow {
         ]
         stdout: SplitParser { onRead: data => statusText = data.trim() ? "Applied" : statusText }
         stderr: SplitParser { onRead: data => window.errorText = data.trim() }
-        onExited: code => statusText = code === 0 ? "Applied" : ""
+        onExited: code => {
+            statusText = code === 0 ? "Applied" : ""
+            if (code === 0)
+                window.refreshActiveStates()
+        }
+    }
+
+    Process {
+        id: importPickerProc
+        running: false
+        command: ["zenity", "--file-selection", "--title=Import Wallpaper",
+                  "--file-filter=Images | *.jpg *.jpeg *.png *.webp *.bmp *.tiff"]
+        stdout: SplitParser { onRead: data => window.pendingImportPath = data.trim() }
+        stderr: SplitParser { onRead: data => window.errorText = data.trim() }
+        onExited: code => {
+            if (code === 0 && window.pendingImportPath) {
+                statusText = ""
+                importNameDialog.open()
+            } else {
+                statusText = ""
+            }
+        }
+    }
+
+    Process {
+        id: addProc
+        running: false
+        property string sourcePath: ""
+        property string wallpaperName: ""
+        property string output: ""
+        command: [
+            "python3", window.wallpaperManager, "add-user",
+            "--src", sourcePath,
+            "--name", wallpaperName
+        ]
+        stdout: SplitParser { onRead: data => addProc.output += data }
+        stderr: SplitParser { onRead: data => window.errorText = data.trim() }
+        onExited: code => {
+            let nextSlug = ""
+            if (code === 0) {
+                const payload = window.parseJson(addProc.output, "import")
+                nextSlug = payload && payload.item ? payload.item.slug || "" : ""
+                statusText = "Imported"
+                pendingImportPath = ""
+            } else {
+                statusText = ""
+            }
+            addProc.output = ""
+            loadWallpapers(nextSlug)
+        }
     }
 
     Process {
@@ -191,8 +315,7 @@ ApplicationWindow {
         onExited: code => {
             const oldSlug = pendingSlug
             statusText = code === 0 ? "Renamed" : ""
-            loadWallpapers()
-            Qt.callLater(() => setSelectedBySlug(oldSlug))
+            loadWallpapers(oldSlug)
         }
     }
 
@@ -210,7 +333,10 @@ ApplicationWindow {
         }
     }
 
-    Component.onCompleted: loadWallpapers()
+    Component.onCompleted: {
+        loadWallpapers()
+        refreshActiveStates()
+    }
 
     Rectangle {
         anchors.fill: parent
@@ -348,26 +474,37 @@ ApplicationWindow {
                 Layout.fillHeight: true
                 spacing: Astrea.Theme.spacingLarge
 
-                ColumnLayout {
+                RowLayout {
                     Layout.fillWidth: true
-                    spacing: Astrea.Theme.spacingTiny
+                    spacing: Astrea.Theme.spacing
 
-                    Text {
-                        text: "Wallpapers"
-                        color: Astrea.Theme.textPrimary
-                        font.family: Astrea.Theme.fontFamily
-                        font.pixelSize: Astrea.Theme.fontSizeHeader
-                        font.weight: Astrea.Theme.fontWeightDemiBold
-                        font.letterSpacing: 0
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: Astrea.Theme.spacingTiny
+
+                        Text {
+                            text: "Wallpapers"
+                            color: Astrea.Theme.textPrimary
+                            font.family: Astrea.Theme.fontFamily
+                            font.pixelSize: Astrea.Theme.fontSizeHeader
+                            font.weight: Astrea.Theme.fontWeightDemiBold
+                            font.letterSpacing: 0
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: window.errorText || window.statusText || "Manage wallpapers added to Astrea"
+                            color: window.errorText ? Astrea.Theme.errorColor : Astrea.Theme.textSecondary
+                            font.family: Astrea.Theme.fontFamily
+                            font.pixelSize: Astrea.Theme.fontSizeNormal
+                            elide: Text.ElideRight
+                        }
                     }
 
-                    Text {
-                        Layout.fillWidth: true
-                        text: window.errorText || window.statusText || "Manage wallpapers added to Astrea"
-                        color: window.errorText ? Astrea.Theme.errorColor : Astrea.Theme.textSecondary
-                        font.family: Astrea.Theme.fontFamily
-                        font.pixelSize: Astrea.Theme.fontSizeNormal
-                        elide: Text.ElideRight
+                    Astrea.Button {
+                        text: "Import"
+                        primary: true
+                        onClicked: window.importWallpaper()
                     }
                 }
 
@@ -400,6 +537,8 @@ ApplicationWindow {
                                 required property string name
                                 required property string thumbPath
                                 required property int thumbMtime
+                                required property string wallpaperPath
+                                required property string blurredPath
 
                                 width: grid.cellWidth
                                 height: grid.cellHeight
@@ -449,6 +588,53 @@ ApplicationWindow {
                                                 fillMode: Image.PreserveAspectCrop
                                                 asynchronous: true
                                                 cache: false
+                                            }
+
+                                            Column {
+                                                anchors {
+                                                    right: parent.right
+                                                    top: parent.top
+                                                    margins: 8
+                                                }
+                                                spacing: 5
+
+                                                Rectangle {
+                                                    width: wallpaperBadgeText.implicitWidth + 14
+                                                    height: 22
+                                                    radius: 11
+                                                    visible: window.isWallpaperActive(tile.wallpaperPath, tile.blurredPath)
+                                                    color: Astrea.Theme.accent
+
+                                                    Text {
+                                                        id: wallpaperBadgeText
+                                                        anchors.centerIn: parent
+                                                        text: "Current"
+                                                        color: Astrea.Theme.accentForeground
+                                                        font.family: Astrea.Theme.fontFamily
+                                                        font.pixelSize: Astrea.Theme.fontSizeSmall
+                                                        font.weight: Astrea.Theme.fontWeightDemiBold
+                                                    }
+                                                }
+
+                                                Rectangle {
+                                                    width: lockscreenBadgeText.implicitWidth + 14
+                                                    height: 22
+                                                    radius: 11
+                                                    visible: window.isLockscreenActive(tile.wallpaperPath, tile.blurredPath)
+                                                    color: Qt.rgba(0, 0, 0, 0.58)
+                                                    border.width: 1
+                                                    border.color: Qt.rgba(1, 1, 1, 0.18)
+
+                                                    Text {
+                                                        id: lockscreenBadgeText
+                                                        anchors.centerIn: parent
+                                                        text: "Lockscreen"
+                                                        color: "#ffffff"
+                                                        font.family: Astrea.Theme.fontFamily
+                                                        font.pixelSize: Astrea.Theme.fontSizeSmall
+                                                        font.weight: Astrea.Theme.fontWeightDemiBold
+                                                    }
+                                                }
                                             }
                                         }
 
@@ -534,6 +720,50 @@ ApplicationWindow {
                             elide: Text.ElideRight
                         }
 
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Astrea.Theme.spacingSmall
+                            visible: !!window.selectedItem
+
+                            Rectangle {
+                                Layout.preferredWidth: detailWallpaperBadge.implicitWidth + 16
+                                Layout.preferredHeight: 24
+                                radius: 12
+                                visible: window.selectedItem && window.isWallpaperActive(window.selectedItem.wallpaperPath, window.selectedItem.blurredPath)
+                                color: Astrea.Theme.accent
+
+                                Text {
+                                    id: detailWallpaperBadge
+                                    anchors.centerIn: parent
+                                    text: "Current wallpaper"
+                                    color: Astrea.Theme.accentForeground
+                                    font.family: Astrea.Theme.fontFamily
+                                    font.pixelSize: Astrea.Theme.fontSizeSmall
+                                    font.weight: Astrea.Theme.fontWeightDemiBold
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: detailLockscreenBadge.implicitWidth + 16
+                                Layout.preferredHeight: 24
+                                radius: 12
+                                visible: window.selectedItem && window.isLockscreenActive(window.selectedItem.wallpaperPath, window.selectedItem.blurredPath)
+                                color: Astrea.Theme.cardBg
+                                border.width: 1
+                                border.color: Astrea.Theme.cardBorder
+
+                                Text {
+                                    id: detailLockscreenBadge
+                                    anchors.centerIn: parent
+                                    text: "Lockscreen"
+                                    color: Astrea.Theme.textPrimary
+                                    font.family: Astrea.Theme.fontFamily
+                                    font.pixelSize: Astrea.Theme.fontSizeSmall
+                                    font.weight: Astrea.Theme.fontWeightDemiBold
+                                }
+                            }
+                        }
+
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 40
@@ -614,6 +844,114 @@ ApplicationWindow {
                             font.pixelSize: Astrea.Theme.fontSizeSmall
                             wrapMode: Text.WordWrap
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: importNameDialog
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        anchors.centerIn: parent
+        width: 360
+        padding: 0
+        onOpened: importNameInput.forceActiveFocus()
+
+        background: Rectangle {
+            radius: Astrea.Theme.cardRadius
+            color: Astrea.Theme.popupBg
+            border.width: 1
+            border.color: Astrea.Theme.cardBorder
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: Astrea.Theme.spacingLarge
+            spacing: Astrea.Theme.spacingMedium
+
+            Text {
+                Layout.fillWidth: true
+                text: "Import wallpaper"
+                color: Astrea.Theme.textPrimary
+                font.family: Astrea.Theme.fontFamily
+                font.pixelSize: Astrea.Theme.fontSizeTitle
+                font.weight: Astrea.Theme.fontWeightDemiBold
+            }
+
+            Text {
+                Layout.fillWidth: true
+                text: window.pendingImportPath
+                color: Astrea.Theme.textSecondary
+                font.family: Astrea.Theme.fontFamily
+                font.pixelSize: Astrea.Theme.fontSizeSmall
+                elide: Text.ElideMiddle
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 40
+                radius: Astrea.Theme.controlRadius
+                color: Astrea.Theme.cardBg
+                border.width: 1
+                border.color: importNameInput.activeFocus ? Astrea.Theme.accent : Astrea.Theme.cardBorder
+
+                TextInput {
+                    id: importNameInput
+                    anchors {
+                        fill: parent
+                        leftMargin: 12
+                        rightMargin: 12
+                    }
+                    color: Astrea.Theme.textPrimary
+                    selectionColor: Astrea.Theme.accent
+                    selectedTextColor: Astrea.Theme.accentForeground
+                    font.family: Astrea.Theme.fontFamily
+                    font.pixelSize: Astrea.Theme.fontSizeNormal
+                    font.letterSpacing: 0
+                    verticalAlignment: TextInput.AlignVCenter
+                    selectByMouse: true
+                    cursorVisible: activeFocus
+                    onAccepted: {
+                        importNameDialog.close()
+                        window.addPendingImport(text)
+                        text = ""
+                    }
+
+                    Text {
+                        anchors.fill: parent
+                        verticalAlignment: Text.AlignVCenter
+                        text: "Wallpaper name"
+                        color: Astrea.Theme.textSecondary
+                        font: importNameInput.font
+                        visible: !importNameInput.text && !importNameInput.activeFocus
+                    }
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Astrea.Theme.spacing
+
+                Astrea.Button {
+                    Layout.fillWidth: true
+                    text: "Cancel"
+                    onClicked: {
+                        importNameInput.text = ""
+                        importNameDialog.close()
+                    }
+                }
+
+                Astrea.Button {
+                    Layout.fillWidth: true
+                    text: "Import"
+                    primary: true
+                    onClicked: {
+                        importNameDialog.close()
+                        window.addPendingImport(importNameInput.text)
+                        importNameInput.text = ""
                     }
                 }
             }
