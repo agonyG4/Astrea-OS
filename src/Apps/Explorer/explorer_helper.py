@@ -36,7 +36,7 @@ def rename_path(source_text: str, new_name: str) -> None:
     os.rename(source, target)
 
 
-def suggest_dirs(base_text: str, prefix: str) -> None:
+def suggest_dirs(base_text: str, prefix: str, request_id: str = "") -> None:
     base = Path(base_text).expanduser()
     if not base.is_dir():
         return
@@ -44,6 +44,8 @@ def suggest_dirs(base_text: str, prefix: str) -> None:
     for entry in base.iterdir():
         if entry.is_dir() and entry.name.startswith(prefix):
             matches.append(str(entry))
+    if request_id:
+        print(f"__request_id__:{request_id}")
     for entry in sorted(matches)[:12]:
         print(entry)
 
@@ -62,6 +64,33 @@ def read_pid(path: Path) -> int | None:
     except (OSError, ValueError):
         return None
 
+
+
+
+def create_desktop_shortcut(target_text: str) -> dict[str, object]:
+    target = Path(target_text).expanduser()
+    if not target.exists() and not target.is_symlink():
+        return {"ok": False, "error": "target_not_found"}
+    desktop = ""
+    try:
+        probe = subprocess.run(["xdg-user-dir", "DESKTOP"], check=False, capture_output=True, text=True)
+        desktop = (probe.stdout or "").strip()
+    except Exception:
+        desktop = ""
+    if not desktop or desktop == str(Path.home()):
+        desktop = str(Path.home() / "Área de trabalho")
+    desk = Path(desktop).expanduser()
+    if not desk.exists():
+        desk = Path.home() / "Desktop"
+    desk.mkdir(parents=True, exist_ok=True)
+    name = target.name
+    dest = desk / name
+    i = 2
+    while dest.exists() or dest.is_symlink():
+        dest = desk / f"{name} {i}"
+        i += 1
+    os.symlink(str(target), str(dest))
+    return {"ok": True, "destination": str(dest)}
 
 def network_mount_probe(root_text: str) -> None:
     root = Path(root_text)
@@ -493,6 +522,27 @@ def _format_eta(seconds: float | int | None) -> str:
     return f"{hours}h {minutes:02d}m restantes"
 
 
+
+
+def _is_unsafe_archive_entry(name: str) -> bool:
+    value = (name or "").strip().replace("\\", "/")
+    if not value:
+        return False
+    if value.startswith("/"):
+        return True
+    parts = [p for p in value.split("/") if p not in ("", ".")]
+    if any(p == ".." for p in parts):
+        return True
+    lowered = value.lower()
+    if "->" in lowered and ".." in lowered:
+        return True
+    return False
+
+
+def validate_archive_entries(entries: list[str]) -> None:
+    for entry in entries:
+        if _is_unsafe_archive_entry(entry):
+            raise ValueError(f"unsafe archive entry: {entry}")
 def _archive_progress_payload(mode: str, done: int, total: int, start_time: float, now) -> dict[str, object]:
     total = max(0, int(total or 0))
     done = max(0, int(done or 0))
@@ -639,6 +689,7 @@ def extract_archive(
     runner = run_cmd or subprocess.run
     start_time = now()
     try:
+        validate_archive_entries(entries)
         cmd = _pick_extractor(archive_path, which_runner)
         final_cmd = _build_extract_command(cmd, destination, password)
         if run_cmd is None:
@@ -1039,6 +1090,7 @@ def parse_args() -> argparse.Namespace:
     suggest = sub.add_parser("suggest-dirs")
     suggest.add_argument("base")
     suggest.add_argument("prefix")
+    suggest.add_argument("--request-id", default="")
 
     which = sub.add_parser("which")
     which.add_argument("program")
@@ -1083,6 +1135,9 @@ def parse_args() -> argparse.Namespace:
     compress_cmd = sub.add_parser("compress-folder")
     compress_cmd.add_argument("folder_path")
     compress_cmd.add_argument("archive_format")
+    desktop_shortcut_cmd = sub.add_parser("create-desktop-shortcut")
+    desktop_shortcut_cmd.add_argument("path")
+
     open_with_cmd = sub.add_parser("open-with-apps")
     open_with_cmd.add_argument("path")
     launch_with_cmd = sub.add_parser("launch-open-with")
@@ -1102,7 +1157,7 @@ def main() -> None:
     elif args.command == "rename":
         rename_path(args.source, args.new_name)
     elif args.command == "suggest-dirs":
-        suggest_dirs(args.base, args.prefix)
+        suggest_dirs(args.base, args.prefix, args.request_id)
     elif args.command == "which":
         raise SystemExit(0 if shutil.which(args.program) else 1)
     elif args.command == "network-mount-probe":
@@ -1126,6 +1181,8 @@ def main() -> None:
         extract_archive(args.archive_path, args.folder_name, password=password, conflict_policy=args.conflict_policy)
     elif args.command == "compress-folder":
         compress_folder(args.folder_path, args.archive_format)
+    elif args.command == "create-desktop-shortcut":
+        print(json.dumps(create_desktop_shortcut(args.path), ensure_ascii=False), flush=True)
     elif args.command == "open-with-apps":
         print(json.dumps(open_with_apps(args.path), ensure_ascii=False), flush=True)
     elif args.command == "launch-open-with":

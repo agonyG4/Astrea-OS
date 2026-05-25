@@ -203,7 +203,16 @@ Item {
                             cursorShape: Qt.PointingHandCursor
                             enabled: model.item_type === "app" && !launchProc.running && !setDefaultProc.running
                             onClicked: {
-                                root.setDefaultForApp(model.desktop_file)
+                                launchProc.command = [
+                                    "python3",
+                                    AppState.helperPath,
+                                    "launch-open-with",
+                                    root.targetPath,
+                                    model.desktop_file
+                                ]
+                                launchProc.running = false
+                                launchProc.running = true
+                                root.closeMenu()
                             }
                         }
 
@@ -255,6 +264,30 @@ Item {
                                     color: Theme.textTer
                                     font.pixelSize: 11
                                     elide: Text.ElideMiddle
+                                }
+                            }
+
+                            Rectangle {
+                                visible: model.item_type === "app" && !model.is_default
+                                Layout.preferredHeight: 28
+                                Layout.preferredWidth: setDefaultText.implicitWidth + 22
+                                radius: 8
+                                color: Qt.rgba(1, 1, 1, 0.06)
+                                border.width: 1
+                                border.color: Qt.rgba(1, 1, 1, 0.12)
+
+                                Text {
+                                    id: setDefaultText
+                                    anchors.centerIn: parent
+                                    text: "Definir padrão"
+                                    color: Theme.textSec
+                                    font.pixelSize: 11
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    enabled: !setDefaultProc.running
+                                    onClicked: root.setDefaultForApp(model.desktop_file)
                                 }
                             }
 
@@ -375,16 +408,7 @@ Item {
                     root.errorText = "Resposta invalida"
                     return
                 }
-                launchProc.command = [
-                    "python3",
-                    AppState.helperPath,
-                    "launch-open-with",
-                    root.targetPath,
-                    root.pendingDefaultDesktopFile
-                ]
-                launchProc.running = false
-                launchProc.running = true
-                root.closeMenu()
+                root.openForPath(root.targetPath)
             }
         }
         stderr: StdioCollector {

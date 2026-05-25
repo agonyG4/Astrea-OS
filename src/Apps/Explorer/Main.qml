@@ -25,66 +25,71 @@ ApplicationWindow {
         Qt.quit()
     }
 
-    Shortcut {
-        sequences: ["Ctrl++", "Ctrl+="]
-        onActivated: AppState.increaseZoom()
+    readonly property bool editableTextHasFocus: {
+        var item = activeFocusItem
+        while (item) {
+            var className = String(item)
+            if (className.indexOf("QQuickTextInput") !== -1 || className.indexOf("QQuickTextEdit") !== -1)
+                return true
+            item = item.parent
+        }
+        return false
+    }
+    readonly property bool modalTextInputActive: pasteConflictPopup.visible || archivePasswordPopup.visible || archiveConflictPopup.visible
+    readonly property bool fileClipboardShortcutAllowed: !editableTextHasFocus && !modalTextInputActive
+
+    function focusFileSurface() {
+        forceActiveFocus()
     }
 
-    Shortcut {
-        sequences: ["Ctrl+-", "Ctrl+_"]
-        onActivated: AppState.decreaseZoom()
-    }
+    Action { id: zoomInAction; shortcut: "Ctrl++"; onTriggered: AppState.increaseZoom() }
+    Action { shortcut: "Ctrl+="; onTriggered: zoomInAction.trigger() }
+    Action { shortcut: "Ctrl+-"; onTriggered: AppState.decreaseZoom() }
+    Action { shortcut: "Ctrl+_"; onTriggered: AppState.decreaseZoom() }
+    Action { shortcut: "Ctrl+0"; onTriggered: AppState.resetZoom() }
 
-    Shortcut {
-        sequence: "Ctrl+0"
-        onActivated: AppState.resetZoom()
+    Action {
+        id: explorerCopyAction
+        shortcut: StandardKey.Copy
+        onTriggered: {
+            if (!fileClipboardShortcutAllowed)
+                return
+            AppState.copySelected()
+        }
     }
-
-    Shortcut {
-        sequence: "Ctrl+C"
-        onActivated: AppState.copySelected()
+    Action {
+        id: explorerCutAction
+        shortcut: StandardKey.Cut
+        onTriggered: {
+            if (!fileClipboardShortcutAllowed)
+                return
+            AppState.cutSelected()
+        }
     }
-
-    Shortcut {
-        sequence: "Ctrl+X"
-        onActivated: AppState.cutSelected()
+    Action {
+        id: explorerPasteAction
+        shortcut: StandardKey.Paste
+        onTriggered: {
+            if (!fileClipboardShortcutAllowed)
+                return
+            AppState.pasteFiles()
+        }
     }
-
-    Shortcut {
-        sequence: "Ctrl+V"
-        onActivated: AppState.pasteFiles()
+    Action {
+        id: explorerSelectAllAction
+        shortcut: StandardKey.SelectAll
+        onTriggered: {
+            if (!fileClipboardShortcutAllowed)
+                return
+            AppState.selectAll()
+        }
     }
+    Action { shortcut: "Delete"; onTriggered: { if (fileClipboardShortcutAllowed) AppState.deleteSelected() } }
 
-    Shortcut {
-        sequence: "Ctrl+T"
-        onActivated: AppState.createTab()
-    }
-
-    Shortcut {
-        sequence: "Ctrl+W"
-        onActivated: AppState.closeTab(AppState.activeTabIndex)
-    }
-
-    Shortcut {
-        sequence: "Ctrl+A"
-        onActivated: AppState.selectAll()
-    }
-
-    Shortcut {
-        sequence: "Ctrl+F"
-        onActivated: AppState.startSearch()
-    }
-
-    Shortcut {
-        sequence: "Ctrl+H"
-        onActivated: AppState.showHidden = !AppState.showHidden
-    }
-
-    Shortcut {
-        sequence: "Delete"
-        onActivated: AppState.deleteSelected()
-    }
-
+    Shortcut { sequence: "Ctrl+T"; onActivated: AppState.createTab() }
+    Shortcut { sequence: "Ctrl+W"; onActivated: AppState.closeTab(AppState.activeTabIndex) }
+    Shortcut { sequence: "Ctrl+F"; onActivated: AppState.startSearch() }
+    Shortcut { sequence: "Ctrl+H"; onActivated: AppState.showHidden = !AppState.showHidden }
     RowLayout {
         anchors.fill: parent
         spacing: 0

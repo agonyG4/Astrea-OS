@@ -41,6 +41,7 @@ Item {
     property bool   sidebarMenuCanPin:    false
     property bool   sidebarMenuIsFavorite:false
     property string desktopLinkPath:      ""
+    property string desktopLinkError:     ""
 
     readonly property color sidebarIconIdle: Theme.isLight ? UI.Theme.textSecondary : Qt.rgba(1, 1, 1, 0.78)
     readonly property color sidebarIconHover: UI.Theme.textPrimary
@@ -117,6 +118,7 @@ Item {
         if (sidebarMenuPath === "" || sidebarMenuPath.indexOf("/") !== 0)
             return
         desktopLinkPath = sidebarMenuPath
+        desktopLinkError = ""
         closeMenus()
         desktopLinkProcess.running = false
         desktopLinkProcess.running = true
@@ -438,29 +440,41 @@ Item {
 
     Process {
         id: desktopLinkProcess
-        command: [
-            "bash", "-lc",
-            "set -e; target=\"$1\"; " +
-            "[ -e \"$target\" ] || [ -L \"$target\" ] || exit 1; " +
-            "desktop=$(xdg-user-dir DESKTOP 2>/dev/null || true); " +
-            "[ -n \"$desktop\" ] && [ \"$desktop\" != \"$HOME\" ] || desktop=\"$HOME/Área de trabalho\"; " +
-            "[ -d \"$desktop\" ] || desktop=\"$HOME/Desktop\"; " +
-            "mkdir -p \"$desktop\"; " +
-            "name=$(basename -- \"$target\"); dest=\"$desktop/$name\"; " +
-            "if [ -e \"$dest\" ] || [ -L \"$dest\" ]; then " +
-            "  i=2; while [ -e \"$desktop/$name $i\" ] || [ -L \"$desktop/$name $i\" ]; do i=$((i+1)); done; dest=\"$desktop/$name $i\"; " +
-            "fi; " +
-            "ln -s -- \"$target\" \"$dest\"",
-            "_",
-            root.desktopLinkPath
-        ]
+        command: ["python3", AppState.helperPath, "create-desktop-shortcut", root.desktopLinkPath]
         running: false
-        stdout: StdioCollector {}
-        stderr: StdioCollector {}
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    var payload = JSON.parse(text || "{}")
+                    if (payload.ok !== true)
+                        root.desktopLinkError = payload.error || "Falha ao criar atalho"
+                } catch (error) {
+                    root.desktopLinkError = "Resposta invalida ao criar atalho"
+                }
+            }
+        }
+        stderr: StdioCollector {
+            onStreamFinished: if (text.trim() !== "") root.desktopLinkError = text.trim()
+        }
         onExited: function(exitCode) {
             if (exitCode === 0 && AppState.currentPath === AppState.defaultSidebarFavoritePaths[0])
                 AppState.refreshCurrentFolder()
+            if (exitCode !== 0 && root.desktopLinkError === "")
+                root.desktopLinkError = "Falha ao criar atalho na area de trabalho"
         }
+    }
+
+    Text {
+        visible: root.desktopLinkError !== ""
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 8
+        color: "#ff9a9a"
+        font.pixelSize: 11
+        text: root.desktopLinkError
+        wrapMode: Text.WordWrap
+        z: 100
     }
 
     Window {

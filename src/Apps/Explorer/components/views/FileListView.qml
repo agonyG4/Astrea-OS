@@ -401,6 +401,7 @@ Item {
                 if (mouse.button === Qt.RightButton) {
                     mouse.accepted = true
                     root.resetActivationCandidate()
+                    root.Window.window.focusFileSurface()
                     AppState.clearSelection()
                     const pt = mapToItem(contextMenu, mouse.x, mouse.y)
                     contextMenu.openAt(pt.x + 6, pt.y + 6,
@@ -654,6 +655,7 @@ Item {
                     if (mouse.button === Qt.RightButton) {
                         mouse.accepted = true
                         row.dragging = false
+                        root.Window.window.focusFileSurface()
                         AppState.handleSelection(
                             itemName, itemSourceIndex,
                             Boolean(mouse.modifiers & Qt.ControlModifier),
@@ -678,6 +680,7 @@ Item {
                 onClicked: function(mouse) {
                     row.dragging = false
                     if (mouse.button === Qt.LeftButton) {
+                        root.Window.window.focusFileSurface()
                         root.handlePrimaryItemClick(itemPath, itemIsDir, itemUrl, itemName, itemSourceIndex, mouse.modifiers)
                         return
                     }

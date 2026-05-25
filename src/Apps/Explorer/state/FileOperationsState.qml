@@ -65,6 +65,7 @@ QtObject {
         if (app.selectedFiles.length === 0) return
         clipboardFiles = app.selectedFiles.map(function(name) { return joinPath(app.currentPath, name) })
         clipboardMode = "copy"
+        fileOperationStatus = clipboardFiles.length + " item(ns) copiados para a area de transferencia interna"
         syncSystemClipboardFiles(clipboardFiles)
     }
 
@@ -80,6 +81,7 @@ QtObject {
         }
         clipboardFiles = newlyCut
         clipboardMode = "cut"
+        fileOperationStatus = clipboardFiles.length + " item(ns) recortados para mover"
         syncSystemClipboardFiles(clipboardFiles)
     }
 
@@ -972,6 +974,16 @@ QtObject {
     property Process systemClipboardWrite: Process {
         command: []
         running: false
+        stderr: StdioCollector { id: systemClipboardWriteStderr }
+        onExited: function(exitCode) {
+            if (exitCode === 0)
+                return
+            var err = String(systemClipboardWriteStderr.text || "")
+            if (err.indexOf("wl-copy") !== -1 || err.indexOf("not found") !== -1)
+                ops.fileOperationStatus = "Clipboard interno ok; wl-copy indisponivel"
+            else
+                ops.fileOperationStatus = "Clipboard interno ok; falha ao sincronizar clipboard do sistema"
+        }
     }
 
     property Process appImageInstallProcess: Process {

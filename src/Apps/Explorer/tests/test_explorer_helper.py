@@ -601,6 +601,36 @@ class ArchiveHelperTests(unittest.TestCase):
             self.assertEqual(lines[-1]["percent"], 100)
             self.assertTrue(calls)
 
+
+    def test_extract_archive_rejects_absolute_entry(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            archive = root / "archive.zip"
+            archive.write_bytes(b"x")
+            with self.assertRaises(SystemExit):
+                helper.extract_archive(
+                    str(archive),
+                    "dest",
+                    run_cmd=lambda *a, **k: subprocess.CompletedProcess([], 0, b"", b""),
+                    list_runner=lambda *a, **k: ["/etc/passwd"],
+                    password_probe=lambda path: False,
+                    which_runner=lambda name: "/usr/bin/unzip" if name == "unzip" else None,
+                )
+
+    def test_extract_archive_rejects_dotdot_entry(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            archive = root / "archive.zip"
+            archive.write_bytes(b"x")
+            with self.assertRaises(SystemExit):
+                helper.extract_archive(
+                    str(archive),
+                    "dest",
+                    run_cmd=lambda *a, **k: subprocess.CompletedProcess([], 0, b"", b""),
+                    list_runner=lambda *a, **k: ["../escape.txt"],
+                    password_probe=lambda path: False,
+                    which_runner=lambda name: "/usr/bin/unzip" if name == "unzip" else None,
+                )
     def test_compress_folder_invalid_format_and_missing_tool(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
