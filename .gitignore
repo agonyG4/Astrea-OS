@@ -7,7 +7,7 @@ target/
 *.key
 openmeteo_cache.json
 local/share/Astrea/Features/Paper/Library/UserWallpapers/
-src/Data/user/wallpapers/
+src/Data/*
 .DS_Store
 Thumbs.db
 *.log
