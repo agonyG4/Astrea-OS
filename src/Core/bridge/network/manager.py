@@ -4,6 +4,17 @@ import json
 import subprocess
 import re
 import traceback
+from pathlib import Path
+
+
+STATE_DIR = Path.home() / ".local/state/Astrea/network"
+SIM_WIFI_STATE = STATE_DIR / "wifi-sim.json"
+SIMULATED_WIFI_NETWORKS = [
+    {"ssid": "Astrea Fiber", "signal": 92, "security": "WPA2"},
+    {"ssid": "Casa 5G", "signal": 78, "security": "WPA2 WPA3"},
+    {"ssid": "Studio Guest", "signal": 61, "security": "WPA2"},
+    {"ssid": "Open Lounge", "signal": 39, "security": ""},
+]
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
@@ -51,6 +62,150 @@ def _parse_dns_lines(out: str) -> list[str]:
             if val and val not in dns:
                 dns.append(val)
     return dns
+
+
+def _split_nmcli_fields(line: str) -> list[str]:
+    """Split nmcli -t fields while preserving escaped ':' characters."""
+    fields = []
+    buf = []
+    escaped = False
+    for char in line:
+        if escaped:
+            buf.append(char)
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == ":":
+            fields.append("".join(buf))
+            buf = []
+        else:
+            buf.append(char)
+    if escaped:
+        buf.append("\\")
+    fields.append("".join(buf))
+    return fields
+
+
+def _wifi_enabled() -> bool:
+    try:
+        return _run("nmcli", "radio", "wifi", timeout=2).strip().lower() == "enabled"
+    except Exception:
+        return False
+
+
+def get_wifi_device() -> dict | None:
+    try:
+        out = _run("nmcli", "-t", "-f", "DEVICE,TYPE,STATE", "device", "status", timeout=2)
+    except Exception:
+        return None
+
+    for line in out.strip().splitlines():
+        fields = _split_nmcli_fields(line)
+        if len(fields) >= 3 and fields[1] == "wifi":
+            return {"device": fields[0], "state": fields[2]}
+    return None
+
+
+def _load_simulated_wifi_ssid() -> str:
+    try:
+        data = json.loads(SIM_WIFI_STATE.read_text(encoding="utf-8"))
+        return str(data.get("ssid") or "")
+    except Exception:
+        return SIMULATED_WIFI_NETWORKS[0]["ssid"]
+
+
+def _save_simulated_wifi_ssid(ssid: str) -> None:
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    SIM_WIFI_STATE.write_text(json.dumps({"ssid": ssid}), encoding="utf-8")
+
+
+def _simulated_wifi_payload() -> dict:
+    connected_ssid = _load_simulated_wifi_ssid()
+    networks = []
+    for index, network in enumerate(SIMULATED_WIFI_NETWORKS):
+        item = dict(network)
+        item["active"] = item["ssid"] == connected_ssid
+        item["simulated"] = True
+        item["requires_password"] = bool(item["security"])
+        item["index"] = index
+        networks.append(item)
+    return {
+        "success": True,
+        "available": False,
+        "simulated": True,
+        "enabled": True,
+        "device": "",
+        "state": "simulated",
+        "connected_ssid": connected_ssid,
+        "networks": networks,
+    }
+
+
+def _parse_wifi_networks(out: str) -> list[dict]:
+    by_ssid: dict[str, dict] = {}
+    for line in out.strip().splitlines():
+        fields = _split_nmcli_fields(line)
+        if len(fields) < 4:
+            continue
+        active_raw, ssid, signal_raw, security = fields[:4]
+        ssid = ssid.strip()
+        if not ssid:
+            continue
+        try:
+            signal = max(0, min(100, int(signal_raw or "0")))
+        except ValueError:
+            signal = 0
+        item = {
+            "ssid": ssid,
+            "signal": signal,
+            "security": security.strip(),
+            "active": active_raw.lower() == "yes",
+            "simulated": False,
+            "requires_password": bool(security.strip()),
+        }
+        existing = by_ssid.get(ssid)
+        if existing is None or item["active"] or item["signal"] > existing["signal"]:
+            by_ssid[ssid] = item
+    networks = list(by_ssid.values())
+    networks.sort(key=lambda item: (not item["active"], -item["signal"], item["ssid"].lower()))
+    for index, item in enumerate(networks):
+        item["index"] = index
+    return networks
+
+
+def _wifi_payload(scan: bool = False) -> dict:
+    device = get_wifi_device()
+    if not device:
+        return _simulated_wifi_payload()
+
+    iface = device["device"]
+    if scan:
+        try:
+            _run("nmcli", "device", "wifi", "rescan", "ifname", iface, timeout=8)
+        except Exception:
+            pass
+
+    networks = []
+    try:
+        out = _run(
+            "nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL,SECURITY",
+            "device", "wifi", "list", "ifname", iface, timeout=8
+        )
+        networks = _parse_wifi_networks(out)
+    except Exception:
+        pass
+
+    active = next((item for item in networks if item.get("active")), None)
+    return {
+        "success": True,
+        "available": True,
+        "simulated": False,
+        "enabled": _wifi_enabled(),
+        "device": iface,
+        "state": device["state"],
+        "connected_ssid": active["ssid"] if active else "",
+        "networks": networks,
+    }
 
 
 # ─── commands ───────────────────────────────────────────────────────────────
@@ -171,12 +326,63 @@ def cmd_set_dns(conn_name: str, dns_servers: str):
         _out({"success": False, "error": str(e), "trace": traceback.format_exc()})
 
 
+def cmd_wifi_status():
+    _out(_wifi_payload(scan=False))
+
+
+def cmd_wifi_scan():
+    _out(_wifi_payload(scan=True))
+
+
+def cmd_wifi_connect(ssid: str, password: str = ""):
+    device = get_wifi_device()
+    if not device:
+        _save_simulated_wifi_ssid(ssid)
+        payload = _simulated_wifi_payload()
+        payload.update({"success": True, "message": "Simulated Wi-Fi connection updated."})
+        _out(payload)
+        return
+
+    args = ["nmcli", "device", "wifi", "connect", ssid, "ifname", device["device"]]
+    if password:
+        args.extend(["password", password])
+    try:
+        _run(*args, timeout=20)
+        _out(_wifi_payload(scan=False))
+    except subprocess.CalledProcessError as e:
+        _out({"success": False, "error": f"nmcli error (exit {e.returncode})"})
+    except Exception as e:
+        _out({"success": False, "error": str(e), "trace": traceback.format_exc()})
+
+
+def cmd_wifi_disconnect():
+    device = get_wifi_device()
+    if not device:
+        _save_simulated_wifi_ssid("")
+        payload = _simulated_wifi_payload()
+        payload.update({"success": True, "message": "Simulated Wi-Fi disconnected."})
+        _out(payload)
+        return
+
+    try:
+        _run("nmcli", "device", "disconnect", device["device"], timeout=10)
+        _out(_wifi_payload(scan=False))
+    except subprocess.CalledProcessError as e:
+        _out({"success": False, "error": f"nmcli error (exit {e.returncode})"})
+    except Exception as e:
+        _out({"success": False, "error": str(e), "trace": traceback.format_exc()})
+
+
 # ─── entry point ─────────────────────────────────────────────────────────────
 
 COMMANDS = {
     "stats":    (cmd_stats,    0),
     "dns_info": (cmd_dns_info, 0),
     "set_dns":  (cmd_set_dns,  2),
+    "wifi_status":     (cmd_wifi_status,     0),
+    "wifi_scan":       (cmd_wifi_scan,       0),
+    "wifi_connect":    (cmd_wifi_connect,    2),
+    "wifi_disconnect": (cmd_wifi_disconnect, 0),
 }
 
 if __name__ == "__main__":

@@ -23,7 +23,6 @@ match:class = org.quickshell
 match:title = ^(Astrea Authentication)$
 float       = yes
 center      = yes
-no_blur     = true
 """
 
 
@@ -92,6 +91,8 @@ class AstreaPolkitAgentTests(unittest.TestCase):
     def test_user_service_replaces_hyprpolkitagent(self):
         source = SERVICE.read_text()
         self.assertIn("Conflicts=hyprpolkitagent.service", source)
+        self.assertIn("ConditionEnvironment=WAYLAND_DISPLAY", source)
+        self.assertIn("Environment=QT_QPA_PLATFORM=wayland", source)
         self.assertIn("ExecStart=", source)
         self.assertIn("/usr/bin/quickshell -p", source)
         self.assertIn("astrea-polkit-agent.qml", source)
@@ -145,6 +146,32 @@ class AstreaPolkitAgentTests(unittest.TestCase):
         self.assertIn("readonly property color accent", source)
         self.assertIn("function t(key, fallback)", source)
 
+    def test_quickshell_agent_matches_app_theme_styles(self):
+        source = QML_AGENT.read_text()
+        self.assertIn("readonly property bool isGlassShell", source)
+        self.assertIn("readonly property bool isDefaultShell", source)
+        self.assertIn("readonly property bool isFrostedShell", source)
+        self.assertIn("function themedCardColor()", source)
+        self.assertIn("shellStyle === 0", source)
+        self.assertIn("shellStyle === 1", source)
+        self.assertIn("shellStyle === 2", source)
+        self.assertIn("Qt.rgba(0.98, 0.99, 1, 0.36)", source)
+        self.assertIn("Qt.rgba(1, 1, 1, 0.035)", source)
+        self.assertIn("Qt.rgba(1, 1, 1, 0.72)", source)
+        self.assertIn("root.themedCardColor()", source)
+        self.assertIn("root.themedBorderColor()", source)
+
+    def test_quickshell_agent_supports_form_tab_navigation(self):
+        source = QML_AGENT.read_text()
+        self.assertIn("tabTarget: passwordField", source)
+        self.assertIn("backtabTarget: usernameField", source)
+        self.assertIn("property var tabTarget", source)
+        self.assertIn("property var backtabTarget", source)
+        self.assertIn("function focusOptionalTarget(target)", source)
+        self.assertIn("Keys.onTabPressed", source)
+        self.assertIn("Keys.onBacktabPressed", source)
+        self.assertIn("event.accepted = true", source)
+
     def test_polkit_strings_exist_in_supported_languages(self):
         required_keys = {
             "features.polkit.auth.cancel",
@@ -176,7 +203,7 @@ class AstreaPolkitAgentTests(unittest.TestCase):
         self.assertIn("center      = yes", source)
         self.assertNotIn("stay_focused = yes", source)
         self.assertNotIn("dim_around  = yes", source)
-        self.assertIn("no_blur     = true", source)
+        self.assertNotIn("no_blur     = true", source)
 
 
 

@@ -261,6 +261,7 @@ QtObject {
 
         pendingArchivePath = archivePath
         pendingArchiveFolderName = folderName || basename(archivePath)
+        archivePassword = password !== undefined && password !== null ? String(password) : ""
         archiveExtractionRunning = true
         archiveExtractionProgress = 0
         archiveExtractionPercent = 0
@@ -284,7 +285,7 @@ QtObject {
             "--conflict-policy",
             conflictPolicy || "ask"
         ]
-        if (password !== undefined && password !== null && String(password) !== "")
+        if (archivePassword !== "")
             cmd = cmd.concat(["--password-stdin"])
         archiveExtractProcess.command = cmd
         archiveExtractProcess.running = false
@@ -345,6 +346,10 @@ QtObject {
         archiveExtractionDestination = ""
         archiveExtractionRevealName = ""
         archiveOperationMode = "compress"
+        archivePassword = ""
+        archivePasswordError = ""
+        archivePasswordPromptVisible = false
+        archiveConflictVisible = false
         archiveExtractionDoneCount = 0
         archiveExtractionTotalCount = 0
         archiveExtractionRemainingText = ""
@@ -774,6 +779,9 @@ QtObject {
         stdout: SplitParser {
             onRead: data => ops.handleArchiveExtractionOutput(data)
         }
+        stderr: StdioCollector {
+            id: archiveExtractStderr
+        }
         onExited: function(exitCode) {
             if (ops.archiveExtractionOutputBuffer !== "") {
                 ops.handleArchiveExtractionLine(ops.archiveExtractionOutputBuffer)
@@ -793,9 +801,10 @@ QtObject {
                 ops.archiveExtractionRunning = false
                 return
             } else {
-                ops.archiveExtractionError = ops.archiveOperationMode === "compress"
+                var archiveErr = String(archiveExtractStderr.text || "").trim()
+                ops.archiveExtractionError = ops.archiveExtractionError || archiveErr || (ops.archiveOperationMode === "compress"
                     ? "Falha ao compactar"
-                    : "Falha ao extrair"
+                    : "Falha ao extrair")
                 ops.archiveExtractionStatus = ops.archiveExtractionError
                 app.refreshCurrentFolder()
             }

@@ -182,12 +182,46 @@ def interface_rates(iface: str) -> tuple[str, str]:
     )
 
 
+def default_route_iface_from_proc(text: str | None = None) -> str:
+    try:
+        content = text if text is not None else Path("/proc/net/route").read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+    best_iface = ""
+    best_metric: int | None = None
+    for raw in content.splitlines()[1:]:
+        fields = raw.split()
+        if len(fields) < 7:
+            continue
+        iface, destination, _gateway, flags_raw, _refcnt, _use, metric_raw = fields[:7]
+        if destination != "00000000":
+            continue
+        try:
+            flags = int(flags_raw, 16)
+            metric = int(metric_raw)
+        except ValueError:
+            continue
+        if not (flags & 0x2):
+            continue
+        if best_metric is None or metric < best_metric:
+            best_iface = iface
+            best_metric = metric
+    return best_iface
+
+
 def active_network_iface() -> str:
     global network_route_iface, network_route_time
 
     now = time.monotonic()
     if now - network_route_time < NETWORK_ROUTE_CACHE_SEC:
         return network_route_iface
+
+    iface = default_route_iface_from_proc()
+    if iface:
+        network_route_iface = iface
+        network_route_time = now
+        return iface
 
     route = run_cmd(["ip", "route", "get", "1.1.1.1"], timeout=3).stdout.split()
     iface = ""

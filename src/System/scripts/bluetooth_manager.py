@@ -57,6 +57,7 @@ POWER_VERIFY_SLEEP = 0.35
 
 CONNECT_VERIFY_RETRIES = 3
 CONNECT_VERIFY_SLEEP = 0.8
+AUTOCONNECT_FAILURE_COOLDOWN_SEC = 600
 
 DEFAULT_CONFIG: dict = {
     "enabled": True,
@@ -498,7 +499,7 @@ def cmd_disconnect(mac: str) -> None:
     )
 
 
-def _autoconnect_candidates(status: dict) -> list[dict]:
+def _autoconnect_candidates(status: dict, *, ignore_cooldowns: bool = False) -> list[dict]:
     cfg = status["config"]
     runtime = status["runtime"]
     now = int(time.time())
@@ -508,7 +509,7 @@ def _autoconnect_candidates(status: dict) -> list[dict]:
             continue
         if cfg["trusted_only"] and not dev["trusted"]:
             continue
-        if runtime["device_cooldowns"].get(dev["mac"], 0) > now:
+        if not ignore_cooldowns and runtime["device_cooldowns"].get(dev["mac"], 0) > now:
             continue
         candidates.append(dev)
     candidates.sort(key=lambda d: (d["priority"], d["name"].lower(), d["mac"]))
@@ -536,7 +537,7 @@ def run_autoconnect(force: bool = False) -> dict:
             "retry_in": cfg["retry_interval_sec"] - elapsed,
         }
 
-    candidates = _autoconnect_candidates(status)
+    candidates = _autoconnect_candidates(status, ignore_cooldowns=force)
     if not candidates:
         return {"success": False, "reason": "no_candidates"}
 
@@ -565,6 +566,10 @@ def run_autoconnect(force: bool = False) -> dict:
                 "device": dev,
                 "attempts": attempts,
             }
+
+    if not force:
+        for attempt in attempts:
+            _set_device_cooldown(attempt["mac"], AUTOCONNECT_FAILURE_COOLDOWN_SEC)
 
     return {"success": False, "reason": "connect_failed", "attempts": attempts}
 

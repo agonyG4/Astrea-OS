@@ -43,11 +43,25 @@ Item {
     property bool   currentDnsAuto: true
     property string applyStatus: ""
     property string selectedPreset: "Auto"
+    property bool   wifiLoading: true
+    property bool   wifiScanning: false
+    property bool   wifiSimulated: false
+    property bool   wifiAvailable: false
+    property bool   wifiEnabled: false
+    property string wifiDevice: ""
+    property string wifiState: ""
+    property string wifiConnectedSsid: ""
+    property string wifiActionStatus: ""
+    property var    wifiNetworks: []
+    property string wifiSelectedSsid: ""
+    property bool   wifiSelectedRequiresPassword: false
     property real   lastRx: 0
     property real   lastTx: 0
     property string _statsBuf: ""
     property string _dnsBuf: ""
     property string _firewallBuf: ""
+    property string _wifiBuf: ""
+    property string _wifiActionBuf: ""
     readonly property color accent: Theme.accent
     readonly property color textPrimary: Theme.textPrimary
     readonly property color textSecondary: Theme.textSecondary
@@ -103,6 +117,58 @@ Item {
         applyDnsProc.dns     = normalized === "" ? "auto" : normalized.replace(/,\s*/g, " ")
         applyDnsProc.running = true
         applyStatus          = ""
+    }
+
+    function wifiSubtitle() {
+        if (wifiSimulated) return "Simulation mode for hardware-free testing"
+        if (!wifiAvailable) return "No Wi-Fi adapter detected"
+        if (!wifiEnabled) return "Wi-Fi radio disabled"
+        if (wifiConnectedSsid) return "Connected to " + wifiConnectedSsid
+        return "Available networks"
+    }
+
+    function wifiSecurityLabel(network) {
+        if (!network || !network.security) return "Open network"
+        return network.security
+    }
+
+    function loadWifi(scan) {
+        if (wifiProc.running) return
+        wifiScanning = !!scan
+        _wifiBuf = ""
+        wifiProc.scan = !!scan
+        wifiProc.running = true
+    }
+
+    function applyWifiPayload(payload) {
+        wifiLoading = false
+        wifiSimulated = !!payload.simulated
+        wifiAvailable = !!payload.available
+        wifiEnabled = !!payload.enabled
+        wifiDevice = payload.device || ""
+        wifiState = payload.state || ""
+        wifiConnectedSsid = payload.connected_ssid || ""
+        wifiNetworks = payload.networks || []
+    }
+
+    function connectWifi(network) {
+        if (!network || wifiConnectProc.running) return
+        wifiSelectedSsid = network.ssid || ""
+        wifiSelectedRequiresPassword = !!network.requires_password && !network.simulated
+        if (wifiSelectedRequiresPassword) {
+            wifiPasswordDialog.open()
+            return
+        }
+        wifiConnectProc.ssid = wifiSelectedSsid
+        wifiConnectProc.password = ""
+        wifiConnectProc.running = true
+    }
+
+    function disconnectWifi() {
+        if (wifiDisconnectProc.running) return
+        wifiActionStatus = ""
+        _wifiActionBuf = ""
+        wifiDisconnectProc.running = true
     }
 
     // ── Processes ────────────────────────────────────────────────────────────
@@ -169,16 +235,87 @@ Item {
         onExited: root.fetchDns()
     }
 
+    Process {
+        id: wifiProc
+        property bool scan: false
+        command: ["python3", root._script, scan ? "wifi_scan" : "wifi_status"]
+        stdout: SplitParser { onRead: (l) => root._wifiBuf += l }
+        onExited: (code) => {
+            root.wifiScanning = false
+            if (code === 0 && root._wifiBuf) {
+                try {
+                    const payload = JSON.parse(root._wifiBuf)
+                    root.applyWifiPayload(payload)
+                } catch (_) {
+                    root.wifiLoading = false
+                    root.wifiActionStatus = "error"
+                }
+            } else {
+                root.wifiLoading = false
+            }
+            root._wifiBuf = ""
+        }
+    }
+
+    Process {
+        id: wifiConnectProc
+        property string ssid: ""
+        property string password: ""
+        command: ["python3", root._script, "wifi_connect", ssid, password]
+        stdout: SplitParser { onRead: (l) => root._wifiActionBuf += l }
+        onExited: (code) => {
+            let ok = code === 0
+            if (root._wifiActionBuf) {
+                try {
+                    const payload = JSON.parse(root._wifiActionBuf)
+                    ok = ok && payload.success !== false
+                    if (ok) root.applyWifiPayload(payload)
+                } catch (_) {
+                    ok = false
+                }
+            }
+            root.wifiActionStatus = ok ? "ok" : "error"
+            root._wifiActionBuf = ""
+            root.loadWifi(false)
+        }
+    }
+
+    Process {
+        id: wifiDisconnectProc
+        command: ["python3", root._script, "wifi_disconnect"]
+        stdout: SplitParser { onRead: (l) => root._wifiActionBuf += l }
+        onExited: (code) => {
+            let ok = code === 0
+            if (root._wifiActionBuf) {
+                try {
+                    const payload = JSON.parse(root._wifiActionBuf)
+                    ok = ok && payload.success !== false
+                    if (ok) root.applyWifiPayload(payload)
+                } catch (_) {
+                    ok = false
+                }
+            }
+            root.wifiActionStatus = ok ? "ok" : "error"
+            root._wifiActionBuf = ""
+            root.loadWifi(false)
+        }
+    }
+
     Timer { interval: 1000
  running: true
  repeat: true
  onTriggered: if (!statsProc.running) statsProc.running = true }
+    Timer { interval: 20000
+ running: true
+ repeat: true
+ onTriggered: root.loadWifi(false) }
     Timer { id: statusClearTimer
  interval: 3000
  repeat: false
- onTriggered: root.applyStatus = "" }
+ onTriggered: { root.applyStatus = ""; root.wifiActionStatus = "" } }
     onApplyStatusChanged: if (applyStatus) statusClearTimer.restart()
-    Component.onCompleted: { statsProc.running = true; fetchDns(); firewallProc.running = true }
+    onWifiActionStatusChanged: if (wifiActionStatus) statusClearTimer.restart()
+    Component.onCompleted: { statsProc.running = true; fetchDns(); firewallProc.running = true; loadWifi(false) }
 
     // ── Inline Components ─────────────────────────────────────────────────────
 
@@ -277,6 +414,60 @@ Item {
         horizontalAlignment: Text.AlignRight
         elide: Text.ElideRight
         Layout.preferredWidth: 190
+    }
+
+    component MiniButton: Rectangle {
+        property string label: ""
+        property bool primary: false
+        property bool enabledState: true
+        signal clicked()
+
+        implicitWidth: Math.max(92, buttonLabel.implicitWidth + 26)
+        implicitHeight: 32
+        radius: 8
+        opacity: enabledState ? 1 : 0.55
+        color: primary ? Theme.accent : (buttonArea.containsMouse ? Qt.rgba(1,1,1,0.09) : Qt.rgba(1,1,1,0.055))
+        border.width: primary ? 0 : 1
+        border.color: Qt.rgba(1,1,1,0.09)
+
+        Text {
+            id: buttonLabel
+            anchors.centerIn: parent
+            text: parent.label
+            color: parent.primary ? Theme.accentForeground : root.textPrimary
+            font.family: Theme.fontFamily
+            font.pixelSize: 13
+            font.weight: 600
+        }
+
+        MouseArea {
+            id: buttonArea
+            anchors.fill: parent
+            enabled: parent.enabledState
+            hoverEnabled: true
+            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+            onClicked: parent.clicked()
+        }
+    }
+
+    component WifiSignal: Row {
+        id: signalBars
+        property int strength: 0
+
+        spacing: 2
+        implicitWidth: 22
+        implicitHeight: 16
+        Repeater {
+            model: 4
+            Rectangle {
+                width: 4
+                height: 4 + index * 3
+                radius: 2
+                anchors.bottom: parent.bottom
+                color: root.accent
+                opacity: signalBars.strength > index * 25 ? 0.95 : 0.22
+            }
+        }
     }
 
     // Dialog DNS customizado
@@ -387,6 +578,107 @@ Item {
         }
     }
 
+    Item {
+        id: wifiPasswordDialog
+        anchors.fill: parent
+        visible: false
+        z: 101
+
+        function open() {
+            wifiPasswordInput.text = ""
+            visible = true
+            wifiPasswordInput.forceActiveFocus()
+        }
+        function apply() {
+            root.wifiActionStatus = ""
+            root._wifiActionBuf = ""
+            wifiConnectProc.ssid = root.wifiSelectedSsid
+            wifiConnectProc.password = wifiPasswordInput.text
+            visible = false
+            wifiConnectProc.running = true
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: Qt.rgba(0,0,0,0.4)
+            MouseArea { anchors.fill: parent; onClicked: wifiPasswordDialog.visible = false }
+        }
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: 340
+            radius: 14
+            color: Qt.rgba(0.13, 0.13, 0.15, 0.98)
+            border.width: 1
+            border.color: Qt.rgba(1,1,1,0.09)
+            implicitHeight: wifiDlg.implicitHeight + 44
+            MouseArea { anchors.fill: parent }
+
+            ColumnLayout {
+                id: wifiDlg
+                anchors { left: parent.left; right: parent.right; top: parent.top; margins: 20 }
+                spacing: 12
+
+                Text {
+                    text: root.wifiSelectedSsid
+                    color: root.textPrimary
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 15
+                    font.weight: 700
+                    elide: Text.ElideRight
+                    Layout.fillWidth: true
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 34
+                    radius: 8
+                    color: Qt.rgba(1,1,1,0.07)
+                    border.width: 1
+                    border.color: wifiPasswordInput.activeFocus ? Theme.accent : Qt.rgba(1,1,1,0.1)
+
+                    TextInput {
+                        id: wifiPasswordInput
+                        anchors { fill: parent; leftMargin: 10; rightMargin: 10 }
+                        verticalAlignment: TextInput.AlignVCenter
+                        echoMode: TextInput.Password
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 13
+                        color: root.textPrimary
+                        selectionColor: Theme.accent
+                        Keys.onReturnPressed: wifiPasswordDialog.apply()
+                        Keys.onEscapePressed: wifiPasswordDialog.visible = false
+                        Text {
+                            anchors.fill: parent
+                            verticalAlignment: Text.AlignVCenter
+                            text: "Password"
+                            font: wifiPasswordInput.font
+                            color: Qt.rgba(1,1,1,0.18)
+                            visible: !wifiPasswordInput.text && !wifiPasswordInput.activeFocus
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    MiniButton {
+                        Layout.fillWidth: true
+                        label: "Cancel"
+                        onClicked: wifiPasswordDialog.visible = false
+                    }
+                    MiniButton {
+                        Layout.fillWidth: true
+                        label: "Join"
+                        primary: true
+                        onClicked: wifiPasswordDialog.apply()
+                    }
+                }
+            }
+        }
+    }
+
     // ── Main UI ──────────────────────────────────────────────────────────────
     ScrollPage {
         anchors.fill: parent
@@ -435,6 +727,88 @@ Item {
                 isLast: true
 
                 ValueLabel { text: root.interfaceName || "—" }
+            }
+        }
+
+        SectionHeader {
+            text: "WI-FI"
+            textSecondary: root.textSecondary
+            Layout.bottomMargin: 12
+        }
+
+        FormCard {
+            Layout.bottomMargin: 24
+
+            SettingRow {
+                label: root.wifiSimulated ? "Wi-Fi Simulation" : "Wi-Fi"
+                sublabel: root.wifiSubtitle()
+                textPrimary: root.textPrimary
+                textSecondary: root.wifiActionStatus === "error" ? "#ff5f57" : (root.wifiActionStatus === "ok" ? "#3ddc97" : root.textSecondary)
+                cardBorder: root.cardBorder
+
+                RowLayout {
+                    spacing: 8
+
+                    MiniButton {
+                        label: root.wifiScanning ? "Scanning" : "Scan"
+                        enabledState: !root.wifiScanning && !wifiConnectProc.running && !wifiDisconnectProc.running
+                        onClicked: root.loadWifi(true)
+                    }
+
+                    MiniButton {
+                        visible: root.wifiConnectedSsid !== ""
+                        label: "Disconnect"
+                        onClicked: root.disconnectWifi()
+                    }
+                }
+            }
+
+            Repeater {
+                model: root.wifiNetworks
+                delegate: SettingRow {
+                    required property var modelData
+                    required property int index
+
+                    label: modelData.ssid || "Hidden Network"
+                    sublabel: root.wifiSecurityLabel(modelData) + " · " + (modelData.signal || 0) + "%"
+                    textPrimary: root.textPrimary
+                    textSecondary: root.textSecondary
+                    cardBorder: root.cardBorder
+                    clickable: true
+                    isLast: index === root.wifiNetworks.length - 1
+                    onClicked: modelData.active ? root.disconnectWifi() : root.connectWifi(modelData)
+
+                    RowLayout {
+                        spacing: 10
+
+                        Text {
+                            visible: !!modelData.active
+                            text: "Connected"
+                            color: "#3ddc97"
+                            font.family: Theme.fontFamily
+                            font.pixelSize: 12
+                            font.weight: 700
+                        }
+
+                        WifiSignal { strength: modelData.signal || 0 }
+
+                        MiniButton {
+                            label: modelData.active ? "Leave" : "Join"
+                            primary: !modelData.active
+                            onClicked: modelData.active ? root.disconnectWifi() : root.connectWifi(modelData)
+                        }
+                    }
+                }
+            }
+
+            SettingRow {
+                visible: !root.wifiLoading && root.wifiNetworks.length === 0
+                label: "No networks found"
+                sublabel: root.wifiAvailable ? "Try scanning again" : "Simulation will appear here on machines without Wi-Fi"
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                isLast: true
             }
         }
 

@@ -10,6 +10,7 @@ import select
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.parse

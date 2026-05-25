@@ -385,6 +385,14 @@ class DirectoryMonitorTests(unittest.TestCase):
         self.assertTrue(helper._should_emit_directory_change([helper.IN_DELETE_SELF]))
 
 class ArchiveHelperTests(unittest.TestCase):
+    def test_password_stdin_reader_strips_line_endings(self):
+        original_stdin = sys.stdin
+        try:
+            sys.stdin = io.StringIO("secret\r\n")
+            self.assertEqual(helper._read_password_from_stdin(), "secret")
+        finally:
+            sys.stdin = original_stdin
+
     def test_count_extracted_entries_matches_archive_file_entries(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

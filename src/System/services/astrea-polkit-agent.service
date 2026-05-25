@@ -4,9 +4,11 @@ Documentation=man:polkit(8)
 PartOf=graphical-session.target
 After=graphical-session.target
 Conflicts=hyprpolkitagent.service
+ConditionEnvironment=WAYLAND_DISPLAY
 
 [Service]
 Type=simple
+Environment=QT_QPA_PLATFORM=wayland
 ExecStart=/usr/bin/quickshell -p %h/.local/share/Astrea/System/auth/astrea-polkit-agent.qml
 Restart=on-failure
 RestartSec=2

@@ -45,5 +45,13 @@ class ExplorerQmlShortcutWiringTests(unittest.TestCase):
         self.assertIn("contentItem.forceActiveFocus", main_qml)
         self.assertNotIn("\n        forceActiveFocus()\n", main_qml)
 
+    def test_archive_process_preserves_helper_errors_and_resets_password_state(self):
+        file_ops_qml = (APP_ROOT / "state" / "FileOperationsState.qml").read_text(encoding="utf-8")
+
+        self.assertIn('archivePassword = password !== undefined && password !== null ? String(password) : ""', file_ops_qml)
+        self.assertIn('if (archivePassword !== "")', file_ops_qml)
+        self.assertIn("id: archiveExtractStderr", file_ops_qml)
+        self.assertIn("ops.archiveExtractionError || archiveErr", file_ops_qml)
+
 if __name__ == "__main__":
     unittest.main()

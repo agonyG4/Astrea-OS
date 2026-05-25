@@ -24,7 +24,10 @@ ShellRoot {
     readonly property string themeConfigPath: (Quickshell.env("HOME") || "") + "/.config/AstreaOS/ui/theme.json"
     readonly property string i18nHelperPath: astreaRoot + "/System/i18n/i18n.py"
     readonly property bool isLightTheme: themeMode === 1
-    readonly property bool isTransparentShell: shellStyle === 0 || shellStyle === 2
+    readonly property bool isGlassShell: shellStyle === 0
+    readonly property bool isDefaultShell: shellStyle === 1
+    readonly property bool isFrostedShell: shellStyle === 2
+    readonly property bool isTransparentShell: isGlassShell || isFrostedShell
     readonly property color accent: accentHex
     readonly property color accentForeground: (accent.r * 0.299 + accent.g * 0.587 + accent.b * 0.114) > 0.62 ? "#111111" : "#ffffff"
     readonly property color textPrimary: isLightTheme ? Qt.rgba(0.05, 0.06, 0.07, 0.94) : Qt.rgba(0.96, 0.96, 0.98, 0.94)
@@ -63,12 +66,46 @@ ShellRoot {
     readonly property color cardColor: isTransparentShell
         ? popupBg
         : (isLightTheme ? Qt.rgba(0.95, 0.95, 0.96, 0.98) : Qt.rgba(0.11, 0.11, 0.12, 0.98))
+    readonly property color authCardColor: themedWindowBackground()
+    readonly property color authBorderColor: root.themedBorderColor()
     readonly property color fieldColor: isLightTheme
-        ? Qt.rgba(1, 1, 1, isTransparentShell ? 0.72 : 0.92)
-        : Qt.rgba(1, 1, 1, isTransparentShell ? 0.085 : 0.11)
+        ? (isDefaultShell ? Qt.rgba(1, 1, 1, 0.72) : root.themedCardColor())
+        : (isDefaultShell ? Qt.rgba(1, 1, 1, 0.07) : root.themedCardColor())
     readonly property color disabledFieldColor: isLightTheme
         ? Qt.rgba(0, 0, 0, 0.055)
         : Qt.rgba(1, 1, 1, 0.045)
+
+    function themedCardColor() {
+        if (shellStyle === 0)
+            return isLightTheme ? Qt.rgba(1, 1, 1, 0.24) : Qt.rgba(1, 1, 1, 0.035)
+        if (shellStyle === 2)
+            return isLightTheme ? Qt.rgba(0.98, 0.99, 1, 0.36) : Qt.rgba(1, 1, 1, 0.035)
+        return isLightTheme ? Qt.rgba(1, 1, 1, 0.72) : Qt.rgba(1, 1, 1, 0.05)
+    }
+
+    function themedBorderColor() {
+        if (shellStyle === 0)
+            return isLightTheme ? Qt.rgba(0, 0, 0, 0.08) : Qt.rgba(1, 1, 1, 0.06)
+        if (shellStyle === 2)
+            return isLightTheme ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.06)
+        return isLightTheme ? Qt.rgba(0, 0, 0, 0.10) : Qt.rgba(1, 1, 1, 0.08)
+    }
+
+    function themedWindowBackground() {
+        if (shellStyle === 0)
+            return isLightTheme ? Qt.rgba(1, 1, 1, 0.12) : Qt.rgba(0, 0, 0, 0.06)
+        if (shellStyle === 2)
+            return isLightTheme ? Qt.rgba(0.96, 0.985, 1, 0.24) : Qt.rgba(0, 0, 0, 0.06)
+        return isLightTheme ? Qt.rgba(0.965, 0.968, 0.98, 1.0) : Qt.rgba(0.11, 0.11, 0.12, 1.0)
+    }
+
+    function themedWindowWash() {
+        if (shellStyle === 0)
+            return isLightTheme ? Qt.rgba(1, 1, 1, 0.04) : root.themedCardColor()
+        if (shellStyle === 2)
+            return isLightTheme ? Qt.rgba(1, 1, 1, 0.10) : root.themedCardColor()
+        return isLightTheme ? Qt.rgba(1, 1, 1, 0.04) : Qt.rgba(1, 1, 1, 0.02)
+    }
 
     function t(key, fallback) {
         return (i18nMessages && i18nMessages[key]) || fallback || key
@@ -274,9 +311,9 @@ ShellRoot {
             property real shakeOffset: 0
             focus: true
             radius: 11
-            color: root.cardColor
+            color: root.authCardColor
             border.width: 1
-            border.color: root.isLightTheme ? Qt.rgba(0, 0, 0, 0.18) : Qt.rgba(1, 1, 1, 0.16)
+            border.color: root.authBorderColor
             antialiasing: true
             transform: Translate { x: card.shakeOffset }
             Keys.onEscapePressed: root.cancel()
@@ -294,8 +331,8 @@ ShellRoot {
                 anchors.fill: parent
                 anchors.margins: 1
                 radius: parent.radius - 1
-                color: root.windowWash
-                visible: root.isTransparentShell || root.isLightTheme
+                color: root.themedWindowWash()
+                visible: true
                 antialiasing: true
             }
 
@@ -435,6 +472,7 @@ ShellRoot {
                     Layout.fillWidth: true
                     placeholder: root.t("features.polkit.auth.username", "Username")
                     enabled: !root.authLocked
+                    tabTarget: passwordField
                     onAccepted: passwordField.focusField()
                 }
 
@@ -442,6 +480,7 @@ ShellRoot {
                     id: passwordField
                     Layout.fillWidth: true
                     placeholder: root.t("features.polkit.auth.password", "Password")
+                    backtabTarget: usernameField
                     echoMode: polkit.flow && polkit.flow.responseVisible ? TextInput.Normal : TextInput.Password
                     enabled: polkit.flow && polkit.flow.isResponseRequired && !root.authLocked
                     onAccepted: root.submit()
@@ -474,11 +513,18 @@ ShellRoot {
         property alias text: input.text
         property alias readOnly: input.readOnly
         property alias echoMode: input.echoMode
+        property var tabTarget: null
+        property var backtabTarget: null
         property string placeholder: ""
         signal accepted()
 
         function focusField() {
             input.forceActiveFocus()
+        }
+
+        function focusOptionalTarget(target) {
+            if (target && target.focusField)
+                target.focusField()
         }
 
         implicitHeight: 32
@@ -505,6 +551,14 @@ ShellRoot {
             renderType: TextInput.NativeRendering
             onAccepted: parent.accepted()
             Keys.onEscapePressed: root.cancel()
+            Keys.onTabPressed: event => {
+                parent.focusOptionalTarget(parent.tabTarget)
+                event.accepted = true
+            }
+            Keys.onBacktabPressed: event => {
+                parent.focusOptionalTarget(parent.backtabTarget)
+                event.accepted = true
+            }
         }
 
         Text {
