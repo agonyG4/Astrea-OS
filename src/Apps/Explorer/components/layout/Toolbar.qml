@@ -957,14 +957,14 @@ Rectangle {
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
-                pathSuggestions.clear()
-                toolbar.selectedSuggestionIndex = -1
                 var lines = text.split("\n")
                 var token = ""
                 if (lines.length > 0 && lines[0].indexOf("__request_id__:") === 0)
                     token = lines.shift().slice("__request_id__:".length)
                 if (token !== "" && Number(token) !== toolbar.suggestionRequestId)
                     return
+                pathSuggestions.clear()
+                toolbar.selectedSuggestionIndex = -1
                 for (var i = 0; i < lines.length; i++) {
                     var entry = lines[i].trim()
                     if (entry)

@@ -607,30 +607,42 @@ class ArchiveHelperTests(unittest.TestCase):
             root = Path(td)
             archive = root / "archive.zip"
             archive.write_bytes(b"x")
+            buf = io.StringIO()
             with self.assertRaises(SystemExit):
-                helper.extract_archive(
-                    str(archive),
-                    "dest",
-                    run_cmd=lambda *a, **k: subprocess.CompletedProcess([], 0, b"", b""),
-                    list_runner=lambda *a, **k: ["/etc/passwd"],
-                    password_probe=lambda path: False,
-                    which_runner=lambda name: "/usr/bin/unzip" if name == "unzip" else None,
-                )
+                with redirect_stdout(buf):
+                    helper.extract_archive(
+                        str(archive),
+                        "dest",
+                        run_cmd=lambda *a, **k: subprocess.CompletedProcess([], 0, b"", b""),
+                        list_runner=lambda *a, **k: ["/etc/passwd"],
+                        password_probe=lambda path: False,
+                        which_runner=lambda name: "/usr/bin/unzip" if name == "unzip" else None,
+                    )
+            self.assertFalse((root / "dest").exists())
+            events = [json.loads(line) for line in buf.getvalue().splitlines() if line.strip()]
+            self.assertTrue(events)
+            self.assertEqual(events[0]["event"], "error")
 
     def test_extract_archive_rejects_dotdot_entry(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             archive = root / "archive.zip"
             archive.write_bytes(b"x")
+            buf = io.StringIO()
             with self.assertRaises(SystemExit):
-                helper.extract_archive(
-                    str(archive),
-                    "dest",
-                    run_cmd=lambda *a, **k: subprocess.CompletedProcess([], 0, b"", b""),
-                    list_runner=lambda *a, **k: ["../escape.txt"],
-                    password_probe=lambda path: False,
-                    which_runner=lambda name: "/usr/bin/unzip" if name == "unzip" else None,
-                )
+                with redirect_stdout(buf):
+                    helper.extract_archive(
+                        str(archive),
+                        "dest",
+                        run_cmd=lambda *a, **k: subprocess.CompletedProcess([], 0, b"", b""),
+                        list_runner=lambda *a, **k: ["../escape.txt"],
+                        password_probe=lambda path: False,
+                        which_runner=lambda name: "/usr/bin/unzip" if name == "unzip" else None,
+                    )
+            self.assertFalse((root / "dest").exists())
+            events = [json.loads(line) for line in buf.getvalue().splitlines() if line.strip()]
+            self.assertTrue(events)
+            self.assertEqual(events[0]["event"], "error")
     def test_compress_folder_invalid_format_and_missing_tool(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)

@@ -38,14 +38,14 @@ def rename_path(source_text: str, new_name: str) -> None:
 
 def suggest_dirs(base_text: str, prefix: str, request_id: str = "") -> None:
     base = Path(base_text).expanduser()
+    if request_id:
+        print(f"__request_id__:{request_id}")
     if not base.is_dir():
         return
     matches = []
     for entry in base.iterdir():
         if entry.is_dir() and entry.name.startswith(prefix):
             matches.append(str(entry))
-    if request_id:
-        print(f"__request_id__:{request_id}")
     for entry in sorted(matches)[:12]:
         print(entry)
 
@@ -683,13 +683,14 @@ def extract_archive(
     entry_lister = list_runner or _list_archive_entries
     entries = entry_lister(archive_path, password, which_runner)
     total = max(0, len(entries))
-    destination.mkdir(parents=True, exist_ok=True)
-    baseline_count = _count_extracted_entries(destination)
-    _json_event({"event": "start", "mode": "extract", "name": archive_path.name, "destination": str(destination), "total": total})
     runner = run_cmd or subprocess.run
     start_time = now()
+    baseline_count = 0
     try:
         validate_archive_entries(entries)
+        destination.mkdir(parents=True, exist_ok=True)
+        baseline_count = _count_extracted_entries(destination)
+        _json_event({"event": "start", "mode": "extract", "name": archive_path.name, "destination": str(destination), "total": total})
         cmd = _pick_extractor(archive_path, which_runner)
         final_cmd = _build_extract_command(cmd, destination, password)
         if run_cmd is None:
