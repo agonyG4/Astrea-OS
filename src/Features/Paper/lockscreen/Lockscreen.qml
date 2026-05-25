@@ -5,13 +5,15 @@ import Quickshell.Wayland
 import Quickshell.Io
 import Qt5Compat.GraphicalEffects
 import QtQuick.Effects
-import "AstreaI18n" as AstreaI18n
+import "../../../System/i18n" as AstreaI18n
 
 ShellRoot {
     id: root
 
     readonly property string homeDir: Quickshell.env("HOME")
     readonly property string currentUser: Quickshell.env("USER")
+    readonly property string astreaRoot: (Quickshell.env("ASTREA_ROOT") || (homeDir + "/.local/share/Astrea")) + ""
+    readonly property string authHelperPath: astreaRoot + "/System/auth/auth_helper"
     readonly property string avatarPath: "file:///var/lib/AccountsService/icons/" + currentUser
     readonly property string wallpaperDir: "file://" + homeDir + "/.config/AstreaOS/user/paper/lockscreen/"
 
@@ -43,7 +45,7 @@ ShellRoot {
 
             Process {
                 id: authProcess
-                command: [root.homeDir + "/.local/share/Astrea/System/auth/auth_helper", root.currentUser]
+                command: [root.authHelperPath, root.currentUser]
                 stdinEnabled: true
                 running: false
                 onStarted: authProcess.write(passwordField.text + "\n")

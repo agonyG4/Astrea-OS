@@ -16,3 +16,6 @@ Thumbs.db
 *.bak-*
 .sqlite
 .env
+
+src/Quickshell/desktop/apps.js
+src/Quickshell/desktop/apps.json

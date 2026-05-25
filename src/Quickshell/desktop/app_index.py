@@ -286,7 +286,7 @@ def write_json(items: list[dict[str, str]], output_path: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate or watch the desktop icon list from the XDG desktop folder.")
     parser.add_argument("--json", action="store_true", help="print the generated app list as JSON")
-    parser.add_argument("--write", action="store_true", help="write apps.js and apps.json")
+    parser.add_argument("--write", action="store_true", help="manually write apps.js and apps.json (debug only)")
     parser.add_argument("--signature", action="store_true", help="print the current desktop shortcut signature as JSON")
     parser.add_argument("--watch-signature", action="store_true", help="stream desktop shortcut signatures when the desktop folder changes")
     parser.add_argument("--create-folder", action="store_true", help="create a new folder on the desktop")
@@ -333,15 +333,14 @@ def main() -> None:
     items = collect_apps()[:max(1, args.max_apps)]
     script_dir = Path(__file__).resolve().parent
 
-    if args.write or not args.json:
+    if args.write:
         js_path = script_dir / "apps.js"
         json_path = script_dir / "apps.json"
         write_js(items, js_path)
         write_json(items, json_path)
-        if not args.json:
-            print(f"{js_path} ({len(items)} apps)")
+        print(f"{js_path} ({len(items)} apps)")
 
-    if args.json:
+    if args.json or not args.write:
         print(json.dumps(items, ensure_ascii=False))
 
 
