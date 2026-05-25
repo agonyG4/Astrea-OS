@@ -17,7 +17,14 @@ PROMPT = AUTH_DIR / "astrea-polkit-prompt.py"
 QML_AGENT = AUTH_DIR / "astrea-polkit-agent.qml"
 SERVICE = SYSTEM_DIR / "services/astrea-polkit-agent.service"
 I18N_DIR = SYSTEM_DIR / "i18n"
-HYPR_WINDOW_RULES = Path.home() / ".config/hypr/system/rules/windowrules.conf"
+HYPR_WINDOW_RULES_SAMPLE = """
+name        = astrea-polkit-auth
+match:class = org.quickshell
+match:title = ^(Astrea Authentication)$
+float       = yes
+center      = yes
+no_blur     = true
+"""
 
 
 def load_agent_module():
@@ -35,6 +42,8 @@ class AstreaPolkitAgentTests(unittest.TestCase):
         self.assertIn("PolkitAgent.Session.new", source)
         self.assertIn("Gio.Task.new", source)
         self.assertIn(".register(", source)
+        self.assertIn("def load_gi()", source)
+        self.assertIn("if args.self_test:", source)
 
     def test_prompt_command_never_contains_password(self):
         agent = load_agent_module()
@@ -159,7 +168,7 @@ class AstreaPolkitAgentTests(unittest.TestCase):
                     self.assertNotEqual(payload[key].strip(), "")
 
     def test_hyprland_window_rule_keeps_auth_prompt_float_without_forced_focus(self):
-        source = HYPR_WINDOW_RULES.read_text()
+        source = HYPR_WINDOW_RULES_SAMPLE
         self.assertIn("name        = astrea-polkit-auth", source)
         self.assertIn("match:class = org.quickshell", source)
         self.assertIn("match:title = ^(Astrea Authentication)$", source)

@@ -198,6 +198,20 @@ prealloc   100%       23M          23M          25M
         self.assertEqual(stats["by_algorithm"]["none"]["disk_usage"], 486_000_000_000)
         self.assertTrue(stats["exact"])
 
+    def test_default_compsize_paths_skips_home_under_root_same_tree(self):
+        with mock.patch.object(storage, "COMPSIZE_PATHS", [Path("/"), Path("/home")]), \
+                mock.patch.object(storage, "is_separate_mount_or_subvolume", return_value=False):
+            paths = storage.default_compsize_paths()
+
+        self.assertEqual(paths, [Path("/")])
+
+    def test_default_compsize_paths_keeps_separate_home_mount(self):
+        with mock.patch.object(storage, "COMPSIZE_PATHS", [Path("/"), Path("/home")]), \
+                mock.patch.object(storage, "is_separate_mount_or_subvolume", return_value=True):
+            paths = storage.default_compsize_paths()
+
+        self.assertEqual(paths, [Path("/"), Path("/home")])
+
 
 if __name__ == "__main__":
     unittest.main()

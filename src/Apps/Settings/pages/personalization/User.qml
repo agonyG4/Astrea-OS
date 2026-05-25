@@ -25,6 +25,7 @@ Item {
     property int avatarVersion: 0
     property bool avatarBusy: false
     property bool profileBusy: false
+    property string pendingDisplayName: ""
     property bool autologinEnabled: false
     property string profileStatusText: ""
     property string avatarStatusText: ""
@@ -56,8 +57,9 @@ Item {
 
     function applyDisplayName(name) {
         const trimmed = (name || "").trim().replace(/\s+/g, " ")
-        if (trimmed === "" || trimmed === displayName)
+        if (trimmed === "" || profileBusy || trimmed === displayName || trimmed === pendingDisplayName)
             return
+        pendingDisplayName = trimmed
         profileBusy = true
         profileStatusText = "Waiting for authentication..."
         displayNameProc.command = [
@@ -226,7 +228,13 @@ Item {
                             font.pixelSize: Theme.fontSizeSmall
                             selectionColor: root.accent
                             enabled: !root.profileBusy
-                            onEditingFinished: root.applyDisplayName(text)
+                            onEditingFinished: {
+                                const normalized = (text || "").trim().replace(/\s+/g, " ")
+                                if (text !== normalized)
+                                    text = normalized
+                            }
+                            Keys.onReturnPressed: root.applyDisplayName(text)
+                            Keys.onEnterPressed: root.applyDisplayName(text)
                         }
                     }
 
@@ -293,6 +301,7 @@ Item {
         stdout: SplitParser { onRead: (line) => root.parseProfilePayload(line, "display name") }
         onExited: (code) => {
             root.profileBusy = false
+            root.pendingDisplayName = ""
             root.profileStatusText = code === 0 ? "Display name updated." : "Failed to update display name."
             if (code !== 0)
                 profileStateProc.running = true

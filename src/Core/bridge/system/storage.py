@@ -199,7 +199,20 @@ def parse_compsize_output(output: str) -> dict:
     return stats
 
 
+def is_separate_mount_or_subvolume(path: Path, parent: Path) -> bool:
+    try:
+        if path.is_mount():
+            return True
+    except OSError:
+        pass
+    try:
+        return path.stat().st_dev != parent.stat().st_dev
+    except OSError:
+        return False
+
+
 def default_compsize_paths() -> list[Path]:
+
     paths = []
     seen = set()
     for path in COMPSIZE_PATHS:
@@ -208,7 +221,18 @@ def default_compsize_paths() -> list[Path]:
         except OSError:
             resolved = path
         key = str(resolved)
-        if path.exists() and key not in seen:
+        if not path.exists() or key in seen:
+            continue
+        skip = False
+        for kept in paths:
+            try:
+                path.relative_to(kept)
+            except ValueError:
+                continue
+            if not is_separate_mount_or_subvolume(path, kept):
+                skip = True
+            break
+        if not skip:
             paths.append(path)
             seen.add(key)
     return paths

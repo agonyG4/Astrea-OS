@@ -10,21 +10,10 @@ import warnings
 from pathlib import Path
 from typing import NamedTuple
 
-import gi
-
-from gi import PyGIDeprecationWarning
-
-warnings.filterwarnings("ignore", category=PyGIDeprecationWarning)
-gi.require_version("Gio", "2.0")
-gi.require_version("GLib", "2.0")
-gi.require_version("Polkit", "1.0")
-gi.require_version("PolkitAgent", "1.0")
-from gi.repository import Gio, GLib, GObject, Polkit, PolkitAgent
-
-
 AUTH_DIR = Path(__file__).resolve().parent
 PROMPT_PATH = AUTH_DIR / "astrea-polkit-prompt.py"
 AGENT_OBJECT_PATH = "/org/astrea/PolicyKit1/AuthenticationAgent"
+Gio = GLib = GObject = Polkit = PolkitAgent = None
 
 
 class PromptRequest(NamedTuple):
@@ -76,7 +65,7 @@ def build_prompt_command(request: PromptRequest) -> list[str]:
     return command
 
 
-def run_prompt(request: PromptRequest, cancellable: Gio.Cancellable | None) -> str:
+def run_prompt(request: PromptRequest, cancellable) -> str:
     proc = subprocess.Popen(
         build_prompt_command(request),
         stdout=subprocess.PIPE,
@@ -98,7 +87,7 @@ def run_prompt(request: PromptRequest, cancellable: Gio.Cancellable | None) -> s
     return stdout.rstrip("\n")
 
 
-def subject_for_current_session() -> Polkit.Subject:
+def subject_for_current_session():
     subject = Polkit.UnixSession.new_for_process_sync(os.getpid(), None)
     if subject is not None:
         return subject
@@ -109,12 +98,12 @@ class AuthenticationFlow:
     def __init__(
         self,
         listener: "AstreaPolkitListener",
-        task: Gio.Task,
+        task,
         action_id: str,
         message: str,
         cookie: str,
         identities: list,
-        cancellable: Gio.Cancellable | None,
+        cancellable,
     ) -> None:
         self.listener = listener
         self.task = task
@@ -194,47 +183,52 @@ class AuthenticationFlow:
         self.task.return_boolean(bool(authorized))
 
 
-class AstreaPolkitListener(PolkitAgent.Listener):
-    def __init__(self) -> None:
-        super().__init__()
-        self._flows: set[AuthenticationFlow] = set()
+def build_listener_class():
+    class AstreaPolkitListener(PolkitAgent.Listener):
+        def __init__(self) -> None:
+            super().__init__()
+            self._flows: set[AuthenticationFlow] = set()
 
-    def remember_flow(self, flow: AuthenticationFlow) -> None:
-        self._flows.add(flow)
+        def remember_flow(self, flow: AuthenticationFlow) -> None:
+            self._flows.add(flow)
 
-    def forget_flow(self, flow: AuthenticationFlow) -> None:
-        self._flows.discard(flow)
+        def forget_flow(self, flow: AuthenticationFlow) -> None:
+            self._flows.discard(flow)
 
-    def do_initiate_authentication(
-        self,
-        action_id,
-        message,
-        _icon_name,
-        _details,
-        cookie,
-        identities,
-        cancellable,
-        callback,
-        user_data,
-    ) -> None:
-        task = Gio.Task.new(self, cancellable, callback, user_data)
-        flow = AuthenticationFlow(
+        def do_initiate_authentication(
             self,
-            task,
-            str(action_id or ""),
-            str(message or "Authentication is required"),
-            str(cookie or ""),
-            list(identities or []),
+            action_id,
+            message,
+            _icon_name,
+            _details,
+            cookie,
+            identities,
             cancellable,
-        )
-        self.remember_flow(flow)
-        GLib.idle_add(flow.start)
+            callback,
+            user_data,
+        ) -> None:
+            task = Gio.Task.new(self, cancellable, callback, user_data)
+            flow = AuthenticationFlow(
+                self,
+                task,
+                str(action_id or ""),
+                str(message or "Authentication is required"),
+                str(cookie or ""),
+                list(identities or []),
+                cancellable,
+            )
+            self.remember_flow(flow)
+            GLib.idle_add(flow.start)
 
-    def do_initiate_authentication_finish(self, result) -> bool:
-        return result.propagate_boolean()
+        def do_initiate_authentication_finish(self, result) -> bool:
+            return result.propagate_boolean()
+
+    return AstreaPolkitListener
 
 
 def run_agent() -> int:
+    load_gi()
+    AstreaPolkitListener = build_listener_class()
     listener = AstreaPolkitListener()
     subject = subject_for_current_session()
     listener.register(
@@ -252,6 +246,25 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Astrea polkit authentication agent")
     parser.add_argument("--self-test", action="store_true")
     return parser.parse_args()
+
+
+def load_gi() -> None:
+    global Gio, GLib, GObject, Polkit, PolkitAgent
+    import gi
+    from gi import PyGIDeprecationWarning
+
+    warnings.filterwarnings("ignore", category=PyGIDeprecationWarning)
+    gi.require_version("Gio", "2.0")
+    gi.require_version("GLib", "2.0")
+    gi.require_version("Polkit", "1.0")
+    gi.require_version("PolkitAgent", "1.0")
+    from gi.repository import Gio as _Gio, GLib as _GLib, GObject as _GObject, Polkit as _Polkit, PolkitAgent as _PolkitAgent
+
+    Gio = _Gio
+    GLib = _GLib
+    GObject = _GObject
+    Polkit = _Polkit
+    PolkitAgent = _PolkitAgent
 
 
 def main() -> int:
