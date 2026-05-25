@@ -220,6 +220,29 @@ def get_sink_inputs() -> list:
     return inputs if isinstance(inputs, list) else []
 
 
+def get_clients() -> dict[str, dict]:
+    raw = run(["pactl", "-f", "json", "list", "clients"])
+    try:
+        clients = json.loads(raw)
+    except Exception:
+        return {}
+    if not isinstance(clients, list):
+        return {}
+    result = {}
+    for client in clients:
+        index = client.get("index")
+        if index is None:
+            continue
+        result[str(index)] = client.get("properties", {}) or {}
+    return result
+
+
+def merged_input_properties(inp: dict, clients: dict[str, dict]) -> dict:
+    props = dict(clients.get(str(inp.get("client", "")), {}))
+    props.update(inp.get("properties", {}) or {})
+    return props
+
+
 def _sink_name_by_index(sinks: list, index) -> str:
     for sink in sinks:
         if sink.get("index") == index:
@@ -375,6 +398,96 @@ def _guess_icon(name: str) -> str:
     return "audio-x-generic"
 
 
+def _steam_roots() -> list[Path]:
+    candidates = [
+        Path.home() / ".local/share/Steam",
+        Path.home() / ".steam/steam",
+    ]
+    return [path for path in candidates if path.exists()]
+
+
+def _parse_steam_manifest(path: Path) -> dict[str, str]:
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return {}
+    fields = {}
+    for key in ("appid", "name", "installdir"):
+        match = re.search(rf'"{re.escape(key)}"\s+"([^"]+)"', text)
+        if match:
+            fields[key] = match.group(1)
+    return fields
+
+
+def _process_environ(pid: str) -> dict[str, str]:
+    try:
+        raw = Path(f"/proc/{int(pid)}/environ").read_bytes()
+    except (OSError, ValueError):
+        return {}
+    result = {}
+    for item in raw.split(b"\0"):
+        if not item or b"=" not in item:
+            continue
+        key, value = item.split(b"=", 1)
+        try:
+            result[key.decode("utf-8", errors="ignore")] = value.decode("utf-8", errors="ignore")
+        except UnicodeDecodeError:
+            continue
+    return result
+
+
+def _steam_icon_for_appid(appid: str) -> str:
+    appid = str(appid or "").strip()
+    if not appid:
+        return ""
+    for root in _steam_roots():
+        cache = root / "appcache/librarycache" / appid
+        patterns = [
+            "**/logo.png",
+            "**/header.jpg",
+            "**/library_header.jpg",
+            "**/library_600x900.jpg",
+        ]
+        for pattern in patterns:
+            matches = sorted(cache.glob(pattern))
+            if matches:
+                return str(matches[0])
+    return ""
+
+
+def _steam_appid_for_process(props: dict) -> str:
+    pid = str(props.get("application.process.id", "")).strip()
+    if not pid:
+        return ""
+    env = _process_environ(pid)
+    return (env.get("SteamAppId")
+            or env.get("SteamGameId")
+            or env.get("STEAM_COMPAT_APP_ID")
+            or env.get("SteamOverlayGameId")
+            or "")
+
+
+def _steam_icon_for_app(name: str, props: dict) -> str:
+    icon = _steam_icon_for_appid(_steam_appid_for_process(props))
+    if icon:
+        return icon
+    app_name = str(name or props.get("application.name", "")).strip().casefold()
+    if not app_name:
+        return ""
+    for root in _steam_roots():
+        for manifest in (root / "steamapps").glob("appmanifest_*.acf"):
+            fields = _parse_steam_manifest(manifest)
+            if fields.get("name", "").casefold() != app_name:
+                continue
+            appid = fields.get("appid", "")
+            if not appid:
+                continue
+            icon = _steam_icon_for_appid(appid)
+            if icon:
+                return icon
+    return ""
+
+
 def _is_system_audio_stream(props: dict) -> bool:
     text = " ".join(str(props.get(key, "")) for key in (
         "application.name",
@@ -427,31 +540,112 @@ def _desktop_icon_for_app(name: str, props: dict) -> str:
                 best_icon = entry.get("icon", "")
     return best_icon
 
+
+def _app_group_key(name: str, props: dict, inp: dict) -> str:
+    normalized = str(name or "").strip().casefold()
+    restore_id = str(props.get("module-stream-restore.id", "")).strip().casefold()
+    if restore_id:
+        return f"restore:{restore_id}"
+    app_id = str(props.get("application.id") or props.get("application.name") or "").strip().casefold()
+    if app_id and normalized:
+        return f"app:{app_id}:{normalized}"
+    client_id = str(props.get("client.id") or inp.get("client") or "").strip()
+    if client_id and normalized:
+        return f"client:{client_id}:{normalized}"
+    process_id = str(props.get("application.process.id", "")).strip()
+    if process_id and normalized:
+        return f"pid:{process_id}:{normalized}"
+    return f"input:{inp.get('index', 0)}"
+
+
+def _resolve_app_icon(name: str, props: dict) -> tuple[str, str]:
+    explicit_icon = str(props.get("application.icon-name")
+                        or props.get("application.icon_name")
+                        or props.get("media.icon-name")
+                        or "").strip()
+    if explicit_icon:
+        icon_path = resolve_icon_path(explicit_icon)
+        if icon_path:
+            return explicit_icon, icon_path
+
+    guessed_icon = _guess_icon(name)
+    if guessed_icon != "audio-x-generic":
+        icon_path = resolve_icon_path(guessed_icon)
+        if icon_path:
+            return guessed_icon, icon_path
+
+    icon_path = _steam_icon_for_app(name, props)
+    if icon_path:
+        return explicit_icon or guessed_icon, icon_path
+
+    desktop_icon = _desktop_icon_for_app(name, props)
+    if desktop_icon:
+        icon_path = resolve_icon_path(desktop_icon)
+        if icon_path:
+            return desktop_icon, icon_path
+
+    icon_name = explicit_icon or guessed_icon or "audio-x-generic"
+    icon_path = resolve_icon_path(icon_name) if icon_name else ""
+    return icon_name, icon_path
+
+
 def get_apps() -> list:
     inputs = get_sink_inputs()
-    result = []
+    clients = get_clients()
+    grouped = {}
     for inp in inputs:
-        props = inp.get("properties", {})
+        props = merged_input_properties(inp, clients)
         if _is_system_audio_stream(props):
             continue
         name  = (props.get("application.name")
                  or props.get("media.name")
                  or props.get("node.name")
                  or f"App #{inp.get('index', '?')}")
-        icon_name = (props.get("application.icon-name")
-                     or props.get("application.icon_name")
-                     or props.get("media.icon-name")
-                     or _desktop_icon_for_app(name, props)
-                     or _guess_icon(name))
-        icon_path = resolve_icon_path(icon_name)
+        key = _app_group_key(name, props, inp)
+        volume = _avg_volume(inp.get("volume", {}))
+        stream = {
+            "index": inp.get("index", 0),
+            "volume": volume,
+            "muted": inp.get("mute", False),
+        }
+        icon_name, icon_path = _resolve_app_icon(name, props)
+        if key not in grouped:
+            grouped[key] = {
+                "index": inp.get("index", 0),
+                "indexes": [],
+                "name": name,
+                "icon": icon_path,
+                "icon_name": icon_name,
+                "volume_values": [],
+                "muted_values": [],
+                "streams": [],
+            }
+        item = grouped[key]
+        if icon_path and not item["icon"]:
+            item["icon"] = icon_path
+        if icon_name and not item["icon_name"]:
+            item["icon_name"] = icon_name
+        item["indexes"].append(inp.get("index", 0))
+        item["volume_values"].append(volume)
+        item["muted_values"].append(bool(inp.get("mute", False)))
+        item["streams"].append(stream)
+
+    result = []
+    for item in grouped.values():
+        volumes = item.pop("volume_values", [])
+        muted_values = item.pop("muted_values", [])
+        streams = item.get("streams", [])
         result.append({
-            "index":  inp.get("index", 0),
-            "name":   name,
-            "icon":   icon_path,
-            "volume": _avg_volume(inp.get("volume", {})),
-            "muted":  inp.get("mute", False),
+            "index": item["index"],
+            "indexes": item["indexes"],
+            "name":   item.get("name", ""),
+            "icon":   item.get("icon", ""),
+            "icon_name": item.get("icon_name", ""),
+            "volume": round(sum(volumes) / len(volumes), 3) if volumes else 0.0,
+            "muted":  bool(muted_values) and all(muted_values),
+            "stream_count": len(streams),
         })
-    return result
+    return sorted(result, key=lambda app: str(app.get("name", "")).casefold())
 
 # ── Lê config WirePlumber atual ───────────────────────────────────────────────
 def get_wp_config() -> dict:
@@ -468,6 +662,19 @@ def get_wp_config() -> dict:
 
 # ── Aplica config ─────────────────────────────────────────────────────────────
 def apply_config(cfg: dict):
+    app_indexes = cfg.get("app_indexes")
+    if app_indexes is None and "app_index" in cfg:
+        app_indexes = [cfg["app_index"]]
+    if isinstance(app_indexes, list) and "volume" in cfg:
+        vol = max(0.0, min(1.5, float(cfg["volume"])))
+        for app_index in app_indexes:
+            run(["pactl", "set-sink-input-volume", str(app_index), f"{int(vol*100)}%"])
+        return
+    if isinstance(app_indexes, list) and "muted" in cfg:
+        muted = "1" if cfg["muted"] else "0"
+        for app_index in app_indexes:
+            run(["pactl", "set-sink-input-mute", str(app_index), muted])
+        return
     if "app_index" in cfg and "volume" in cfg:
         vol = max(0.0, min(1.5, float(cfg["volume"])))
         run(["pactl", "set-sink-input-volume", str(cfg["app_index"]), f"{int(vol*100)}%"])

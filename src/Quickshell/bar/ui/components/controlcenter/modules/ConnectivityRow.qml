@@ -14,7 +14,7 @@ Rectangle {
 
     radius: Theme.radiusMedium
     color: error ? Qt.rgba(1, 0.23, 0.19, 0.20)
-                  : (rowMouse.containsMouse ? Theme.separator : "transparent")
+                  : (rowMouse.containsMouse ? Theme.shellSeparator : "transparent")
 
     Behavior on color { ColorAnimation { duration: Theme.animationSubtle } }
 
@@ -35,7 +35,7 @@ Rectangle {
             Text {
                 anchors.centerIn: parent
                 text: rowRoot.icon
-                color: rowRoot.active && !rowRoot.error ? "#ffffff" : (rowRoot.error ? Theme.iconWarning : Theme.iconMain)
+                color: rowRoot.active && !rowRoot.error ? "#ffffff" : (rowRoot.error ? Theme.iconWarning : Theme.shellIconMain)
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
                 RotationAnimation on rotation {
                     running: rowRoot.busy
@@ -55,7 +55,7 @@ Rectangle {
             Text {
                 width: parent.width
                 text: rowRoot.title
-                color: Theme.textActive
+                color: Theme.shellTextActive
                 elide: Text.ElideRight
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.DemiBold }
             }
@@ -63,7 +63,7 @@ Rectangle {
             Text {
                 width: parent.width
                 text: rowRoot.subtitle
-                color: rowRoot.error ? Theme.iconWarning : Theme.textSecondary
+                color: rowRoot.error ? Theme.iconWarning : Theme.shellTextSecondary
                 opacity: Theme.opacityEmphasis
                 elide: Text.ElideRight
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeMicro; weight: Font.Medium }

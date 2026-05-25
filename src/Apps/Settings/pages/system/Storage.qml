@@ -17,6 +17,7 @@ Item {
     property real   scannedTotal:     0
     property real   compressionAmount: 0
     property real   compressionSaved: 0
+    property real   zstdDiskUsage: 0
     property bool   compressionExact: false
     property real   categorizedTotal: 0
     property bool   scanning:         false
@@ -46,6 +47,8 @@ Item {
     }
 
     function compressionDisplayAmount() {
+        if (compressionExact && zstdDiskUsage > 0)
+            return zstdDiskUsage
         return Math.max(0, compressionAmount > 0 ? compressionAmount : compressionSaved)
     }
 
@@ -61,7 +64,7 @@ Item {
         let text = formatBytes(totalSize) + " de " + formatBytes(diskTotal) + " usados"
         const compressed = compressionDisplayAmount()
         if (compressed > 0)
-            text += " · " + (compressionExact ? "" : "~") + formatBytes(compressed) + " Comprimidos"
+            text += " · " + (compressionExact && zstdDiskUsage > 0 ? "" : "~") + formatBytes(compressed) + " Comprimidos"
         if (refreshRunning)
             text += " · atualizando"
         return text
@@ -99,6 +102,7 @@ Item {
                     if (d.scanned_total) root.scannedTotal = d.scanned_total
                     root.compressionAmount = d.compressed_total || d.compression_total || 0
                     root.compressionSaved = d.compressed_saved || d.compression_saved || 0
+                    root.zstdDiskUsage = d.zstd_disk_usage || 0
                     root.compressionExact = d.compressed_exact === true
                     root.refreshRunning = d.refresh_running === true
                     root.scanning = root.refreshRunning

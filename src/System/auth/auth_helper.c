@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MAX_PASSWORD_LEN 4096
+
 static int conv_func(int num_msg, const struct pam_message **msg,
                      struct pam_response **resp, void *appdata_ptr) {
   struct pam_response *r = calloc(num_msg, sizeof(struct pam_response));
@@ -13,10 +15,13 @@ static int conv_func(int num_msg, const struct pam_message **msg,
 }
 
 int main(int argc, char *argv[]) {
-  if (argc < 3)
+  if (argc < 2)
     return 1;
   char *user = argv[1];
-  char *pass = argv[2];
+  char pass[MAX_PASSWORD_LEN];
+  if (fgets(pass, sizeof(pass), stdin) == NULL)
+    return 1;
+  pass[strcspn(pass, "\r\n")] = '\0';
   struct pam_conv conv = {conv_func, pass};
   pam_handle_t *pamh = NULL;
   int ret;

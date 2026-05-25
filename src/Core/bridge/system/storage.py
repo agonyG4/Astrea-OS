@@ -19,6 +19,7 @@ AUTO_REFRESH_AFTER_SECONDS = int(os.environ.get("ASTREA_STORAGE_REFRESH_AFTER_SE
 REFRESH_POLL_SECONDS = 5
 COMPSIZE_CACHE = STATE_DIR / "storage-compsize.json"
 COMPSIZE_CACHE_AFTER_SECONDS = int(os.environ.get("ASTREA_STORAGE_COMPSIZE_AFTER_SECONDS", "3600"))
+COMPSIZE_PATHS = [Path("/"), Path("/home")]
 SENSE_SCRIPT_CANDIDATES = [
     Path(os.environ["ASTREA_STORAGESENSE"])
     if os.environ.get("ASTREA_STORAGESENSE")
@@ -178,19 +179,63 @@ def parse_compsize_output(output: str) -> dict:
             continue
         saved = max(0, uncompressed - disk_usage)
         if alg == "TOTAL":
-            stats["compressed_saved"] = saved
+            stats["compressed_saved"] += saved
             stats["exact"] = True
         else:
-            stats["by_algorithm"][alg] = {
-                "disk_usage": disk_usage,
-                "uncompressed": uncompressed,
-                "compressed_saved": saved,
-            }
+            current = stats["by_algorithm"].setdefault(alg, {
+                "disk_usage": 0,
+                "uncompressed": 0,
+                "compressed_saved": 0,
+            })
+            current.update({
+                "disk_usage": current["disk_usage"] + disk_usage,
+                "uncompressed": current["uncompressed"] + uncompressed,
+                "compressed_saved": current["compressed_saved"] + saved,
+            })
             if alg == "zstd":
-                stats["compressed_total"] = uncompressed
-                stats["zstd_disk_usage"] = disk_usage
-                stats["zstd_saved"] = saved
+                stats["compressed_total"] += uncompressed
+                stats["zstd_disk_usage"] += disk_usage
+                stats["zstd_saved"] += saved
     return stats
+
+
+def is_separate_mount_or_subvolume(path: Path, parent: Path) -> bool:
+    try:
+        if path.is_mount():
+            return True
+    except OSError:
+        pass
+    try:
+        return path.stat().st_dev != parent.stat().st_dev
+    except OSError:
+        return False
+
+
+def default_compsize_paths() -> list[Path]:
+
+    paths = []
+    seen = set()
+    for path in COMPSIZE_PATHS:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        key = str(resolved)
+        if not path.exists() or key in seen:
+            continue
+        skip = False
+        for kept in paths:
+            try:
+                path.relative_to(kept)
+            except ValueError:
+                continue
+            if not is_separate_mount_or_subvolume(path, kept):
+                skip = True
+            break
+        if not skip:
+            paths.append(path)
+            seen.add(key)
+    return paths
 
 
 def parse_compsize_bytes(output: str) -> dict:
@@ -245,7 +290,7 @@ def import_compsize_cache(output: str, source: str = "manual-compsize") -> dict:
     stats.update({
         "source": source,
         "updated_at": time.time(),
-        "paths": [str(HOME)],
+        "paths": [str(path) for path in default_compsize_paths()],
     })
     write_json(COMPSIZE_CACHE, stats)
     return stats
@@ -649,10 +694,11 @@ def print_sense_json(sense_script: Path) -> int:
             payload = json.loads(result.stdout or "{}")
             if not isinstance(payload, dict):
                 payload = {"error": "Invalid StorageSense JSON", "data": []}
+            payload = {**cache_metadata(), **payload}
         except json.JSONDecodeError as err:
             payload = {"error": f"Could not parse StorageSense JSON: {err}", "data": []}
     if not payload.get("refresh_running"):
-        exact = compsize_stats([HOME])
+        exact = compsize_stats(default_compsize_paths())
         if exact.get("exact"):
             payload["compressed_total"] = int(exact.get("compressed_total") or 0)
             payload["compressed_saved"] = int(exact.get("zstd_saved") or exact.get("compressed_saved") or 0)

@@ -13,15 +13,17 @@ QtObject {
     property var activeThumbnailWarmRequest: null
     property string activePreviewRefreshPath: ""
     property var startupWarmQueue: []
-    property bool quickLookCooldown: false
     property bool startupWorkEnabled: false
     property real zoomLevel: 1.0
     property int currentFolderWarmOffset: -1
     property int currentFolderWarmChunkSize: 24
+    property var retryThumbnailWarmRequest: null
 
     function clearCurrentFolderWarm() {
         currentFolderWarmOffset = -1
         currentFolderWarmTimer.stop()
+        retryThumbnailWarmRequest = null
+        thumbnailWarmRetryTimer.stop()
     }
 
     function beginCurrentFolderWarm() {
@@ -96,46 +98,6 @@ QtObject {
         ]
         previewRefreshProcess.running = false
         previewRefreshProcess.running = true
-    }
-
-    function openQuickLook() {
-        if (quickLookCooldown)
-            return
-
-        var item = app.selectedItem()
-        if (!item || !item.filePath)
-            return
-
-        quickLookCooldown = true
-        quickLookCooldownTimer.restart()
-
-        quickLookProcess.command = [
-            "python3",
-            app.helperPath,
-            "quicklook",
-            item.filePath,
-            app.quickLookPathFile,
-            app.quickLookPidFile
-        ]
-        quickLookProcess.running = false
-        quickLookProcess.running = true
-    }
-
-    function syncQuickLookSelection() {
-        var item = app.selectedItem()
-        if (!item || !item.filePath)
-            return
-
-        quickLookSyncProcess.command = [
-            "python3",
-            app.helperPath,
-            "quicklook-sync",
-            item.filePath,
-            app.quickLookPidFile,
-            app.quickLookPathFile
-        ]
-        quickLookSyncProcess.running = false
-        quickLookSyncProcess.running = true
     }
 
     function fileIconName(fileName, isFolder, isExecutable) {
@@ -535,6 +497,42 @@ QtObject {
         thumbnailWarmProcess.running = true
     }
 
+    function requestHasMissingPreview(request) {
+        if (!request || request.path !== app.currentPath || app.fileModel.count <= 0)
+            return false
+
+        var offset = Math.max(0, parseInt(request.offset || "0", 10))
+        var limit = Math.max(1, parseInt(request.limit || "12", 10))
+        var end = Math.min(app.fileModel.count, offset + limit)
+
+        for (var i = offset; i < end; i++) {
+            var item = app.fileModel.get(i)
+            if (item
+                    && !item.fileIsDir
+                    && (item.filePreviewUrl || "") === ""
+                    && app.isPreviewableFile(item.fileName, item.fileIsDir))
+                return true
+        }
+        return false
+    }
+
+    function retryThumbnailWarm(request) {
+        if (!request)
+            return
+
+        retryThumbnailWarmRequest = {
+            path: request.path,
+            showHidden: request.showHidden,
+            sortField: request.sortField,
+            sortAsc: request.sortAsc,
+            foldersFirst: request.foldersFirst,
+            offset: request.offset,
+            limit: request.limit,
+            retries: (request.retries || 0) + 1
+        }
+        thumbnailWarmRetryTimer.restart()
+    }
+
     function warmCurrentDirectoryThumbnails() {
         if (!startupWorkEnabled || !app.currentPath || app.searchActive || app.isRecentPath(app.currentPath))
             return
@@ -641,6 +639,10 @@ QtObject {
         return /\.sh$/i.test(path || "")
     }
 
+    function isWindowsExecutable(path) {
+        return /\.(exe|msi)$/i.test(path || "")
+    }
+
     function isDirectExecutable(path) {
         var value = String(path || "")
         var name = value.split("/").pop()
@@ -665,6 +667,14 @@ QtObject {
         directExecutableProcess.running = true
     }
 
+    function openWindowsExecutable(path) {
+        if (!path)
+            return
+        windowsExecutableProcess.command = [app.windowsRun, path]
+        windowsExecutableProcess.running = false
+        windowsExecutableProcess.running = true
+    }
+
     function openExternalFile(path, fileUrl) {
         externalOpenProcess.command = [app.astreaLaunch, "--file", path || fileUrl]
         externalOpenProcess.running = false
@@ -683,6 +693,10 @@ QtObject {
         }
         if (isShellScript(path)) {
             openShellScript(path)
+            return
+        }
+        if (isWindowsExecutable(path)) {
+            openWindowsExecutable(path)
             return
         }
         if (isDirectExecutable(path)) {
@@ -722,6 +736,23 @@ QtObject {
         }
     }
 
+    property Timer thumbnailWarmRetryTimer: Timer {
+        interval: 650
+        repeat: false
+        onTriggered: {
+            if (!preview.retryThumbnailWarmRequest)
+                return
+            if (preview.thumbnailWarmProcess.running) {
+                restart()
+                return
+            }
+
+            var request = preview.retryThumbnailWarmRequest
+            preview.retryThumbnailWarmRequest = null
+            preview.startThumbnailWarm(request)
+        }
+    }
+
     property Timer startupWarmTimer: Timer {
         interval: 350
         repeat: true
@@ -758,6 +789,14 @@ QtObject {
                     && !isNaN(warmedCount)
                     && warmedCount > 0)
                 preview.previewRefreshDebounce.restart()
+            else if (exitCode === 0
+                    && activeRequest
+                    && activeRequest.path === app.currentPath
+                    && !isNaN(warmedCount)
+                    && warmedCount === 0
+                    && (activeRequest.retries || 0) < 3
+                    && preview.requestHasMissingPreview(activeRequest))
+                preview.retryThumbnailWarm(activeRequest)
 
             preview.activeThumbnailWarmRequest = null
 
@@ -770,22 +809,12 @@ QtObject {
         }
     }
 
-    property Process quickLookProcess: Process {
-        command: []
-        running: false
-    }
-
-    property Process quickLookSyncProcess: Process {
-        command: []
-        running: false
-    }
-
     property Process shellScriptProcess: Process {
         command: []
         running: false
         onExited: function(exitCode) {
             if (exitCode !== 0)
-                Qt.openUrlExternally("file://" + command[command.length - 1])
+                Qt.openUrlExternally(app.fileUrlForPath(command[command.length - 1]))
         }
     }
 
@@ -794,7 +823,16 @@ QtObject {
         running: false
         onExited: function(exitCode) {
             if (exitCode !== 0)
-                Qt.openUrlExternally("file://" + command[command.length - 1])
+                Qt.openUrlExternally(app.fileUrlForPath(command[command.length - 1]))
+        }
+    }
+
+    property Process windowsExecutableProcess: Process {
+        command: []
+        running: false
+        onExited: function(exitCode) {
+            if (exitCode !== 0)
+                Qt.openUrlExternally(app.fileUrlForPath(command[command.length - 1]))
         }
     }
 
@@ -803,13 +841,8 @@ QtObject {
         running: false
         onExited: function(exitCode) {
             if (exitCode !== 0)
-                Qt.openUrlExternally("file://" + command[command.length - 1])
+                Qt.openUrlExternally(app.fileUrlForPath(command[command.length - 1]))
         }
     }
 
-    property Timer quickLookCooldownTimer: Timer {
-        interval: 220
-        repeat: false
-        onTriggered: preview.quickLookCooldown = false
-    }
 }

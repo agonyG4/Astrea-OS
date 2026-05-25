@@ -58,6 +58,7 @@ The helper is installed from:
 - [[Astrea - Spotlight]]
 - [[Astrea - Desktop Icons]]
 - [[Astrea - Explorer App]]
+- [[Astrea - Top Bar]] through `~/.local/bin/astrea-settings-open` for Settings placement on the active workspace
 - `Core/bridge/apps/manager.py`
 - island helper scripts that launch music/app actions
 

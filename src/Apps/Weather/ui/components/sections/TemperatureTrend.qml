@@ -15,8 +15,8 @@ ColumnLayout {
         Layout.fillWidth: true
         implicitHeight: 160
         radius: 20
-        color: "#252529"
-        border.color: "#34343A"
+        color: UI.Theme.cardBg
+        border.color: UI.Theme.cardBorder
         border.width: 1
 
         ColumnLayout {
@@ -51,7 +51,7 @@ ColumnLayout {
                     text: diff === 0 ? "Na média." :
                           Math.abs(diff) + "° " + (diff > 0 ? "acima" : "abaixo")
                     font.pixelSize: UI.Theme.fontSizeLarge
-                    textColor: "#F2F2F7"
+                    textColor: UI.Theme.textPrimary
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                 }

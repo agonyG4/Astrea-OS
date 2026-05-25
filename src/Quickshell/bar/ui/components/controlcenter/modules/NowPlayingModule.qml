@@ -55,7 +55,7 @@ Rectangle {
             anchors.centerIn: parent
             visible: module.artSource === ""
             text: "󰝚"
-            color: Theme.iconMain
+            color: Theme.shellIconMain
             font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIconLarge }
         }
     }
@@ -71,7 +71,7 @@ Rectangle {
         Text {
             width: parent.width
             text: module.title
-            color: Theme.textActive
+            color: Theme.shellTextActive
             elide: Text.ElideRight
             maximumLineCount: 1
             font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall; weight: Font.DemiBold }
@@ -80,7 +80,7 @@ Rectangle {
         Text {
             width: parent.width
             text: module.artist
-            color: Theme.textSecondary
+            color: Theme.shellTextSecondary
             opacity: Theme.opacityEmphasis
             elide: Text.ElideRight
             maximumLineCount: 1

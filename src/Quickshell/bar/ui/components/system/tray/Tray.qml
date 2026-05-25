@@ -8,6 +8,7 @@ Row {
     id: root
     spacing: Theme.spacing
     height:  36
+    property real anchorOffset: 0
 
     function trayIconSource(icon) {
         if (!icon)
@@ -42,7 +43,7 @@ Row {
             anchors.verticalCenter: parent.verticalCenter
             width:  28; height: 28
             radius: Theme.radiusMedium
-            color:  isHovered || isPressed ? (isPressed ? Qt.rgba(1, 1, 1, 0.2) : Theme.separator) : "transparent"
+            color:  isHovered || isPressed ? (isPressed ? Qt.rgba(1, 1, 1, 0.2) : Theme.shellSeparator) : "transparent"
             Behavior on color { ColorAnimation { duration: Theme.animationFast } }
 
             ToolTip.visible: isHovered && (modelData.tooltipTitle !== "" || modelData.title !== "")
@@ -72,7 +73,7 @@ Row {
                         modelData.secondaryActivate()
                     } else {
                         const point = trayItem.mapToItem(null, trayItem.width / 2, trayItem.height / 2)
-                        contextMenu.openFor(modelData, point.x)
+                        contextMenu.openFor(modelData, point.x + root.anchorOffset)
                     }
                 }
             }

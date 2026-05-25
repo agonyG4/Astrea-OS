@@ -15,8 +15,8 @@ ColumnLayout {
         Layout.fillWidth: true
         implicitHeight: 160
         radius: 20
-        color: "#252529"
-        border.color: "#34343A"
+        color: UI.Theme.cardBg
+        border.color: UI.Theme.cardBorder
         border.width: 1
 
         ColumnLayout {

@@ -132,7 +132,7 @@ Item {
     function dragUriListForItem(itemName, itemPath, itemUrl) {
         if (AppState.isSelected(itemName) && AppState.selectedFiles.length > 1)
             return AppState.selectedUriListInCurrentFolder()
-        return itemUrl || ("file://" + itemPath)
+        return itemUrl || AppState.fileUrlForPath(itemPath)
     }
 
     function queueIconDrag(itemName, itemSourceIndex, itemPath, itemUrl, dragImageUrl, dragPreviewSize, dragX, dragY) {
@@ -161,7 +161,7 @@ Item {
 
             root.dragInProgress = true
             iconDragProxy.Drag.active = true
-            iconDragProxy.Drag.startDrag(Qt.CopyAction)
+            iconDragProxy.Drag.startDrag(Qt.MoveAction)
             iconDragProxy.Drag.active = false
             root.dragInProgress = false
             root.cancelQueuedIconDrag()
@@ -228,11 +228,65 @@ Item {
             sectionModel.append(groups[j])
     }
 
+    function itemWithMetadata(item, source) {
+        return {
+            sourceIndex: item.sourceIndex,
+            fileName: item.fileName,
+            filePath: item.filePath,
+            fileUrl: item.fileUrl,
+            fileIsDir: item.fileIsDir,
+            fileExecutable: Boolean(source.fileExecutable),
+            fileHidden: item.fileHidden,
+            fileSize: source.fileSize,
+            fileModified: source.fileModified,
+            fileKind: source.fileKind,
+            filePreviewUrl: source.filePreviewUrl
+        }
+    }
+
+    function syncSectionModelMetadata() {
+        if (AppState.fileModelFilling || sectionModel.count === 0)
+            return
+
+        for (var sectionIndex = 0; sectionIndex < sectionModel.count; sectionIndex++) {
+            var section = sectionModel.get(sectionIndex)
+            var items = section && section.items ? section.items : []
+            var updatedItems = []
+            var changed = false
+
+            for (var i = 0; i < items.length; i++) {
+                var item = items[i]
+                var updatedItem = item
+                if (!item || item.sourceIndex === undefined)
+                    updatedItems.push(updatedItem)
+                else if (item.sourceIndex < 0 || item.sourceIndex >= AppState.fileModel.count)
+                    updatedItems.push(updatedItem)
+                else {
+                    var source = AppState.fileModel.get(item.sourceIndex)
+                    if (source && source.filePath === item.filePath
+                            && (item.filePreviewUrl !== source.filePreviewUrl
+                                || item.fileKind !== source.fileKind
+                                || item.fileSize !== source.fileSize
+                                || item.fileModified !== source.fileModified
+                                || Boolean(item.fileExecutable) !== Boolean(source.fileExecutable))) {
+                        updatedItem = itemWithMetadata(item, source)
+                        changed = true
+                    }
+                    updatedItems.push(updatedItem)
+                }
+            }
+
+            if (changed)
+                sectionModel.setProperty(sectionIndex, "items", updatedItems)
+        }
+    }
+
     // ── Shared helpers ────────────────────────────────────────────────────
     CommonComponents.FileContextMenu {
         id: contextMenu
         anchors.fill: parent
         clipboardProxy: clipboardProxy
+        menuOwner: "file-icon"
     }
 
     TextEdit {
@@ -253,6 +307,7 @@ Item {
         function onSortFieldChanged() { root.rebuildSectionModel() }
         function onSortAscChanged() { root.rebuildSectionModel() }
         function onGroupingEnabledChanged() { root.rebuildSectionModel() }
+        function onFileModelRevisionChanged() { root.syncSectionModelMetadata() }
         function onFileModelFillingChanged() {
             if (!AppState.fileModelFilling)
                 root.refreshAfterModelChange()
@@ -305,7 +360,7 @@ Item {
         opacity: 0
         z: 9999
         Drag.dragType: Drag.Automatic
-        Drag.supportedActions: Qt.CopyAction
+        Drag.supportedActions: Qt.CopyAction | Qt.MoveAction
         Drag.mimeData: ({ "text/uri-list": root.queuedDragItemUrl, "text/plain": root.queuedDragItemPath })
         Drag.imageSource: root.queuedDragImageUrl
         Drag.imageSourceSize: Qt.size(root.queuedDragPreviewSize, root.queuedDragPreviewSize)
@@ -404,19 +459,35 @@ Item {
 
         Timer { id: warmTimer; interval: 80; repeat: false; onTriggered: grid.warmVisible() }
 
+
+        TapHandler {
+            acceptedButtons: Qt.LeftButton
+            gesturePolicy: TapHandler.ReleaseWithinBounds
+
+            onTapped: function(eventPoint, button) {
+                var idx = grid.indexAt(eventPoint.position.x, eventPoint.position.y)
+                if (idx !== -1)
+                    return
+                root.resetActivationCandidate()
+                root.Window.window.focusFileSurface()
+                AppState.clearSelection()
+            }
+        }
+
         TapHandler {
             acceptedButtons: Qt.RightButton
             gesturePolicy: TapHandler.ReleaseWithinBounds
 
             onTapped: function(eventPoint, button) {
                 root.resetActivationCandidate()
+                root.Window.window.focusFileSurface()
                 AppState.clearSelection()
                 const pt = grid.mapToItem(contextMenu,
                                           eventPoint.position.x,
                                           eventPoint.position.y)
                 contextMenu.openAt(pt.x + 6, pt.y + 6,
                                    AppState.currentPath, true,
-                                   "file://" + AppState.currentPath)
+                                   AppState.fileUrlForPath(AppState.currentPath))
             }
         }
 
@@ -490,11 +561,20 @@ Item {
                         readonly property bool   itemExecutable: Boolean(modelData.fileExecutable)
                         readonly property string itemName:  modelData.fileName
                         readonly property string cachedIconName: AppState.fileIconName(itemName, itemIsDir, itemExecutable)
+                        readonly property int    modelRevision: AppState.fileModelRevision
+                        readonly property string livePreviewUrl: {
+                            if (itemSourceIndex < 0 || itemSourceIndex >= AppState.fileModel.count)
+                                return modelData.filePreviewUrl || ""
+                            var item = AppState.fileModel.get(itemSourceIndex)
+                            if (!item || item.filePath !== itemPath)
+                                return modelData.filePreviewUrl || ""
+                            return item.filePreviewUrl || ""
+                        }
                         readonly property bool   isPreviewable: AppState.previewsEnabled &&
                                                                 !itemIsDir &&
-                                                                modelData.filePreviewUrl !== ""
-                        readonly property bool   hasPreview: modelData.filePreviewUrl !== ""
-                        property url    activePreviewUrl: modelData.filePreviewUrl
+                                                                livePreviewUrl !== ""
+                        readonly property bool   hasPreview: livePreviewUrl !== ""
+                        property url    activePreviewUrl: livePreviewUrl
                         readonly property int    previewRequestSize: grid.previewReqSize
                         readonly property int    previewDisplaySize: Math.min(grid.iconSize, Math.round(grid.iconSize * 0.82))
                         readonly property int    dragPreviewSize: Math.max(48, Math.round(grid.iconSize * 0.78))
@@ -504,7 +584,7 @@ Item {
 
                         onModelDataChanged: {
                             activePreviewUrl = ""
-                            activePreviewUrl = Qt.binding(function() { return modelData.filePreviewUrl })
+                            activePreviewUrl = Qt.binding(function() { return livePreviewUrl })
                         }
 
                         property bool dragging: false
@@ -522,9 +602,9 @@ Item {
                             y: grid.tilePad
                             radius: 8
                             color: AppState.isSelected(itemName)
-                                   ? "#3a3a3c"
+                                   ? Theme.selected
                                    : folderDropTarget.containsDrag ? Qt.rgba(0.49, 0.72, 0.97, 0.18)
-                                   : tileHover.hovered ? "#2e2e30" : "transparent"
+                                   : tileHover.hovered ? Theme.hover : "transparent"
                         }
 
                         Item {
@@ -564,7 +644,7 @@ Item {
                             x: Math.round((parent.width - width) / 2)
                             y: iconSlot.y + iconSlot.height + 6
                             text: itemName
-                            color: "#ffffff"
+                            color: Theme.text
                             font { pixelSize: grid.fontSize; weight: Font.Normal }
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment:   Text.AlignVCenter
@@ -587,6 +667,20 @@ Item {
                             cursorShape: Qt.PointingHandCursor
 
                             onPressed: function(mouse) {
+                                if (mouse.button === Qt.RightButton) {
+                                    mouse.accepted = true
+                                    root.cancelQueuedIconDrag()
+                                    tile.dragging = false
+                                    root.Window.window.focusFileSurface()
+                                    AppState.handleSelection(
+                                        itemName, itemSourceIndex,
+                                        Boolean(mouse.modifiers & Qt.ControlModifier),
+                                        Boolean(mouse.modifiers & Qt.ShiftModifier), true)
+                                    root.resetActivationCandidate()
+                                    const pt = tileMouse.mapToItem(contextMenu, mouse.x, mouse.y)
+                                    contextMenu.openAt(pt.x + 6, pt.y + 6, itemPath, itemIsDir, itemUrl)
+                                    return
+                                }
                                 root.cancelQueuedIconDrag()
                                 tile.pressX = mouse.x; tile.pressY = mouse.y; tile.dragging = false
                             }
@@ -613,18 +707,10 @@ Item {
                                 root.cancelQueuedIconDrag()
                                 tile.dragging = false
                                 if (mouse.button === Qt.LeftButton) {
+                                    root.Window.window.focusFileSurface()
                                     root.handlePrimaryItemClick(
                                         itemPath, itemIsDir, itemUrl, itemName, itemSourceIndex, mouse.modifiers)
                                     return
-                                }
-                                AppState.handleSelection(
-                                    itemName, itemSourceIndex,
-                                    Boolean(mouse.modifiers & Qt.ControlModifier),
-                                    Boolean(mouse.modifiers & Qt.ShiftModifier), true)
-                                if (mouse.button === Qt.RightButton) {
-                                    root.resetActivationCandidate()
-                                    const pt = parent.mapToItem(contextMenu, mouse.x, mouse.y)
-                                    contextMenu.openAt(pt.x + 6, pt.y + 6, itemPath, itemIsDir, itemUrl)
                                 }
                             }
 

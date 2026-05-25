@@ -20,6 +20,7 @@ Implementation work starts in:
 
 Documentation lives in:
 - `/home/agony/GitHub/Astrea-Dev/agent/Astrea`
+- `/home/agony/Documentos/Astrea`
 
 Current inspected runtime source:
 - `/home/agony/.local/share/Astrea-Rolling`
@@ -51,6 +52,9 @@ Examples:
 - Settings pages should use `Apps/Settings/AstreaComponents -> Core/components`.
 - Explorer file UI should use `Apps/Explorer/AstreaFiles -> Features/Files`.
 - Weather UI should use `Apps/Weather/AstreaComponents -> Core/components` plus Weather-local section components.
+- Media Viewer should use `Apps/MediaViewer/AstreaComponents -> Core/components` and keep preview conversion in `media_viewer_helper.py`.
+- Wallpapers should use `Apps/Wallpapers/AstreaComponents -> Core/components` and keep wallpaper side effects in `Core/bridge/wallpaper/wallpaper_manager.py`.
+- Translated strings should use `AstreaI18n` links into `System/i18n`.
 - Explorer context menus should wrap `AstreaFiles.FileContextMenu` and add app-specific actions inside it.
 - Settings controls should prefer `SectionHeader`, `SettingRow`, `SelectButton`, `ToggleSwitch`, `FormCard`, and other exported core controls.
 
@@ -82,6 +86,8 @@ If the feature is app-only, keep it app-local.
 `Core/bridge` owns command wrappers and JSON-producing bridge scripts.
 
 `System` owns local services, system config, auth helpers, scripts, cache, and metadata.
+
+`System/i18n` owns shared translations and the `AstreaI18n` QML singleton.
 
 `System/launch`, `bin/astrea-launch`, and `System/services/astrea_latencyd.py` own Astrea app-launch routing and temporary launch bursts.
 

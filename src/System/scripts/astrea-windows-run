@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+SUPPORTED_SUFFIXES = {".exe", ".msi"}
+
+
+def state_home() -> Path:
+    return Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+
+
+def steam_root() -> Path:
+    return Path(os.environ.get("ASTREA_STEAM_ROOT", Path.home() / ".local/share/Steam"))
+
+
+def astrea_state_dir() -> Path:
+    return state_home() / "Astrea"
+
+
+def folder_key(folder: Path) -> str:
+    text = str(folder.resolve())
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def prefix_paths(target: Path) -> tuple[Path, Path]:
+    key = folder_key(target.parent)
+    root = astrea_state_dir() / "windows-prefixes/by-folder" / key / "proton"
+    return root, root / "pfx"
+
+
+def proton_candidates() -> list[Path]:
+    root = steam_root()
+    candidates = [
+        root / "compatibilitytools.d/Proton-GE Latest/proton",
+        root / "compatibilitytools.d/GE-Proton10-34/proton",
+        Path("/usr/share/steam/compatibilitytools.d/proton-cachyos/proton"),
+    ]
+    compat_dir = root / "compatibilitytools.d"
+    if compat_dir.is_dir():
+        for path in sorted(compat_dir.glob("GE-Proton*/proton"), reverse=True):
+            if path not in candidates:
+                candidates.append(path)
+    return candidates
+
+
+def find_proton() -> Path | None:
+    for path in proton_candidates():
+        if path.is_file() and os.access(path, os.X_OK):
+            return path
+    return None
+
+
+def build_launch(target: Path) -> tuple[list[str], dict[str, str], str, Path, Path]:
+    prefix_root, wine_prefix = prefix_paths(target)
+    env = os.environ.copy()
+    env.setdefault("STEAM_COMPAT_CLIENT_INSTALL_PATH", str(steam_root()))
+    env.setdefault("STEAM_COMPAT_APP_ID", "0")
+    env.setdefault("PROTON_LOG_DIR", str(astrea_state_dir() / "windows-prefixes/logs"))
+
+    umu_run = shutil.which("umu-run")
+    proton = find_proton()
+
+    suffix = target.suffix.casefold()
+    if umu_run:
+        env["WINEPREFIX"] = str(wine_prefix)
+        env["PROTONPATH"] = str(proton.parent if proton else "GE-Proton")
+        env.setdefault("GAMEID", "astrea-" + folder_key(target.parent))
+        command = [umu_run]
+        runner = "umu-proton-ge"
+        if suffix == ".msi":
+            command.extend(["msiexec", "/i", str(target)])
+        else:
+            command.append(str(target))
+        return command, env, runner, prefix_root, wine_prefix
+
+    if proton:
+        env["STEAM_COMPAT_DATA_PATH"] = str(prefix_root)
+        command = [str(proton), "run"]
+        runner = "proton-ge"
+        if suffix == ".msi":
+            command.extend(["msiexec", "/i", str(target)])
+        else:
+            command.append(str(target))
+        return command, env, runner, prefix_root, wine_prefix
+
+    raise RuntimeError("Proton-GE not found. Install Proton-GE Latest or umu-run.")
+
+
+def run(target_text: str, dry_run: bool = False) -> dict[str, object]:
+    target = Path(target_text).expanduser().resolve()
+    if not target.is_file():
+        return {"ok": False, "error": f"file not found: {target}"}
+    if target.suffix.casefold() not in SUPPORTED_SUFFIXES:
+        return {"ok": False, "error": f"unsupported Windows file: {target.name}"}
+
+    command, env, runner, prefix_root, wine_prefix = build_launch(target)
+    log_dir = astrea_state_dir() / "windows-prefixes/logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    prefix_root.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{folder_key(target.parent)}-{target.stem}.log"
+
+    payload = {
+        "ok": True,
+        "runner": runner,
+        "command": command,
+        "cwd": str(target.parent),
+        "prefix": str(prefix_root),
+        "wine_prefix": str(wine_prefix),
+        "log": str(log_path),
+        "dry_run": dry_run,
+    }
+    if dry_run:
+        return payload
+
+    with log_path.open("ab") as log:
+        log.write(("\n--- Astrea Windows launch: " + str(target) + " ---\n").encode("utf-8"))
+        proc = subprocess.Popen(
+            command,
+            cwd=target.parent,
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    payload["pid"] = proc.pid
+    return payload
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run Windows executables with Proton-GE for Astrea.")
+    parser.add_argument("path", help="Path to a .exe or .msi file")
+    parser.add_argument("--dry-run", action="store_true", help="Print launch plan without starting Proton")
+    parser.add_argument("--json", action="store_true", help="Print JSON output")
+    args = parser.parse_args()
+
+    try:
+        payload = run(args.path, args.dry_run)
+    except Exception as err:
+        payload = {"ok": False, "error": str(err)}
+
+    if args.json or args.dry_run:
+        print(json.dumps(payload, ensure_ascii=False))
+    elif not payload.get("ok"):
+        print(payload.get("error", "launch failed"), file=sys.stderr)
+    return 0 if payload.get("ok") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

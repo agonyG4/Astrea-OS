@@ -51,9 +51,9 @@ case "${style}" in
         active_opacity="1.0"
         inactive_opacity="1.0"
         dim_strength="0"
-        dim_note="  # Frosted keeps app windows opaque; shell layers use xray blur"
-        blur_size="8"
-        blur_size_note="    # strong Frosted radius; Quickshell layers use xray"
+        dim_note="  # Frosted keeps app windows opaque; topbar layer uses xray blur"
+        blur_size="5"
+        blur_size_note="    # Frosted radius; Quickshell topbar uses xray"
         blur_passes="4"
         blur_passes_note="   # extra passes keep the glass smooth"
         blur_noise="0.018"
@@ -127,14 +127,30 @@ if [[ -f "${rules_conf}" ]]; then
     tmp="$(mktemp)"
     awk -v layer_xray="${quickshell_layer_xray}" '
     function topbar_blur_rule(namespace, spacing) {
-        if (layer_xray == "on") {
-            return "layerrule = blur on, xray on," spacing "match:namespace " namespace
-        }
         return "layerrule = blur on," spacing "match:namespace " namespace
+    }
+    function topbar_xray_rule(namespace, spacing) {
+        if (layer_xray == "on") {
+            return "layerrule = xray on," spacing "match:namespace " namespace
+        }
+        return ""
+    }
+
+    $0 ~ /^[[:space:]]*layerrule[[:space:]]*=[[:space:]]*xray[[:space:]]+on,.*match:namespace[[:space:]]+(astrea-bar|bar|topbar-popup|astrea-notifications|volume-osd)[[:space:]]*$/ {
+        next
+    }
+
+    $0 ~ /^[[:space:]]*layerrule[[:space:]]*=[[:space:]]*blur[[:space:]]+on,.*match:namespace[[:space:]]+astrea-bar[[:space:]]*$/ {
+        print topbar_blur_rule("astrea-bar", "  ")
+        if (layer_xray == "on")
+            print topbar_xray_rule("astrea-bar", "  ")
+        next
     }
 
     $0 ~ /^[[:space:]]*layerrule[[:space:]]*=[[:space:]]*blur[[:space:]]+on,.*match:namespace[[:space:]]+bar[[:space:]]*$/ {
         print topbar_blur_rule("bar", "  ")
+        if (layer_xray == "on")
+            print topbar_xray_rule("bar", "  ")
         next
     }
     $0 ~ /^[[:space:]]*layerrule[[:space:]]*=[[:space:]]*blur[[:space:]]+on,.*match:namespace[[:space:]]+topbar-popup[[:space:]]*$/ {
@@ -143,6 +159,14 @@ if [[ -f "${rules_conf}" ]]; then
     }
     $0 ~ /^[[:space:]]*layerrule[[:space:]]*=[[:space:]]*blur[[:space:]]+on,.*match:namespace[[:space:]]+astrea-notifications[[:space:]]*$/ {
         print topbar_blur_rule("astrea-notifications", " ")
+        next
+    }
+    $0 ~ /^[[:space:]]*layerrule[[:space:]]*=[[:space:]]*blur[[:space:]]+on,.*match:namespace[[:space:]]+volume-osd[[:space:]]*$/ {
+        print topbar_blur_rule("volume-osd", " ")
+        next
+    }
+    $0 ~ /^[[:space:]]*layerrule[[:space:]]*=[[:space:]]*ignore_alpha[[:space:]]+[^,]+,.*match:namespace[[:space:]]+volume-osd[[:space:]]*$/ {
+        print "layerrule = ignore_alpha 0.01, match:namespace volume-osd"
         next
     }
     { print }

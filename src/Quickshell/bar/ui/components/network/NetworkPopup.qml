@@ -37,10 +37,10 @@ SystemComponents.TopbarPopup {
                     font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIconLarge }
                 }
                 Column {
-                    Text { text: modelData.label; color: Theme.textSecondary; font { family: Theme.fontFamily; pixelSize: Theme.fontSizeExtraSmall } }
+                    Text { text: modelData.label; color: Theme.shellTextSecondary; font { family: Theme.fontFamily; pixelSize: Theme.fontSizeExtraSmall } }
                     Text {
                         text:    modelData.value
-                        color:   Theme.textActive
+                        color:   Theme.shellTextActive
                         opacity: Theme.opacitySecondary
                         font { family: Theme.fontFamily; pixelSize: Theme.fontSizeBody; weight: Font.Medium }
                     }

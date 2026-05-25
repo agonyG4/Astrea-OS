@@ -8,10 +8,24 @@ QtObject {
     readonly property string statusPath: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/Astrea/status/audio.json"
     property int level: 50
     property bool muted: false
+    property bool performancePaused: false
 
     function refresh() {
+        if (performancePaused) {
+            statusFile.reload()
+            return
+        }
         statusRefreshProc.running = false
         statusRefreshProc.running = true
+    }
+
+    onPerformancePausedChanged: {
+        if (performancePaused) {
+            statusRefreshProc.running = false
+            statusFile.reload()
+        } else {
+            refresh()
+        }
     }
 
     function clampLevel(value) {

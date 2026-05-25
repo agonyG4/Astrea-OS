@@ -23,12 +23,16 @@ ASTREA_SHARED = _load_astrea_shared()
 
 atomic_write_text = ASTREA_SHARED.atomic_write_text
 
-PROJECT_DIR = Path.home() / ".local/share/Astrea"
+PROJECT_DIR = ASTREA_SHARED.astrea_root()
 FEATURES_DIR = PROJECT_DIR / "Features/Paper"
-USER_DATA_DIR = PROJECT_DIR / "Data/user"
-USER_CONFIG_DIR = Path.home() / ".config/AstreaOS/user"
+LEGACY_USER_DATA_DIR = PROJECT_DIR / "Data/user"
+USER_DATA_DIR = ASTREA_SHARED.xdg_data_home() / "AstreaOS/user"
+USER_CONFIG_DIR = ASTREA_SHARED.xdg_config_home() / "AstreaOS/user"
+USER_WALLPAPER_DIR = USER_DATA_DIR / "wallpapers"
+LEGACY_USER_WALLPAPER_DIR = LEGACY_USER_DATA_DIR / "wallpapers"
+LEGACY_MIGRATION_MARKER = USER_DATA_DIR / ".legacy_wallpapers_migrated"
 LIBRARY_DIRS = {
-    "user": USER_DATA_DIR / "wallpapers",
+    "user": USER_WALLPAPER_DIR,
     "dynamic": FEATURES_DIR / "library/dynamic",
     "landscapes": FEATURES_DIR / "library/landscapes",
 }
@@ -92,6 +96,95 @@ def unique_slug(base_slug: str, parent: Path) -> str:
         slug = f"{base_slug}_{suffix}"
         suffix += 1
     return slug
+
+
+def path_is_inside(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except (FileNotFoundError, ValueError):
+        return False
+
+
+def copy_wallpaper_folder(source_dir: Path, target_dir: Path) -> None:
+    def ignore_tmp(_: str, names: list[str]) -> list[str]:
+        return [name for name in names if name.startswith(".") and name.endswith(".tmp")]
+
+    shutil.copytree(source_dir, target_dir, ignore=ignore_tmp)
+    wallpaper = target_dir / "wallpaper.jpg"
+    thumb = target_dir / "thumb.jpg"
+    if wallpaper.exists() and (not thumb.exists() or wallpaper.stat().st_mtime > thumb.stat().st_mtime):
+        ensure_thumb(wallpaper, thumb)
+
+
+def migrate_legacy_user_wallpapers() -> None:
+    if LEGACY_MIGRATION_MARKER.exists():
+        return
+    if not LEGACY_USER_WALLPAPER_DIR.exists():
+        return
+    if LEGACY_USER_WALLPAPER_DIR.resolve() == USER_WALLPAPER_DIR.resolve():
+        return
+
+    USER_WALLPAPER_DIR.mkdir(parents=True, exist_ok=True)
+    for folder in sorted((p for p in LEGACY_USER_WALLPAPER_DIR.iterdir() if p.is_dir()), key=lambda p: p.name.lower()):
+        if not (folder / "wallpaper.jpg").exists():
+            continue
+        target = USER_WALLPAPER_DIR / folder.name
+        if target.exists():
+            continue
+        copy_wallpaper_folder(folder, target)
+    write_text(LEGACY_MIGRATION_MARKER, str(LEGACY_USER_WALLPAPER_DIR.resolve()))
+
+
+def existing_import_for_source(source: Path) -> Path | None:
+    if not USER_WALLPAPER_DIR.exists():
+        return None
+    source_text = str(source.resolve())
+    for folder in sorted((p for p in USER_WALLPAPER_DIR.iterdir() if p.is_dir()), key=lambda p: p.name.lower()):
+        if read_text(folder / "source_path.txt") == source_text and (folder / "wallpaper.jpg").exists():
+            return folder / "wallpaper.jpg"
+    return None
+
+
+def import_external_wallpaper(source: Path, name: str) -> Path:
+    existing = existing_import_for_source(source)
+    if existing:
+        return existing
+
+    USER_WALLPAPER_DIR.mkdir(parents=True, exist_ok=True)
+    slug = unique_slug(sanitize_slug(name or source.stem), USER_WALLPAPER_DIR)
+    target_dir = USER_WALLPAPER_DIR / slug
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    wallpaper = target_dir / "wallpaper.jpg"
+    shutil.copy2(source, wallpaper)
+    write_text(target_dir / "name.txt", name or source.stem or "Wallpaper")
+    write_text(target_dir / "source_path.txt", str(source.resolve()))
+    ensure_thumb(wallpaper, target_dir / "thumb.jpg")
+    return wallpaper
+
+
+def managed_source_for_apply(source: Path, name: str) -> Path:
+    migrate_legacy_user_wallpapers()
+
+    managed_roots = [
+        USER_WALLPAPER_DIR,
+        LIBRARY_DIRS["dynamic"],
+        LIBRARY_DIRS["landscapes"],
+    ]
+    if any(path_is_inside(source, root) for root in managed_roots):
+        return source
+
+    if path_is_inside(source, LEGACY_USER_WALLPAPER_DIR):
+        folder = source.parent
+        slug = folder.name
+        target_dir = USER_WALLPAPER_DIR / slug
+        if not target_dir.exists():
+            USER_WALLPAPER_DIR.mkdir(parents=True, exist_ok=True)
+            copy_wallpaper_folder(folder, target_dir)
+        return target_dir / source.name
+
+    return import_external_wallpaper(source, name)
 
 
 def library_item(folder: Path) -> dict | None:
@@ -197,6 +290,7 @@ def state_payload(scope: str) -> dict:
 
 
 def scan_library() -> None:
+    migrate_legacy_user_wallpapers()
     payload = {}
     for key, directory in LIBRARY_DIRS.items():
         items = []
@@ -207,6 +301,57 @@ def scan_library() -> None:
                     items.append(item)
         payload[key] = items
     emit_json(payload)
+
+
+def user_items() -> list[dict]:
+    migrate_legacy_user_wallpapers()
+    items = []
+    if USER_WALLPAPER_DIR.exists():
+        for folder in sorted((p for p in USER_WALLPAPER_DIR.iterdir() if p.is_dir()), key=lambda p: p.name.lower()):
+            item = library_item(folder)
+            if item:
+                items.append(item)
+    return items
+
+
+def active_scopes_for_folder(folder: Path) -> list[str]:
+    folder = folder.resolve()
+    active = []
+    for scope in STATE_DIRS:
+        source = current_source(scope)
+        if not source:
+            continue
+        if path_is_inside(source, folder):
+            active.append(scope)
+    return active
+
+
+def list_user_wallpapers() -> None:
+    emit_json({"user": user_items()})
+
+
+def user_folder_for_slug(slug: str) -> Path:
+    safe_slug = sanitize_slug(slug)
+    folder = USER_WALLPAPER_DIR / safe_slug
+    if not folder.exists() or not folder.is_dir():
+        raise FileNotFoundError(f"wallpaper nao encontrado: {safe_slug}")
+    return folder
+
+
+def rename_user_wallpaper(slug: str, name: str) -> None:
+    folder = user_folder_for_slug(slug)
+    clean_name = name.strip() or folder.name.replace("_", " ")
+    write_text(folder / "name.txt", clean_name)
+    emit_json({"ok": True, "item": library_item(folder)})
+
+
+def delete_user_wallpaper(slug: str) -> None:
+    folder = user_folder_for_slug(slug)
+    active = active_scopes_for_folder(folder)
+    if active:
+        raise RuntimeError("wallpaper em uso: " + ", ".join(active))
+    shutil.rmtree(folder)
+    emit_json({"ok": True, "slug": folder.name})
 
 
 def run_awww(src: Path, transition_idx: int) -> None:
@@ -275,6 +420,7 @@ def apply_scope(scope: str, src: str, name: str, transition_idx: int | None, no_
     source = Path(src).expanduser().resolve()
     if not source.exists():
         raise FileNotFoundError(f"wallpaper nao encontrado: {source}")
+    source = managed_source_for_apply(source, name)
     source = wallpaper_variant_for_mode(source, blurred_enabled() if scope == "wallpaper" else False)
 
     state_dir = STATE_DIRS[scope]
@@ -360,14 +506,16 @@ def add_user_wallpaper(src: str, name: str) -> None:
     if not source.exists():
         raise FileNotFoundError(f"wallpaper nao encontrado: {source}")
 
-    LIBRARY_DIRS["user"].mkdir(parents=True, exist_ok=True)
-    slug = unique_slug(sanitize_slug(name), LIBRARY_DIRS["user"])
-    target_dir = LIBRARY_DIRS["user"] / slug
+    migrate_legacy_user_wallpapers()
+    USER_WALLPAPER_DIR.mkdir(parents=True, exist_ok=True)
+    slug = unique_slug(sanitize_slug(name), USER_WALLPAPER_DIR)
+    target_dir = USER_WALLPAPER_DIR / slug
     target_dir.mkdir(parents=True, exist_ok=True)
 
     wallpaper = target_dir / "wallpaper.jpg"
     shutil.copy2(source, wallpaper)
     write_text(target_dir / "name.txt", name)
+    write_text(target_dir / "source_path.txt", str(source))
     ensure_thumb(wallpaper, target_dir / "thumb.jpg")
 
     emit_json({"slug": slug, "item": library_item(target_dir)})
@@ -379,6 +527,18 @@ def main() -> None:
 
     scan_parser = subparsers.add_parser("scan-library")
     scan_parser.set_defaults(handler=lambda _: scan_library())
+
+    list_user_parser = subparsers.add_parser("list-user")
+    list_user_parser.set_defaults(handler=lambda _: list_user_wallpapers())
+
+    rename_user_parser = subparsers.add_parser("rename-user")
+    rename_user_parser.add_argument("--slug", required=True)
+    rename_user_parser.add_argument("--name", required=True)
+    rename_user_parser.set_defaults(handler=lambda args: rename_user_wallpaper(args.slug, args.name))
+
+    delete_user_parser = subparsers.add_parser("delete-user")
+    delete_user_parser.add_argument("--slug", required=True)
+    delete_user_parser.set_defaults(handler=lambda args: delete_user_wallpaper(args.slug))
 
     state_parser = subparsers.add_parser("state")
     state_parser.add_argument("--scope", choices=STATE_DIRS.keys(), required=True)

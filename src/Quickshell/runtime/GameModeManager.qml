@@ -4,8 +4,8 @@ import QtQuick
 QtObject {
     id: root
 
-    property bool active: false
-    property int pollInterval: active ? 2000 : 5000
+    property bool active: true
+    property int pollInterval: active ? 10000 : 5000
     readonly property var throttledServices: [
         "astrea-weatherd.service",
         "astrea-status.service"
@@ -57,12 +57,16 @@ QtObject {
 
     onActiveChanged: applyThrottling()
 
-    Component.onCompleted: refresh()
+    Component.onCompleted: {
+        applyThrottling()
+        refresh()
+    }
 
     property var pollTimer: Timer {
         interval: root.pollInterval
         repeat: true
         running: true
+        onIntervalChanged: restart()
         onTriggered: root.refresh()
     }
 

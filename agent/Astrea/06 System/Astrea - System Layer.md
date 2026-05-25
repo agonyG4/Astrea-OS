@@ -1,6 +1,6 @@
 # Astrea - System Layer
 
-Related notes: [[Astrea]], [[Astrea - Core Bridge]], [[Astrea - Display Bridge]], [[Astrea - Bluetooth Manager]]
+Related notes: [[Astrea]], [[Astrea - Core Bridge]], [[Astrea - Display Bridge]], [[Astrea - Bluetooth Manager]], [[Astrea - Polkit Auth]], [[Astrea - I18n]]
 
 ## Folder
 `System/`
@@ -10,6 +10,8 @@ Local system integration.
 
 It contains:
 - auth helper
+- Polkit agent
+- i18n catalogs/helpers
 - config files
 - portal backend
 - service scripts
@@ -20,8 +22,15 @@ It contains:
 ## Important Files
 - `System/auth/auth_helper`
 - `System/auth/auth_helper.c`
+- `System/auth/astrea-polkit-agent.py`
+- `System/auth/astrea-polkit-agent.qml`
+- `System/auth/astrea-polkit-prompt.py`
 - `System/config/audio-aliases.json`
-- `System/config/display/monitor-settings.conf`
+- `System/config/audio-hidden-outputs.json`
+- `System/i18n/I18n.qml`
+- `System/i18n/i18n.py`
+- `System/i18n/en_US.json`
+- `System/i18n/pt_BR.json`
 - `System/portal/astrea_filechooser_portal.py`
 - `System/services/display_apply.sh`
 - `System/services/display_night_shift_color.sh`
@@ -35,9 +44,12 @@ It contains:
 - `bin/weather-cli`
 - `bin/astrea-weatherd`
 - `System/services/astrea-services.sh`
-- `System/services/theme/apply_color_scheme.sh`
-- `System/services/theme/apply_decoration_style.sh`
+- `System/services/apply_theme_decoration.sh`
 - `System/scripts/bluetooth_manager.py`
+- `System/scripts/astrea-volume-osd`
+- `System/scripts/astrea-spotlight`
+- `System/scripts/astrea-performance`
+- `System/scripts/astrea-windows-run`
 
 Hyprland starts display settings from
 `~/.config/hypr/system/autostart.conf`.
@@ -70,6 +82,9 @@ It must be attached to `graphical-session.target` so app launches inherit the re
 It owns Weather refresh monitoring and desktop notifications independently from
 the Weather QML app.
 
+`astrea-polkit-agent.service` runs the Astrea Polkit agent path.
+See [[Astrea - Polkit Auth]] before changing it.
+
 See [[Astrea - Launcher and Latency]] for launch-specific behavior.
 
 ## External System Tools
@@ -86,8 +101,10 @@ Observed dependencies:
 - `jq`
 - `gdbus`
 - `xdg-desktop-portal`
+- `python-gobject`/GI for Polkit and GTK prompt paths
+- ImageMagick or ffmpeg for Media Viewer preview conversion
 
 ## Security Boundary
 `System/auth/auth_helper` is setuid and has source at `System/auth/auth_helper.c`.
 
-Its behavior was not audited in this pass.
+`System/auth/astrea-polkit-agent.py` and `System/auth/astrea-polkit-agent.qml` also handle authentication prompts. Do not change auth behavior without focused tests and review.

@@ -534,7 +534,7 @@ Item {
                 radius: height / 2
                 z: 40
                 visible: root.editMode
-                color: removeArea.containsMouse ? Theme.iconActive : Qt.rgba(1, 1, 1, 0.82)
+                color: removeArea.containsMouse ? Theme.shellIconActive : Qt.rgba(1, 1, 1, 0.82)
                 border.width: 1
                 border.color: Qt.rgba(0, 0, 0, 0.16)
 

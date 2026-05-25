@@ -19,9 +19,8 @@ Item {
     signal clicked()
 
     readonly property color accent: Components.Theme.accent
-    readonly property color idleForeground: Components.Theme.themeMode === 1
-        ? "#5f6368"
-        : Qt.rgba(1, 1, 1, 0.78)
+    readonly property bool isLight: Components.Theme.themeMode === 1
+    readonly property color idleForeground: isLight ? Components.Theme.textSecondary : Qt.rgba(1, 1, 1, 0.78)
     readonly property color accentForeground: Components.Theme.accentForeground
     readonly property color activeForeground: Components.Theme.textPrimary
     readonly property string astreaRoot: Quickshell.env("ASTREA_ROOT")
@@ -34,9 +33,9 @@ Item {
         radius: 8
         color: root.selected
             ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.12)
-            : hma.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
+            : hma.containsMouse ? (root.isLight ? Qt.rgba(0, 0, 0, 0.045) : Qt.rgba(1, 1, 1, 0.05)) : "transparent"
         border.width: root.selected ? 1 : (hma.containsMouse ? 1 : 0)
-        border.color: root.selected ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : Qt.rgba(1, 1, 1, 0.05)
+        border.color: root.selected ? Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.25) : (root.isLight ? Qt.rgba(0, 0, 0, 0.06) : Qt.rgba(1, 1, 1, 0.05))
         
         Behavior on color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
         Behavior on border.color { ColorAnimation { duration: 150; easing.type: Easing.OutCubic } }
@@ -63,7 +62,7 @@ Item {
             width:  28
             height: 28
             radius: 8
-            color: root.selected ? root.accent : (hma.containsMouse ? Qt.rgba(1, 1, 1, 0.1) : Qt.rgba(1, 1, 1, 0.05))
+            color: root.selected ? root.accent : (hma.containsMouse ? (root.isLight ? Qt.rgba(0, 0, 0, 0.07) : Qt.rgba(1, 1, 1, 0.1)) : (root.isLight ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(1, 1, 1, 0.05)))
             Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
             // Adds a gentle inner shadow / highlight effect overlay
@@ -72,7 +71,7 @@ Item {
                 radius: parent.radius
                 color: "transparent"
                 border.width: 1
-                border.color: Qt.rgba(1, 1, 1, root.selected ? 0.2 : 0.08)
+                border.color: root.isLight ? Qt.rgba(0, 0, 0, root.selected ? 0.08 : 0.05) : Qt.rgba(1, 1, 1, root.selected ? 0.2 : 0.08)
             }
 
             Text {

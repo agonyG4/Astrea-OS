@@ -75,7 +75,7 @@ Item {
             Text {
                 id: _dateText
                 anchors.fill: parent
-                color: Theme.textSecondary
+                color: Theme.shellTextSecondary
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
                 font {
@@ -97,7 +97,7 @@ Item {
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             width: 1; height: 16
-            color: Theme.separator
+            color: Theme.shellSeparator
         }
 
         Item {
@@ -106,7 +106,7 @@ Item {
             Text {
                 id: _clockText
                 anchors.fill: parent
-                color: Theme.textActive
+                color: Theme.shellTextActive
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
                 font {

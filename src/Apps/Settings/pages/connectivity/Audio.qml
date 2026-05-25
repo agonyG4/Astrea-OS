@@ -86,6 +86,26 @@ Item {
         return parts.join("|")
     }
 
+    function appIndexes(app) {
+        if (app && app.indexes && app.indexes.length > 0)
+            return app.indexes
+        return app && app.index !== undefined ? [app.index] : []
+    }
+
+    function appIconSource(app) {
+        const icon = (app && app.icon) ? String(app.icon) : ""
+        const iconName = (app && app.icon_name) ? String(app.icon_name) : ""
+        if (icon.indexOf("://") >= 0)
+            return icon
+        if (icon.indexOf("/") === 0)
+            return "file://" + icon
+        if (icon.length > 0)
+            return "image://icon/" + icon
+        if (iconName.length > 0)
+            return "image://icon/" + iconName
+        return ""
+    }
+
     function applyAppsSnapshot(items) {
         const next = items || []
         if (next.length === 0 && root.apps.length > 0) {
@@ -177,7 +197,15 @@ Item {
     }
 
     function _apply(cfg) {
-        if ("volume" in cfg && "app_index" in cfg) {
+        if ("volume" in cfg && "app_indexes" in cfg) {
+            applyProc.command = ["python3", root._script, "apply", JSON.stringify(cfg)]
+            applyProc.running = false
+            Qt.callLater(() => applyProc.running = true)
+        } else if ("muted" in cfg && "app_indexes" in cfg) {
+            applyProc.command = ["python3", root._script, "apply", JSON.stringify(cfg)]
+            applyProc.running = false
+            Qt.callLater(() => applyProc.running = true)
+        } else if ("volume" in cfg && "app_index" in cfg) {
             volProc.command = ["pactl", "set-sink-input-volume", String(cfg.app_index), Math.round(cfg.volume * 100) + "%"]
             volProc.running = false; volProc.running = true
         } else if ("muted" in cfg && "app_index" in cfg) {
@@ -531,8 +559,9 @@ Item {
                                         id: appIcon
                                         anchors.centerIn: parent
                                         width: 18; height: 18
-                                        source: modelData.icon ? "file://" + modelData.icon : ""
+                                        source: root.appIconSource(modelData)
                                         visible: status === Image.Ready
+                                        fillMode: Image.PreserveAspectFit
                                         smooth: true; mipmap: true
                                         opacity: iconRect.isMuted ? 0.35 : 1.0
                                         Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -552,10 +581,14 @@ Item {
                                         anchors.fill: parent; cursorShape: Qt.PointingHandCursor
                                         onClicked: {
                                             const idx = modelData.index
+                                            const indexes = root.appIndexes(modelData)
                                             const current = (idx in root.mutedMap) ? root.mutedMap[idx] : modelData.muted
                                             const m = !current
                                             root.mutedMap = Object.assign({}, root.mutedMap, { [idx]: m })
-                                            root._apply({ app_index: idx, muted: m })
+                                            if (indexes.length > 1)
+                                                root._apply({ app_indexes: indexes, muted: m })
+                                            else
+                                                root._apply({ app_index: idx, muted: m })
                                         }
                                     }
                                 }
@@ -630,13 +663,21 @@ Item {
                                             root._sliderActive = true
                                             const ratio = Math.max(0, Math.min(1, mouse.x / sliderItem.width))
                                             sliderItem.sliderValue = ratio * sliderItem.maxVal
-                                            root._apply({ app_index: modelData.index, volume: sliderItem.sliderValue })
+                                            const indexes = root.appIndexes(modelData)
+                                            if (indexes.length > 1)
+                                                root._apply({ app_indexes: indexes, volume: sliderItem.sliderValue })
+                                            else
+                                                root._apply({ app_index: modelData.index, volume: sliderItem.sliderValue })
                                         }
                                         onPositionChanged: (mouse) => {
                                             if (!pressed) return
                                             const ratio = Math.max(0, Math.min(1, mouse.x / sliderItem.width))
                                             sliderItem.sliderValue = ratio * sliderItem.maxVal
-                                            root._apply({ app_index: modelData.index, volume: sliderItem.sliderValue })
+                                            const indexes = root.appIndexes(modelData)
+                                            if (indexes.length > 1)
+                                                root._apply({ app_indexes: indexes, volume: sliderItem.sliderValue })
+                                            else
+                                                root._apply({ app_index: modelData.index, volume: sliderItem.sliderValue })
                                         }
                                         onReleased: {
                                             const map = Object.assign({}, root.volumeMap)

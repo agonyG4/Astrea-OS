@@ -105,16 +105,16 @@ Dialog {
             var folderPath = item && item.fileIsDir ? item.filePath : AppState.currentPath
             return {
                 filePath: folderPath,
-                fileUrl: "file://" + folderPath
+                fileUrl: AppState.fileUrlForPath(folderPath)
             }
         }
 
         if (mode === "save_file") {
             var baseDir = item && item.fileIsDir ? item.filePath : AppState.currentPath
-            var filePath = baseDir.replace(/\/$/, "") + "/" + selectedName.trim()
+            var filePath = AppState.joinPath(baseDir, selectedName.trim())
             return {
                 filePath: filePath,
-                fileUrl: "file://" + filePath
+                fileUrl: AppState.fileUrlForPath(filePath)
             }
         }
 

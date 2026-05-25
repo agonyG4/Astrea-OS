@@ -35,7 +35,7 @@ Item {
     }
 
     Loader {
-        active: root.enabled
+        active: root.enabled && !root.gameModeActive
         source: active ? Qt.resolvedUrl("DesktopIcons.qml") : ""
         onLoaded: if (item) item.performancePaused = Qt.binding(function() { return root.gameModeActive })
     }

@@ -37,8 +37,8 @@ ColumnLayout {
         Layout.fillWidth: true
         implicitHeight: weeklyColumn.implicitHeight + 22
         radius: 20
-        color: "#252529"
-        border.color: "#34343A"
+        color: UI.Theme.cardBg
+        border.color: UI.Theme.cardBorder
         border.width: 1
 
         ColumnLayout {
@@ -61,7 +61,7 @@ ColumnLayout {
             }
 
             UI.Divider {
-                lineColor: "#3A3A40"
+                lineColor: UI.Theme.cardBorder
             }
 
             Repeater {
@@ -103,7 +103,7 @@ ColumnLayout {
                                     text: modelData.rain + "%"
                                     font.pixelSize: UI.Theme.fontSizeMicro
                                     font.weight: 500
-                                    textColor: "#9CC7FF"
+                                    textColor: UI.Theme.accent
                                     Layout.alignment: Qt.AlignHCenter
                                 }
                             }
@@ -128,7 +128,7 @@ ColumnLayout {
                                     width: parent.width
                                     height: 4
                                     radius: 2
-                                    color: "#565761"
+                                    color: UI.Theme.textTertiary
                                 }
 
                                 Rectangle {
@@ -165,7 +165,7 @@ ColumnLayout {
                     }
 
                     UI.Divider {
-                        lineColor: "#34343A"
+                        lineColor: UI.Theme.cardBorder
                         visible: index < Math.min(10, weatherData ? weatherData.weekly.length : 0) - 1
                     }
                 }

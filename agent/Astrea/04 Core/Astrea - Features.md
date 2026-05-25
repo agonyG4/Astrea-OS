@@ -85,8 +85,6 @@ Consumed by:
 There are multiple lockscreen paths:
 - `Features/Paper/app/lockscreen/lockscreen.qml`
 - `Features/Paper/lockscreen/Lockscreen.qml`
-- `Features/Paper/lockscreen/LockscreenWl.qml`
 - `Features/Paper/lockscreen/lockscreen.qml`
-- `Features/Paper/lockscreen/lockscreen-wl.qml`
 
 It is unclear which are active and which are legacy.

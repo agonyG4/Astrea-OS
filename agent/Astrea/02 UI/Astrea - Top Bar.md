@@ -48,6 +48,15 @@ The Control Center consumes:
 - volume state
 - shared music state
 
+## Astrea Menu Launches
+`Quickshell/bar/ui/components/astrea/AstreaPopup.qml` opens Settings through:
+- `~/.local/bin/astrea-settings-open`
+
+That wrapper is the official Settings launch path from the top bar. When Hyprland is available, it resolves the active workspace with `hyprctl activeworkspace -j` and re-execs Settings through:
+- `hyprctl dispatch exec [workspace <id>] ...`
+
+`ASTREA_SETTINGS_DIRECT=1` is an internal escape hatch used by the wrapper to avoid recursion after Hyprland has placed the process on the current workspace.
+
 ## Bluetooth Notes
 `Bar.qml` imports `modules/network`, so the active top-bar Bluetooth state owner is `Quickshell/bar/modules/network/BluetoothProcess.qml`.
 

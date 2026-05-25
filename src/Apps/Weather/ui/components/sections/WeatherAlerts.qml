@@ -18,7 +18,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         radius: 20
-        color: "#252529"
+        color: UI.Theme.cardBg
         border.color: mainAlert ? (mainAlert.color || "#F96602") : "#F96602"
         border.width: 1
 
@@ -57,7 +57,7 @@ Item {
                 UI.TextLabel {
                     text: mainAlert ? (mainAlert.severity || "") : ""
                     font.pixelSize: 12
-                    textColor: "#C9CAD2"
+                    textColor: UI.Theme.textSecondary
                     elide: Text.ElideRight
                     Layout.fillWidth: true
                 }
@@ -67,7 +67,7 @@ Item {
                 text: alerts.length > 1 ? alerts.length + " avisos" : "Detalhes"
                 font.pixelSize: 12
                 font.weight: 500
-                textColor: "#C9CAD2"
+                textColor: UI.Theme.textSecondary
             }
         }
 

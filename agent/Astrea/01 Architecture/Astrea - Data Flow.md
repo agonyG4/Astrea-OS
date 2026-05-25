@@ -67,6 +67,20 @@ Related notes: [[Astrea]], [[Astrea - Patterns]], [[Astrea - Core Bridge]]
 8. `astrea-weatherd` deduplicates Weather alerts and sends them through `System/services/astrea_notify.py`.
 9. Astrea's central `org.freedesktop.Notifications` service owns notification delivery and rendering.
 
+## Media Viewer Flow
+1. A launcher opens `Apps/MediaViewer/Main.qml` with `ASTREA_MEDIA_TARGET`.
+2. QML calls `Apps/MediaViewer/media_viewer_helper.py open <target>`.
+3. The helper scans the target directory for supported image files and returns JSON records.
+4. QML requests previews with `media_viewer_helper.py preview <image>`.
+5. Direct Qt-compatible image formats load from the original URI.
+6. Other formats convert through ImageMagick or ffmpeg into `~/.cache/Astrea/media-viewer/previews`.
+
+## Wallpapers Flow
+1. `Apps/Wallpapers/main.qml` starts and calls `Core/bridge/wallpaper/wallpaper_manager.py list-user`.
+2. The bridge returns user wallpaper records with wallpaper, thumbnail, blurred, slug, and base directory paths.
+3. The app can call `apply`, `rename-user`, and `delete-user`.
+4. Wallpaper/lockscreen side effects stay in [[Astrea - Wallpaper Bridge]].
+
 ## Launch Flow
 1. Astrea launcher surfaces call `bin/astrea-launch`.
 2. The CLI forwards requests to `astrea-launchd` over `/run/user/1000/Astrea/astrea-launchd.sock`.
@@ -95,3 +109,9 @@ Related notes: [[Astrea]], [[Astrea - Patterns]], [[Astrea - Core Bridge]]
 2. `Core/components/theme/Theme.qml` reads the config.
 3. Theme scripts apply desktop/Hyprland side effects.
 4. Apps and shell components bind to theme values.
+
+## I18n Flow
+1. Translatable strings live in `System/i18n/en_US.json` and `System/i18n/pt_BR.json`.
+2. `System/i18n/i18n.py dump` merges the active language with the `en_US` fallback.
+3. QML imports `AstreaI18n` through app-local symlinks or calls the Python helper.
+4. Language selection reads `~/.config/AstreaOS/system/settings.json` or `system.json`.

@@ -90,10 +90,6 @@ def run_command(
         )
 
 
-def run_shell(command: str, timeout: float = 1.5) -> subprocess.CompletedProcess[str]:
-    return run_command(["sh", "-c", command], timeout=timeout)
-
-
 def run_burst_helper(args: list[str], timeout: float = 1.5) -> dict[str, Any] | None:
     if not BURST_HELPER.exists() or not command_available("sudo"):
         return None
@@ -145,25 +141,9 @@ def write_text(path: Path, value: str) -> tuple[bool, str]:
         return False, f"{path}: {exc}"
 
 
-def sudo_shell(command: str, timeout: float = 1.5) -> str:
-    details: list[str] = []
-    if command_available("sudo"):
-        result = run_command(["sudo", "-n", "sh", "-c", command], timeout=timeout)
-        if result.returncode == 0:
-            return "sudo ok"
-        detail = (result.stderr or result.stdout or "sudo failed").strip()
-        if detail:
-            details.append(f"sudo: {detail}")
-    if os.environ.get("ASTREA_LATENCYD_ALLOW_PKEXEC") == "1" and command_available(
-        "pkexec"
-    ):
-        result = run_command(["pkexec", "sh", "-c", command], timeout=timeout)
-        if result.returncode == 0:
-            return "pkexec ok"
-        detail = (result.stderr or result.stdout or "pkexec failed").strip()
-        if detail:
-            details.append(f"pkexec: {detail}")
-    return "; ".join(details) if details else "no privilege helper"
+def privilege_unavailable(action: str) -> str:
+    return f"privileged helper required for {action}"
+
 
 
 def cpu_governor_paths() -> list[Path]:
@@ -208,9 +188,7 @@ def set_cpu_governor(governor: str) -> list[str]:
             f"cpupower: {(result.stderr or result.stdout or 'failed').strip()}"
         )
 
-    details.append(
-        sudo_shell(f'for f in {CPU_GOVERNOR_GLOB}; do echo {governor} > "$f"; done')
-    )
+    details.append(privilege_unavailable("cpu governor"))
     return details
 
 
@@ -283,10 +261,7 @@ def restore_cpu_governors(snapshot: dict[str, str]) -> list[str]:
         details.append(
             f"cpupower restore: {(result.stderr or result.stdout or 'failed').strip()}"
         )
-    commands = "; ".join(
-        f"echo {governor} > {path}" for path, governor in failed.items()
-    )
-    details.append(sudo_shell(commands))
+    details.append(privilege_unavailable("cpu governor restore"))
     return details
 
 
@@ -297,8 +272,7 @@ def set_intel_turbo(enabled: bool) -> str:
     ok, detail = write_text(INTEL_NO_TURBO, value)
     if ok:
         return "intel turbo enabled" if enabled else "intel turbo disabled"
-    shell_value = "0" if enabled else "1"
-    return f"{detail}; {sudo_shell(f'echo {shell_value} > {INTEL_NO_TURBO}')}"
+    return f"{detail}; {privilege_unavailable('intel turbo')}"
 
 
 def apply_gpu_burst() -> list[str]:
@@ -433,7 +407,7 @@ class LatencyDaemon:
                 details.append(
                     "intel turbo restored"
                     if ok
-                    else f"{detail}; {sudo_shell(f'echo {self.previous_no_turbo} > {INTEL_NO_TURBO}')}"
+                    else f"{detail}; {privilege_unavailable('intel turbo restore')}"
                 )
         self.active = False
         self.previous_profile = None

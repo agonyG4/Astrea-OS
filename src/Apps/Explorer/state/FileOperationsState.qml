@@ -1,5 +1,6 @@
 import QtQuick 2.15
 import Quickshell.Io
+import "../AstreaI18n" as AstreaI18n
 
 QtObject {
     id: ops
@@ -30,6 +31,15 @@ QtObject {
     property string archiveOperationMode: ""
     property int archiveExtractionDoneCount: 0
     property int archiveExtractionTotalCount: 0
+    property string archiveExtractionRemainingText: ""
+    property bool archivePasswordPromptVisible: false
+    property string archivePassword: ""
+    property string archivePasswordError: ""
+    property bool archiveConflictVisible: false
+    property string archiveConflictDestination: ""
+    property string archiveConflictName: ""
+    property string pendingArchivePath: ""
+    property string pendingArchiveFolderName: ""
     property bool fileOperationRunning: false
     property real fileOperationProgress: 0
     property int fileOperationPercent: 0
@@ -43,23 +53,26 @@ QtObject {
     property int fileOperationTotalCount: 0
     property bool appImageInstallRunning: false
     property string appImageInstallError: ""
+    property bool wallpaperApplyRunning: false
+    property string wallpaperApplyError: ""
 
     function isCutPending(name) {
         if (!name || clipboardMode !== "cut") return false
-        var fullPath = app.currentPath + "/" + name
+        var fullPath = joinPath(app.currentPath, name)
         return clipboardFiles.indexOf(fullPath) !== -1
     }
 
     function copySelected() {
         if (app.selectedFiles.length === 0) return
-        clipboardFiles = app.selectedFiles.map(function(name) { return app.currentPath + "/" + name })
+        clipboardFiles = app.selectedFiles.map(function(name) { return joinPath(app.currentPath, name) })
         clipboardMode = "copy"
+        fileOperationStatus = clipboardFiles.length + " " + (clipboardFiles.length === 1 ? (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.label.item_singular"]) || "item")) : (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.label.item_plural"]) || "items"))) + " " + (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.status.copied_to_internal_clipboard"]) || "copied to internal clipboard"))
         syncSystemClipboardFiles(clipboardFiles)
     }
 
     function cutSelected() {
         if (app.selectedFiles.length === 0) return
-        var newlyCut = app.selectedFiles.map(function(name) { return app.currentPath + "/" + name })
+        var newlyCut = app.selectedFiles.map(function(name) { return joinPath(app.currentPath, name) })
         var same = clipboardMode === "cut" && clipboardFiles.length === newlyCut.length
                 && clipboardFiles.every(function(v, i) { return v === newlyCut[i] })
         if (same) {
@@ -69,6 +82,7 @@ QtObject {
         }
         clipboardFiles = newlyCut
         clipboardMode = "cut"
+        fileOperationStatus = clipboardFiles.length + " " + (clipboardFiles.length === 1 ? (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.label.item_singular"]) || "item")) : (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.label.item_plural"]) || "items"))) + " " + (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.status.cut_pending_move"]) || "cut (move pending)"))
         syncSystemClipboardFiles(clipboardFiles)
     }
 
@@ -99,11 +113,11 @@ QtObject {
     }
 
     function fileUrlForPath(path) {
-        return "file://" + String(path || "")
+        return "file://" + encodeURIComponent(String(path || "")).replace(/%2F/g, "/")
     }
 
     function selectedPathsInCurrentFolder() {
-        return app.selectedFiles.map(function(name) { return app.currentPath + "/" + name })
+        return app.selectedFiles.map(function(name) { return joinPath(app.currentPath, name) })
     }
 
     function selectedUriListInCurrentFolder() {
@@ -119,6 +133,11 @@ QtObject {
     function basename(path) {
         var parts = String(path || "").split("/")
         return parts.length > 0 ? parts[parts.length - 1] : ""
+    }
+
+    function fileStem(path) {
+        var name = basename(path)
+        return name.replace(/\.[^.]+$/, "") || name || "Wallpaper"
     }
 
     function resetFileOperation(mode, destinationPath, totalCount) {
@@ -224,17 +243,24 @@ QtObject {
     }
 
     function handleFileOperationOutput(data) {
-        fileOperationOutputBuffer += data
+        var chunk = String(data || "")
+        if (chunk.indexOf("\n") === -1) {
+            handleFileOperationLine(chunk)
+            return
+        }
+        fileOperationOutputBuffer += chunk
         var lines = fileOperationOutputBuffer.split("\n")
         fileOperationOutputBuffer = lines.pop()
         for (var i = 0; i < lines.length; i++)
             handleFileOperationLine(lines[i])
     }
 
-    function startArchiveExtraction(archivePath, folderName) {
+    function startArchiveExtraction(archivePath, folderName, password, conflictPolicy) {
         if (!archivePath)
             return
 
+        pendingArchivePath = archivePath
+        pendingArchiveFolderName = folderName || basename(archivePath)
         archiveExtractionRunning = true
         archiveExtractionProgress = 0
         archiveExtractionPercent = 0
@@ -247,16 +273,62 @@ QtObject {
         archiveOperationMode = "extract"
         archiveExtractionDoneCount = 0
         archiveExtractionTotalCount = 0
+        archiveExtractionRemainingText = ""
 
-        archiveExtractProcess.command = [
+        var cmd = [
             "python3",
             app.helperPath,
             "extract-archive",
             archivePath,
-            folderName || basename(archivePath)
+            folderName || basename(archivePath),
+            "--conflict-policy",
+            conflictPolicy || "ask"
         ]
+        if (password !== undefined && password !== null && String(password) !== "")
+            cmd = cmd.concat(["--password-stdin"])
+        archiveExtractProcess.command = cmd
         archiveExtractProcess.running = false
         archiveExtractProcess.running = true
+    }
+
+    function submitArchivePassword(password) {
+        var value = String(password || "")
+        if (value === "") {
+            archivePasswordError = "Digite a senha do arquivo"
+            return
+        }
+        archivePassword = value
+        archivePasswordError = ""
+        archivePasswordPromptVisible = false
+        startArchiveExtraction(pendingArchivePath, pendingArchiveFolderName, value)
+    }
+
+    function submitArchiveConflict(policy) {
+        var value = String(policy || "keep-both")
+        archiveConflictVisible = false
+        archiveConflictDestination = ""
+        archiveConflictName = ""
+        startArchiveExtraction(pendingArchivePath, pendingArchiveFolderName, archivePassword, value)
+    }
+
+    function cancelArchivePassword() {
+        archivePasswordPromptVisible = false
+        archivePassword = ""
+        archivePasswordError = ""
+        archiveExtractionRunning = false
+        archiveExtractionStatus = ""
+        archiveExtractionError = ""
+        archiveExtractionRemainingText = ""
+    }
+
+    function cancelArchiveConflict() {
+        archiveConflictVisible = false
+        archiveConflictDestination = ""
+        archiveConflictName = ""
+        archiveExtractionRunning = false
+        archiveExtractionStatus = ""
+        archiveExtractionError = ""
+        archiveExtractionRemainingText = ""
     }
 
     function startFolderCompression(folderPath, format) {
@@ -275,6 +347,7 @@ QtObject {
         archiveOperationMode = "compress"
         archiveExtractionDoneCount = 0
         archiveExtractionTotalCount = 0
+        archiveExtractionRemainingText = ""
 
         archiveExtractProcess.command = [
             "python3",
@@ -302,6 +375,7 @@ QtObject {
                     archiveExtractionDoneCount = 0
                     archiveExtractionPercent = 0
                     archiveExtractionProgress = 0
+                    archiveExtractionRemainingText = ""
                     archiveExtractionStatus = archiveOperationMode === "compress" ? "Compactando..." : "Extraindo..."
                     return
                 } else if (eventName === "progress") {
@@ -311,8 +385,11 @@ QtObject {
                     if (!isFinite(p)) p = 0
                     archiveExtractionPercent = Math.max(0, Math.min(100, Math.round(p)))
                     archiveExtractionProgress = archiveExtractionPercent / 100
+                    archiveExtractionRemainingText = String(evt.eta_text || "")
                     var v = archiveOperationMode === "compress" ? "Compactando" : "Extraindo"
                     archiveExtractionStatus = v + "... " + archiveExtractionPercent + "%"
+                    if (archiveExtractionRemainingText !== "")
+                        archiveExtractionStatus += " · " + archiveExtractionRemainingText
                     return
                 } else if (eventName === "done") {
                     archiveExtractionDestination = String(evt.destination || archiveExtractionDestination)
@@ -321,13 +398,39 @@ QtObject {
                     archiveExtractionTotalCount = Number(evt.total || archiveExtractionTotalCount || 0)
                     archiveExtractionPercent = 100
                     archiveExtractionProgress = 1
+                    archiveExtractionRemainingText = ""
                     archiveExtractionStatus = archiveOperationMode === "compress" ? "Compactacao concluida" : "Extracao concluida"
                     archiveExtractionError = ""
+                    return
+                } else if (eventName === "password_required") {
+                    archiveExtractionRunning = false
+                    archiveExtractionStatus = "Senha necessaria"
+                    archiveExtractionError = ""
+                    archivePassword = ""
+                    archivePasswordError = ""
+                    archivePasswordPromptVisible = true
+                    return
+                } else if (eventName === "conflict") {
+                    archiveExtractionRunning = false
+                    archiveExtractionStatus = "Destino existente"
+                    archiveExtractionError = ""
+                    archiveConflictDestination = String(evt.destination || "")
+                    archiveConflictName = String(evt.name || basename(archiveConflictDestination))
+                    archiveConflictVisible = true
                     return
                 } else if (eventName === "error") {
                     var m = String(evt.message || "")
                     var c = String(evt.code || "")
                     archiveExtractionDestination = String(evt.destination || archiveExtractionDestination)
+                    if (c === "wrong_password") {
+                        archiveExtractionRunning = false
+                        archiveExtractionStatus = "Senha incorreta"
+                        archiveExtractionError = ""
+                        archivePassword = ""
+                        archivePasswordError = "Senha incorreta"
+                        archivePasswordPromptVisible = true
+                        return
+                    }
                     archiveExtractionError = m !== "" ? m : (archiveOperationMode === "compress" ? "Falha ao compactar" : "Falha ao extrair")
                     if (c !== "")
                         archiveExtractionError = archiveExtractionError + " (" + c + ")"
@@ -347,6 +450,7 @@ QtObject {
                 : "Extraindo..."
             archiveExtractionPercent = 0
             archiveExtractionProgress = 0
+            archiveExtractionRemainingText = ""
         } else if (parts[0] === "PROGRESS") {
             var percent = Number(parts[3] || 0)
             if (!isFinite(percent))
@@ -355,6 +459,7 @@ QtObject {
             archiveExtractionTotalCount = Number(parts[2] || archiveExtractionTotalCount)
             archiveExtractionPercent = Math.max(0, Math.min(99, Math.round(percent)))
             archiveExtractionProgress = archiveExtractionPercent / 100
+            archiveExtractionRemainingText = ""
             var verb = archiveExtractionStatus.indexOf("Compact") === 0 ? "Compactando" : "Extraindo"
             archiveExtractionStatus = archiveExtractionPercent > 0
                 ? (verb + "... " + archiveExtractionPercent + "%")
@@ -366,6 +471,7 @@ QtObject {
             archiveExtractionTotalCount = Number(parts[3] || archiveExtractionTotalCount)
             archiveExtractionPercent = 100
             archiveExtractionProgress = 1
+            archiveExtractionRemainingText = ""
             archiveExtractionStatus = archiveExtractionStatus.indexOf("Compact") === 0
                 ? "Compactacao concluida"
                 : "Extracao concluida"
@@ -380,7 +486,12 @@ QtObject {
     }
 
     function handleArchiveExtractionOutput(data) {
-        archiveExtractionOutputBuffer += data
+        var chunk = String(data || "")
+        if (chunk.indexOf("\n") === -1) {
+            handleArchiveExtractionLine(chunk)
+            return
+        }
+        archiveExtractionOutputBuffer += chunk
         var lines = archiveExtractionOutputBuffer.split("\n")
         archiveExtractionOutputBuffer = lines.pop()
         for (var i = 0; i < lines.length; i++)
@@ -446,7 +557,7 @@ QtObject {
     }
 
     function pasteFiles() {
-        if (clipboardMode === "cut" && clipboardFiles.length > 0) {
+        if ((clipboardMode === "copy" || clipboardMode === "cut") && clipboardFiles.length > 0) {
             startPasteForFiles(clipboardFiles.slice(), clipboardMode, app.currentPath)
             return
         }
@@ -579,6 +690,26 @@ QtObject {
         appImageInstallProcess.running = true
     }
 
+    function setAsWallpaper(path) {
+        if (!path || wallpaperApplyRunning)
+            return
+        wallpaperApplyError = ""
+        wallpaperApplyRunning = true
+        wallpaperApplyProcess.command = [
+            "python3",
+            app.wallpaperManagerPath,
+            "apply",
+            "--scope",
+            "wallpaper",
+            "--src",
+            path,
+            "--name",
+            fileStem(path)
+        ]
+        wallpaperApplyProcess.running = false
+        wallpaperApplyProcess.running = true
+    }
+
     property Process pasteProcess: Process {
         command: []
         running: false
@@ -635,6 +766,11 @@ QtObject {
     property Process archiveExtractProcess: Process {
         command: []
         running: false
+        stdinEnabled: true
+        onStarted: {
+            if (ops.archiveOperationMode === "extract" && ops.archivePassword !== "")
+                archiveExtractProcess.write(ops.archivePassword + "\n")
+        }
         stdout: SplitParser {
             onRead: data => ops.handleArchiveExtractionOutput(data)
         }
@@ -653,6 +789,9 @@ QtObject {
                 app.refreshCurrentFolder()
                 if (ops.archiveOperationMode === "extract" && ops.archiveExtractionRevealName !== "")
                     archiveRevealTimer.restart()
+            } else if (ops.archivePasswordPromptVisible || ops.archiveConflictVisible) {
+                ops.archiveExtractionRunning = false
+                return
             } else {
                 ops.archiveExtractionError = ops.archiveOperationMode === "compress"
                     ? "Falha ao compactar"
@@ -679,6 +818,13 @@ QtObject {
             ops.archiveOperationMode = ""
             ops.archiveExtractionDoneCount = 0
             ops.archiveExtractionTotalCount = 0
+            ops.archiveExtractionRemainingText = ""
+            ops.archivePasswordPromptVisible = false
+            ops.archivePassword = ""
+            ops.archivePasswordError = ""
+            ops.archiveConflictVisible = false
+            ops.archiveConflictDestination = ""
+            ops.archiveConflictName = ""
         }
     }
 
@@ -704,7 +850,10 @@ QtObject {
 
                 var blocking = parsedItems.filter(function(item) {
                     var kind = String(item.conflict_kind || "")
-                    return kind === "file-over-directory" || kind === "directory-over-file" || kind === "same-path"
+                    return kind === "file-over-directory"
+                        || kind === "directory-over-file"
+                        || kind === "same-path"
+                        || kind === "directory-into-self"
                 })
                 if (blocking.length > 0) {
                     ops.pendingPasteFiles = []
@@ -712,7 +861,10 @@ QtObject {
                     ops.pendingPasteDestination = ""
                     ops.pendingPasteRename = ""
                     ops.fileOperationRunning = true
-                    ops.fileOperationError = "Conflito de tipo nao suportado para colagem"
+                    var firstKind = String(blocking[0].conflict_kind || "")
+                    ops.fileOperationError = firstKind === "directory-into-self"
+                        ? "Nao e possivel mover uma pasta para dentro dela mesma"
+                        : "Conflito de tipo nao suportado para colagem"
                     ops.fileOperationStatus = ops.fileOperationError
                     fileOperationHideTimer.restart()
                     return
@@ -823,6 +975,16 @@ QtObject {
     property Process systemClipboardWrite: Process {
         command: []
         running: false
+        stderr: StdioCollector { id: systemClipboardWriteStderr }
+        onExited: function(exitCode) {
+            if (exitCode === 0)
+                return
+            var err = String(systemClipboardWriteStderr.text || "")
+            if (err.indexOf("wl-copy") !== -1 || err.indexOf("not found") !== -1)
+                ops.fileOperationStatus = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.status.internal_clipboard_ok_wl_copy_unavailable"]) || "Internal clipboard OK; wl-copy unavailable")
+            else
+                ops.fileOperationStatus = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.status.internal_clipboard_ok_failed_sync_system_clipboard"]) || "Internal clipboard OK; failed to sync system clipboard")
+        }
     }
 
     property Process appImageInstallProcess: Process {
@@ -835,6 +997,18 @@ QtObject {
             ops.appImageInstallRunning = false
             ops.appImageInstallError = exitCode === 0 ? "" : appImageInstallStderr.text.trim()
             app.refreshCurrentFolder()
+        }
+    }
+
+    property Process wallpaperApplyProcess: Process {
+        command: []
+        running: false
+        stderr: StdioCollector {
+            id: wallpaperApplyStderr
+        }
+        onExited: function(exitCode) {
+            ops.wallpaperApplyRunning = false
+            ops.wallpaperApplyError = exitCode === 0 ? "" : wallpaperApplyStderr.text.trim()
         }
     }
 

@@ -125,7 +125,7 @@ Item {
     function dragUriListForItem(itemName, itemPath, itemUrl) {
         if (AppState.isSelected(itemName) && AppState.selectedFiles.length > 1)
             return AppState.selectedUriListInCurrentFolder()
-        return itemUrl || ("file://" + itemPath)
+        return itemUrl || AppState.fileUrlForPath(itemPath)
     }
 
     function groupLabelForItem(item) {
@@ -164,11 +164,38 @@ Item {
         }
     }
 
+    function syncDisplayModelMetadata() {
+        if (AppState.fileModelFilling || displayModel.count === 0)
+            return
+
+        for (var i = 0; i < displayModel.count; i++) {
+            var row = displayModel.get(i)
+            if (row.rowType !== "item" || row.sourceIndex === undefined)
+                continue
+            if (row.sourceIndex < 0 || row.sourceIndex >= AppState.fileModel.count)
+                continue
+
+            var item = AppState.fileModel.get(row.sourceIndex)
+            if (!item || item.filePath !== row.filePath)
+                continue
+
+            if (row.filePreviewUrl !== item.filePreviewUrl)
+                displayModel.setProperty(i, "filePreviewUrl", item.filePreviewUrl)
+            if (row.fileKind !== item.fileKind)
+                displayModel.setProperty(i, "fileKind", item.fileKind)
+            if (row.fileSize !== item.fileSize)
+                displayModel.setProperty(i, "fileSize", item.fileSize)
+            if (row.fileModified !== item.fileModified)
+                displayModel.setProperty(i, "fileModified", item.fileModified)
+        }
+    }
+
     // ── Shared UI helpers ─────────────────────────────────────────────────
     CommonComponents.FileContextMenu {
         id: contextMenu
         anchors.fill: parent
         clipboardProxy: clipboardProxy
+        menuOwner: "file-list"
     }
 
     TextEdit {
@@ -189,6 +216,7 @@ Item {
         function onSortFieldChanged() { root.rebuildDisplayModel() }
         function onSortAscChanged() { root.rebuildDisplayModel() }
         function onGroupingEnabledChanged() { root.rebuildDisplayModel() }
+        function onFileModelRevisionChanged() { root.syncDisplayModelMetadata() }
         function onFileModelFillingChanged() {
             if (!AppState.fileModelFilling)
                 root.refreshAfterModelChange()
@@ -365,17 +393,27 @@ Item {
 
             onPressed: function(mouse) {
                 // Let item delegates handle their own area
-                if (list.indexAt(mouse.x, mouse.y) !== -1) mouse.accepted = false
-            }
+                if (list.indexAt(mouse.x, mouse.y) !== -1) {
+                    mouse.accepted = false
+                    return
+                }
 
-            onClicked: function(mouse) {
-                root.resetActivationCandidate()
-                AppState.clearSelection()
                 if (mouse.button === Qt.RightButton) {
+                    mouse.accepted = true
+                    root.resetActivationCandidate()
+                    root.Window.window.focusFileSurface()
+                    AppState.clearSelection()
                     const pt = mapToItem(contextMenu, mouse.x, mouse.y)
                     contextMenu.openAt(pt.x + 6, pt.y + 6,
                                        AppState.currentPath, true,
-                                       "file://" + AppState.currentPath)
+                                       AppState.fileUrlForPath(AppState.currentPath))
+                }
+            }
+
+            onClicked: function(mouse) {
+                if (mouse.button === Qt.LeftButton) {
+                    root.resetActivationCandidate()
+                    AppState.clearSelection()
                 }
             }
 
@@ -418,17 +456,26 @@ Item {
             readonly property string itemName:    isHeaderRow ? "" : fileName
             readonly property int    itemSourceIndex: isHeaderRow ? -1 : sourceIndex
             readonly property string itemIconName: isHeaderRow ? "" : AppState.fileIconName(itemName, itemIsDir, itemExecutable)
+            readonly property int    modelRevision: AppState.fileModelRevision
+            readonly property string livePreviewUrl: {
+                if (isHeaderRow || itemSourceIndex < 0 || itemSourceIndex >= AppState.fileModel.count)
+                    return filePreviewUrl || ""
+                var item = AppState.fileModel.get(itemSourceIndex)
+                if (!item || item.filePath !== itemPath)
+                    return filePreviewUrl || ""
+                return item.filePreviewUrl || ""
+            }
             readonly property bool   isPreviewable: !isHeaderRow &&
                                                     AppState.previewsEnabled &&
                                                     !itemIsDir &&
-                                                    filePreviewUrl !== ""
-            readonly property bool   hasPreview:  !isHeaderRow && filePreviewUrl !== ""
-            property url    activePreviewUrl: isHeaderRow ? "" : filePreviewUrl
+                                                    livePreviewUrl !== ""
+            readonly property bool   hasPreview:  !isHeaderRow && livePreviewUrl !== ""
+            property url    activePreviewUrl: isHeaderRow ? "" : livePreviewUrl
 
             ListView.onReused: {
                 activePreviewUrl = ""
                 if (!isHeaderRow)
-                    activePreviewUrl = Qt.binding(function(){ return filePreviewUrl })
+                    activePreviewUrl = Qt.binding(function(){ return livePreviewUrl })
             }
             readonly property int    previewRequestSize: root.previewSize
             readonly property int    previewDisplaySize: Math.min(root.iconFrameSize, Math.round(root.iconFrameSize * 0.82))
@@ -443,7 +490,7 @@ Item {
             property real pressY: 0
             Drag.active: dragging
             Drag.dragType: Drag.Automatic
-            Drag.supportedActions: Qt.CopyAction
+            Drag.supportedActions: Qt.CopyAction | Qt.MoveAction
             Drag.mimeData: ({
                 "text/uri-list": root.dragUriListForItem(itemName, itemPath, itemUrl),
                 "text/plain": root.dragPathsForItem(itemName, itemPath).join("\n")
@@ -605,6 +652,19 @@ Item {
                 cursorShape: Qt.PointingHandCursor
 
                 onPressed: function(mouse) {
+                    if (mouse.button === Qt.RightButton) {
+                        mouse.accepted = true
+                        row.dragging = false
+                        root.Window.window.focusFileSurface()
+                        AppState.handleSelection(
+                            itemName, itemSourceIndex,
+                            Boolean(mouse.modifiers & Qt.ControlModifier),
+                            Boolean(mouse.modifiers & Qt.ShiftModifier), true)
+                        root.resetActivationCandidate()
+                        const pt = hover.mapToItem(contextMenu, mouse.x, mouse.y)
+                        contextMenu.openAt(pt.x + 6, pt.y + 6, itemPath, itemIsDir, itemUrl)
+                        return
+                    }
                     row.pressX = mouse.x; row.pressY = mouse.y; row.dragging = false
                 }
 
@@ -620,17 +680,9 @@ Item {
                 onClicked: function(mouse) {
                     row.dragging = false
                     if (mouse.button === Qt.LeftButton) {
+                        root.Window.window.focusFileSurface()
                         root.handlePrimaryItemClick(itemPath, itemIsDir, itemUrl, itemName, itemSourceIndex, mouse.modifiers)
                         return
-                    }
-                    AppState.handleSelection(
-                        itemName, itemSourceIndex,
-                        Boolean(mouse.modifiers & Qt.ControlModifier),
-                        Boolean(mouse.modifiers & Qt.ShiftModifier), true)
-                    if (mouse.button === Qt.RightButton) {
-                        root.resetActivationCandidate()
-                        const pt = parent.mapToItem(contextMenu, mouse.x, mouse.y)
-                        contextMenu.openAt(pt.x + 6, pt.y + 6, itemPath, itemIsDir, itemUrl)
                     }
                 }
 

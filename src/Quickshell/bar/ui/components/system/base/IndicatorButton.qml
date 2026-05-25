@@ -10,9 +10,9 @@ Item {
     property int horizontalPadding: Theme.spacingContainer
     property int backgroundMargin: Theme.spacingTiny
     property int backgroundRadius: Theme.radiusMedium - 2
-    property color activeColor: Qt.rgba(1, 1, 1, 0.15)
-    property color pressedColor: Qt.rgba(1, 1, 1, 0.12)
-    property color hoverColor: Theme.separator
+    property color activeColor: Theme.shellActive
+    property color pressedColor: Theme.shellPressed
+    property color hoverColor: Theme.shellHover
     property color idleColor: "transparent"
     property bool autoTogglePopup: true
     property alias spacing: contentRow.spacing
@@ -28,9 +28,9 @@ Item {
     height: 34
 
     function updatePopupAnchor() {
-        if (!control.popupRef) return
+        if (!control.popupRef || !control.popupRef.updateAnchorAt) return
         const point = control.mapToItem(null, control.width / 2, control.height / 2)
-        control.popupRef.anchorX = point.x
+        control.popupRef.updateAnchorAt(point.x)
     }
 
     function togglePopup() {

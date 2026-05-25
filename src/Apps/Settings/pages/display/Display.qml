@@ -629,17 +629,6 @@ Item {
                     }
                 }
 
-                Text {
-                    anchors.horizontalCenter: screenFrame.horizontalCenter
-                    y: screenFrame.y + screenFrame.height + monitorItem.footH + 4
-                    width: Math.max(96, screenFrame.width + 20)
-                    horizontalAlignment: Text.AlignHCenter
-                    text: monitor.name
-                    color: active ? root.textPrimary : root.textSecondary
-                    font.pixelSize: 10
-                    elide: Text.ElideRight
-                }
-
             }
         }
     }

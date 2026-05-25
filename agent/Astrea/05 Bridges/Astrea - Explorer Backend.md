@@ -3,7 +3,10 @@
 Related notes: [[Astrea - Explorer App]], [[Astrea - Core Bridge]], [[Astrea - Unknowns]]
 
 ## File
-`Core/bridge/apps/explorer_backend`
+Primary helper:
+- `Apps/Explorer/explorer_helper.py`
+
+Native listing/backend paths may still exist for heavier Explorer operations, but archive extraction, folder compression, Open With, trash restore, and several shell integration commands are handled by the Python helper.
 
 ## Responsibility
 Native backend used by Explorer.
@@ -37,7 +40,7 @@ Behavior:
 - writes a `.desktop` launcher to `~/.local/share/applications/`
 
 ## Folder Compression
-Expected command shape:
+Implemented command shape:
 - `compress-folder <path> <format>`
 
 Supported formats should include:
@@ -49,11 +52,14 @@ Supported formats should include:
 
 Behavior:
 - creates the archive beside the source folder
+- uses a unique destination name when the default archive path already exists
 - preserves the source folder
-- reports progress through the same file-operation channel used by extraction, copy, and move
+- emits JSON `start`, `progress`, `done`, and `error` events for the file-operation surface
 - returns a clear unsupported-tool error when an external compressor is missing
 
 `rar` support is optional because it depends on the system package. The QML side should only expose it as enabled when the backend reports support or when the command can resolve the required tool.
 
-## Unknown
-The executable is compiled. Internal implementation was not inspected in this pass.
+## Future Preview Work
+Quick Look is disabled in the current Explorer runtime.
+
+There is no active quicklook helper command or override contract. Reintroducing this should be treated as a future feature with new UI, helper, and smoke coverage.

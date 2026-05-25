@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import json
 import os
 import select
-import signal
 import shutil
+import struct
 import subprocess
+import tempfile
 import time
 import urllib.parse
 from pathlib import Path
@@ -34,8 +36,10 @@ def rename_path(source_text: str, new_name: str) -> None:
     os.rename(source, target)
 
 
-def suggest_dirs(base_text: str, prefix: str) -> None:
+def suggest_dirs(base_text: str, prefix: str, request_id: str = "") -> None:
     base = Path(base_text).expanduser()
+    if request_id:
+        print(f"__request_id__:{request_id}")
     if not base.is_dir():
         return
     matches = []
@@ -61,43 +65,32 @@ def read_pid(path: Path) -> int | None:
         return None
 
 
-def quicklook(selected: str, pathfile_text: str, pidfile_text: str) -> None:
-    pathfile = Path(pathfile_text)
-    pidfile = Path(pidfile_text)
-    pid = read_pid(pidfile)
-    if pid and process_alive(pid):
-        try:
-            current = pathfile.read_text(encoding="utf-8")
-        except OSError:
-            current = ""
-        if current == selected:
-            os.kill(pid, signal.SIGTERM)
-            pathfile.unlink(missing_ok=True)
-            pidfile.unlink(missing_ok=True)
-        else:
-            pathfile.write_text(selected, encoding="utf-8")
-        return
-
-    pathfile.write_text(selected, encoding="utf-8")
-    pidfile.unlink(missing_ok=True)
-    quicklook_qml = os.environ.get("ASTREA_QUICKLOOK_QML") or str(Path.home() / "GitHub/Bench/Look/quicklook.qml")
-    with open(os.devnull, "wb") as devnull:
-        proc = subprocess.Popen(["qs", "-p", quicklook_qml], stdout=devnull, stderr=devnull, start_new_session=True)
-    pidfile.write_text(str(proc.pid), encoding="utf-8")
 
 
-def quicklook_sync(selected: str, pidfile_text: str, pathfile_text: str) -> None:
-    pathfile = Path(pathfile_text)
-    pid = read_pid(Path(pidfile_text))
-    if not pid or not process_alive(pid):
-        return
+def create_desktop_shortcut(target_text: str) -> dict[str, object]:
+    target = Path(target_text).expanduser()
+    if not target.exists() and not target.is_symlink():
+        return {"ok": False, "error": "target_not_found"}
+    desktop = ""
     try:
-        current = pathfile.read_text(encoding="utf-8")
-    except OSError:
-        current = ""
-    if current != selected:
-        pathfile.write_text(selected, encoding="utf-8")
-
+        probe = subprocess.run(["xdg-user-dir", "DESKTOP"], check=False, capture_output=True, text=True)
+        desktop = (probe.stdout or "").strip()
+    except Exception:
+        desktop = ""
+    if not desktop or desktop == str(Path.home()):
+        desktop = str(Path.home() / "Área de trabalho")
+    desk = Path(desktop).expanduser()
+    if not desk.exists():
+        desk = Path.home() / "Desktop"
+    desk.mkdir(parents=True, exist_ok=True)
+    name = target.name
+    dest = desk / name
+    i = 2
+    while dest.exists() or dest.is_symlink():
+        dest = desk / f"{name} {i}"
+        i += 1
+    os.symlink(str(target), str(dest))
+    return {"ok": True, "destination": str(dest)}
 
 def network_mount_probe(root_text: str) -> None:
     root = Path(root_text)
@@ -108,9 +101,10 @@ def network_mount_probe(root_text: str) -> None:
         return
 
 
-def copy_uri_list(paths: list[str]) -> None:
-    payload = "".join(f"file://{path}\n" for path in paths)
-    subprocess.run(["wl-copy", "--type", "text/uri-list"], input=payload, text=True, check=True)
+def copy_uri_list(paths: list[str], runner=None) -> None:
+    payload = "".join(f"file://{urllib.parse.quote(path, safe='/')}\n" for path in paths)
+    run = runner or subprocess.run
+    run(["wl-copy", "--type", "text/uri-list"], input=payload, text=True, check=True)
 
 IMAGE_MIME_EXTENSIONS = {
     "image/png": "png",
@@ -152,6 +146,247 @@ def paste_image(destination_dir_text: str, mime_type: str, paste_runner=None) ->
     return str(target)
 
 
+def _truthy_desktop_value(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes"}
+
+
+def parse_desktop_entry(path: Path) -> dict[str, object] | None:
+    values: dict[str, str] = {}
+    in_desktop_entry = False
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            in_desktop_entry = line == "[Desktop Entry]"
+            continue
+        if not in_desktop_entry or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values.setdefault(key.strip(), value.strip())
+
+    if values.get("Type") != "Application":
+        return None
+
+    name = values.get("Name") or path.stem
+    exec_line = values.get("Exec", "")
+    no_display = _truthy_desktop_value(values.get("NoDisplay"))
+    hidden = _truthy_desktop_value(values.get("Hidden")) or not exec_line
+    mime_types = [item for item in values.get("MimeType", "").split(";") if item]
+    categories = [item for item in values.get("Categories", "").split(";") if item]
+    return {
+        "name": name,
+        "desktop_id": path.name,
+        "desktop_file": str(path),
+        "icon": values.get("Icon", ""),
+        "exec": exec_line,
+        "mime_types": mime_types,
+        "categories": categories,
+        "hidden": hidden,
+        "no_display": no_display,
+        "terminal": _truthy_desktop_value(values.get("Terminal")),
+    }
+
+
+def _application_dirs() -> list[Path]:
+    dirs: list[Path] = []
+    home = Path.home()
+    dirs.append(home / ".local/share/applications")
+    dirs.append(home / ".local/share/flatpak/exports/share/applications")
+
+    for root in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":"):
+        if root:
+            dirs.append(Path(root) / "applications")
+    dirs.append(Path("/var/lib/flatpak/exports/share/applications"))
+
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for directory in dirs:
+        key = str(directory)
+        if key not in seen:
+            unique.append(directory)
+            seen.add(key)
+    return unique
+
+
+def _query_file_mime(path: Path, mime_runner=None) -> str:
+    if mime_runner is not None:
+        return (mime_runner(str(path)) or "").strip()
+    try:
+        result = subprocess.run(
+            ["xdg-mime", "query", "filetype", str(path)],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return result.stdout.strip()
+    except Exception:
+        try:
+            result = subprocess.run(
+                ["file", "--brief", "--mime-type", str(path)],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            return result.stdout.strip()
+        except Exception:
+            return "application/octet-stream"
+
+
+def _query_default_app(mime_type: str, default_runner=None) -> str:
+    if default_runner is not None:
+        return (default_runner(mime_type) or "").strip()
+    try:
+        result = subprocess.run(
+            ["xdg-mime", "query", "default", mime_type],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
+
+
+def _mime_matches(app_mimes: list[str], mime_type: str) -> bool:
+    if not mime_type:
+        return False
+    if mime_type in app_mimes:
+        return True
+    group = mime_type.split("/", 1)[0] if "/" in mime_type else ""
+    return any(item == f"{group}/*" for item in app_mimes)
+
+
+def _desktop_app_identity(app: dict[str, object]) -> str:
+    name = str(app.get("name") or "").casefold().strip()
+    exec_line = str(app.get("exec") or "").casefold().strip()
+    return f"{name}\0{exec_line}"
+
+
+def _dedupe_desktop_apps(apps: list[dict[str, object]]) -> list[dict[str, object]]:
+    unique = []
+    seen: set[str] = set()
+    for app in apps:
+        identity = _desktop_app_identity(app)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(app)
+    return unique
+
+
+def _iter_desktop_entries(app_dirs: list[Path]):
+    seen: set[str] = set()
+    for directory in app_dirs:
+        if not directory.is_dir():
+            continue
+        for entry in sorted(directory.glob("*.desktop")):
+            if entry.name in seen:
+                continue
+            seen.add(entry.name)
+            parsed = parse_desktop_entry(entry)
+            if parsed is not None:
+                yield parsed
+
+
+def open_with_apps(path_text: str, app_dirs=None, mime_runner=None, default_runner=None) -> dict[str, object]:
+    path = Path(path_text).expanduser().resolve()
+    if not path.exists() or not (path.is_file() or path.is_dir()):
+        return {"ok": False, "error": "Arquivo nao encontrado", "apps": []}
+
+    mime_type = _query_file_mime(path, mime_runner)
+    default_id = _query_default_app(mime_type, default_runner)
+    dirs = [Path(item) for item in app_dirs] if app_dirs is not None else _application_dirs()
+
+    recommended = []
+    for app in _iter_desktop_entries(dirs):
+        mime_types = app.get("mime_types", [])
+        is_default = app["desktop_id"] == default_id
+        is_compatible = _mime_matches(mime_types, mime_type)
+        if app.get("hidden"):
+            continue
+        record = {
+            "name": app["name"],
+            "desktop_id": app["desktop_id"],
+            "desktop_file": app["desktop_file"],
+            "icon": app["icon"],
+            "exec": app["exec"],
+            "is_default": is_default,
+            "is_recommended": is_default or is_compatible,
+            "categories": app.get("categories", []),
+            "no_display": bool(app.get("no_display")),
+            "terminal": bool(app.get("terminal")),
+        }
+        if record["is_recommended"]:
+            recommended.append(record)
+
+    recommended.sort(key=lambda item: (not item["is_default"], str(item["name"]).casefold()))
+    recommended = _dedupe_desktop_apps(recommended)
+    sections = []
+    if recommended:
+        sections.append({"id": "recommended", "title": "Aplicativos recomendados", "apps": recommended})
+    apps = [app for section in sections for app in section["apps"]]
+    return {
+        "ok": True,
+        "path": str(path),
+        "is_directory": path.is_dir(),
+        "mime": mime_type,
+        "default": default_id,
+        "sections": sections,
+        "apps": apps,
+    }
+
+
+def launch_open_with(path_text: str, desktop_file_text: str, popen=subprocess.Popen) -> dict[str, object]:
+    path = Path(path_text).expanduser().resolve()
+    desktop_file = Path(desktop_file_text).expanduser().resolve()
+    if not path.exists() or not (path.is_file() or path.is_dir()):
+        return {"ok": False, "error": "Arquivo nao encontrado"}
+    if not desktop_file.is_file():
+        return {"ok": False, "error": "Aplicativo nao encontrado"}
+
+    process = popen(
+        ["gio", "launch", str(desktop_file), path.as_uri()],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    return {"ok": True, "pid": process.pid}
+
+
+def set_default_open_with(
+    path_text: str,
+    desktop_file_text: str,
+    mime_runner=None,
+    default_runner=subprocess.run,
+) -> dict[str, object]:
+    path = Path(path_text).expanduser().resolve()
+    desktop_file = Path(desktop_file_text).expanduser().resolve()
+    if not path.exists() or not (path.is_file() or path.is_dir()):
+        return {"ok": False, "error": "Arquivo nao encontrado"}
+    if not desktop_file.is_file():
+        return {"ok": False, "error": "Aplicativo nao encontrado"}
+
+    mime_type = _query_file_mime(path, mime_runner)
+    desktop_id = desktop_file.name
+    default_runner(
+        ["xdg-mime", "default", desktop_id, mime_type],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    return {"ok": True, "mime": mime_type, "default": desktop_id}
+
+
 def _json_event(payload: dict[str, object]) -> None:
     import json
     print(json.dumps(payload, ensure_ascii=False), flush=True)
@@ -191,30 +426,315 @@ def _pick_extractor(archive_path: Path, which_runner=shutil.which) -> list[str]:
     raise RuntimeError("missing_tool: bsdtar/tar")
 
 
-def extract_archive(archive_path_text: str, folder_name: str, run_cmd=None, which_runner=shutil.which) -> None:
+def _tool_password_args(tool: str, password: str | None) -> list[str]:
+    if tool == "unzip":
+        return ["-P", password] if password is not None else []
+    if tool == "unrar":
+        return [f"-p{password}"] if password is not None else ["-p-"]
+    if tool == "7z":
+        return [f"-p{password}"] if password is not None else ["-p-"]
+    return []
+
+
+def _archive_requires_password(archive_path: Path, which_runner=shutil.which) -> bool:
+    if not which_runner("7z"):
+        return False
+    try:
+        result = subprocess.run(
+            ["7z", "l", "-slt", "-p-", "-y", str(archive_path)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=8,
+        )
+    except Exception:
+        return False
+    output = f"{result.stdout}\n{result.stderr}".lower()
+    if "encrypted = +" in output:
+        return True
+    return result.returncode != 0 and any(token in output for token in ("password", "encrypted", "wrong password"))
+
+
+def _run_text(cmd: list[str], timeout: int = 12) -> str:
+    result = subprocess.run(
+        cmd,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout,
+    )
+    return result.stdout
+
+
+def _list_archive_entries(archive_path: Path, password: str | None = None, which_runner=shutil.which) -> list[str]:
+    lower = archive_path.name.lower()
+    commands: list[list[str]] = []
+    if lower.endswith(".zip") and which_runner("unzip"):
+        commands.append(["unzip", "-Z1", str(archive_path)])
+    if lower.endswith(".rar") and which_runner("unrar"):
+        commands.append(["unrar", "lb"] + _tool_password_args("unrar", password) + [str(archive_path)])
+    if which_runner("7z"):
+        commands.append(["7z", "l", "-slt", "-y"] + _tool_password_args("7z", password) + [str(archive_path)])
+    if which_runner("bsdtar"):
+        commands.append(["bsdtar", "-tf", str(archive_path)])
+
+    for cmd in commands:
+        try:
+            output = _run_text(cmd)
+        except Exception:
+            continue
+        entries: list[str] = []
+        if cmd[0] == "7z":
+            for line in output.splitlines():
+                if not line.startswith("Path = "):
+                    continue
+                value = line.split("=", 1)[1].strip()
+                if value and value != str(archive_path):
+                    entries.append(value)
+        else:
+            entries = [line.strip() for line in output.splitlines() if line.strip()]
+        return [entry for entry in entries if entry and not entry.endswith("/")]
+    return []
+
+
+def _count_extracted_entries(destination: Path) -> int:
+    if not destination.exists():
+        return 0
+    count = 0
+    for _root, _dirs, files in os.walk(destination):
+        count += len(files)
+    return count
+
+
+def _format_eta(seconds: float | int | None) -> str:
+    if seconds is None:
+        return ""
+    value = max(0, int(round(float(seconds))))
+    if value <= 0:
+        return "agora"
+    if value < 60:
+        return f"{value}s restantes"
+    minutes, secs = divmod(value, 60)
+    if minutes < 60:
+        return f"{minutes}m {secs:02d}s restantes"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes:02d}m restantes"
+
+
+
+
+def _is_unsafe_archive_entry(name: str) -> bool:
+    value = (name or "").strip().replace("\\", "/")
+    if not value:
+        return False
+    if value.startswith("/"):
+        return True
+    parts = [p for p in value.split("/") if p not in ("", ".")]
+    if any(p == ".." for p in parts):
+        return True
+    lowered = value.lower()
+    if "->" in lowered and ".." in lowered:
+        return True
+    return False
+
+
+def validate_archive_entries(entries: list[str]) -> None:
+    for entry in entries:
+        if _is_unsafe_archive_entry(entry):
+            raise ValueError(f"unsafe archive entry: {entry}")
+def _archive_progress_payload(mode: str, done: int, total: int, start_time: float, now) -> dict[str, object]:
+    total = max(0, int(total or 0))
+    done = max(0, int(done or 0))
+    percent = (done / total * 100) if total > 0 else 0
+    eta_seconds = None
+    if total > 0 and 0 < done < total:
+        elapsed = max(0.1, now() - start_time)
+        eta_seconds = (elapsed / done) * (total - done)
+    elif total > 0 and done >= total:
+        eta_seconds = 0
+    payload: dict[str, object] = {
+        "event": "progress",
+        "mode": mode,
+        "done": done,
+        "total": total,
+        "percent": min(99, percent) if done < total else min(100, percent),
+    }
+    if eta_seconds is not None:
+        payload["eta_seconds"] = int(round(eta_seconds))
+        payload["eta_text"] = _format_eta(eta_seconds)
+    return payload
+
+
+def _build_extract_command(base_cmd: list[str], destination: Path, password: str | None) -> list[str]:
+    tool = base_cmd[0]
+    if tool == "unzip":
+        return ["unzip"] + _tool_password_args("unzip", password) + base_cmd[1:] + [str(destination)]
+    if tool == "unrar":
+        return base_cmd[:2] + _tool_password_args("unrar", password) + base_cmd[2:] + [str(destination) + "/"]
+    if tool == "7z":
+        return base_cmd[:3] + _tool_password_args("7z", password) + base_cmd[3:] + [f"-o{destination}"]
+    return base_cmd + [str(destination)]
+
+
+def _called_process_error_code(exc: subprocess.CalledProcessError) -> str:
+    output = ""
+    for value in (getattr(exc, "stdout", None), getattr(exc, "stderr", None)):
+        if isinstance(value, bytes):
+            output += value.decode("utf-8", "replace")
+        elif isinstance(value, str):
+            output += value
+    lowered = output.lower()
+    if any(token in lowered for token in ("wrong password", "incorrect password", "password")):
+        return "wrong_password"
+    return _error_code_from_exception(exc)
+
+
+def _read_password_from_stdin() -> str:
+    value = sys.stdin.readline()
+    if value.endswith("\n"):
+        value = value[:-1]
+    if value.endswith("\r"):
+        value = value[:-1]
+    return value
+
+
+def _remove_path(path: Path) -> None:
+    if not path.exists() and not path.is_symlink():
+        return
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def _prepare_extract_destination(parent: Path, name: str, conflict_policy: str) -> tuple[Path, Path | None]:
+    target = parent / name
+    policy = (conflict_policy or "keep-both").lower()
+    if policy not in {"ask", "keep-both", "merge", "overwrite"}:
+        raise RuntimeError(f"invalid_conflict_policy: {conflict_policy}")
+
+    if not target.exists() and not target.is_symlink():
+        return target, None
+
+    if policy == "ask":
+        _json_event({
+            "event": "conflict",
+            "mode": "extract",
+            "destination": str(target),
+            "name": target.name,
+            "is_directory": target.is_dir(),
+        })
+        raise SystemExit(4)
+
+    if policy == "keep-both":
+        return _unique_target(parent, name), None
+
+    if policy == "merge":
+        if target.is_dir():
+            return target, None
+        raise RuntimeError("merge_requires_directory")
+
+    backup = _unique_target(parent, f".{target.name}.astrea-overwrite-backup")
+    os.rename(target, backup)
+    return target, backup
+
+
+def _restore_extract_backup(destination: Path, backup: Path | None, remove_without_backup: bool = True) -> None:
+    if backup is None:
+        if remove_without_backup:
+            _remove_path(destination)
+        return
+    _remove_path(destination)
+    os.rename(backup, destination)
+
+
+def _finish_extract_backup(backup: Path | None) -> None:
+    if backup is not None:
+        _remove_path(backup)
+
+
+def extract_archive(
+    archive_path_text: str,
+    folder_name: str,
+    password: str | None = None,
+    conflict_policy: str = "keep-both",
+    run_cmd=None,
+    list_runner=None,
+    password_probe=None,
+    which_runner=shutil.which,
+    now=time.monotonic,
+) -> None:
     archive_path = Path(archive_path_text).expanduser()
     if not archive_path.exists():
         _json_event({"event": "error", "mode": "extract", "code": "not_found", "message": "archive not found"})
         raise SystemExit(1)
+
+    probe = password_probe or _archive_requires_password
+    if password is None and probe(archive_path):
+        _json_event({"event": "password_required", "mode": "extract", "name": archive_path.name})
+        raise SystemExit(3)
+
     parent = archive_path.parent
-    destination = _unique_target(parent, folder_name or archive_path.name)
-    destination.mkdir(parents=True, exist_ok=True)
-    _json_event({"event": "start", "mode": "extract", "name": archive_path.name, "destination": str(destination), "total": 1})
+    destination: Path
+    backup: Path | None
+    destination, backup = _prepare_extract_destination(parent, folder_name or archive_path.name, conflict_policy)
+    destination_preexisting = destination.exists() or destination.is_symlink()
+    entry_lister = list_runner or _list_archive_entries
+    entries = entry_lister(archive_path, password, which_runner)
+    total = max(0, len(entries))
     runner = run_cmd or subprocess.run
+    start_time = now()
+    baseline_count = 0
     try:
+        validate_archive_entries(entries)
+        destination.mkdir(parents=True, exist_ok=True)
+        baseline_count = _count_extracted_entries(destination)
+        _json_event({"event": "start", "mode": "extract", "name": archive_path.name, "destination": str(destination), "total": total})
         cmd = _pick_extractor(archive_path, which_runner)
-        if cmd[0] == "unrar":
-            runner(cmd + [str(destination) + "/"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        elif cmd[0] == "7z":
-            runner(cmd + [f"-o{destination}"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        final_cmd = _build_extract_command(cmd, destination, password)
+        if run_cmd is None:
+            with tempfile.TemporaryFile() as stdout_tmp, tempfile.TemporaryFile() as stderr_tmp:
+                proc = subprocess.Popen(final_cmd, stdout=stdout_tmp, stderr=stderr_tmp)
+                last_done = -1
+                while proc.poll() is None:
+                    done = max(0, _count_extracted_entries(destination) - baseline_count)
+                    if done != last_done:
+                        _json_event(_archive_progress_payload("extract", done, total, start_time, now))
+                        last_done = done
+                    time.sleep(0.35)
+                proc.wait()
+                if proc.returncode != 0:
+                    stdout_tmp.seek(0)
+                    stderr_tmp.seek(0)
+                    raise subprocess.CalledProcessError(
+                        proc.returncode,
+                        final_cmd,
+                        output=stdout_tmp.read(),
+                        stderr=stderr_tmp.read(),
+                    )
         else:
-            runner(cmd + [str(destination)], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        _json_event({"event": "progress", "mode": "extract", "done": 1, "total": 1, "percent": 100})
-        _json_event({"event": "done", "mode": "extract", "destination": str(destination), "done": 1, "total": 1, "percent": 100})
+            runner(final_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        done = max(0, _count_extracted_entries(destination) - baseline_count)
+        if total > 0 and done < total:
+            done = total
+        if total <= 0:
+            total = done
+        _json_event(_archive_progress_payload("extract", done, total, start_time, now))
+        _json_event({"event": "done", "mode": "extract", "destination": str(destination), "done": done, "total": total, "percent": 100, "eta_seconds": 0, "eta_text": _format_eta(0)})
+        _finish_extract_backup(backup)
     except RuntimeError as exc:
+        _restore_extract_backup(destination, backup, not destination_preexisting)
         _json_event({"event": "error", "mode": "extract", "code": "missing_tool", "message": str(exc), "destination": str(destination)})
         raise SystemExit(1)
+    except subprocess.CalledProcessError as exc:
+        _restore_extract_backup(destination, backup, not destination_preexisting)
+        code = _called_process_error_code(exc)
+        message = "Senha incorreta" if code == "wrong_password" else str(exc)
+        _json_event({"event": "error", "mode": "extract", "code": code, "message": message, "destination": str(destination)})
+        raise SystemExit(1)
     except Exception as exc:
+        _restore_extract_backup(destination, backup, not destination_preexisting)
         _json_event({"event": "error", "mode": "extract", "code": _error_code_from_exception(exc), "message": str(exc), "destination": str(destination)})
         raise SystemExit(1)
 
@@ -266,8 +786,32 @@ def _path_type(path: Path) -> str:
     return "other"
 
 
+def _resolved_path(path: Path) -> Path:
+    try:
+        return path.resolve(strict=False)
+    except OSError:
+        return path.absolute()
+
+
+def _is_same_or_descendant(source: Path, target: Path) -> bool:
+    source_resolved = _resolved_path(source)
+    target_resolved = _resolved_path(target)
+    return target_resolved == source_resolved or source_resolved in target_resolved.parents
+
+
 def _conflict_record(source: Path, destination: Path) -> dict[str, object] | None:
     target = destination / source.name
+    source_type = _path_type(source)
+    if source_type == "directory" and _is_same_or_descendant(source, target):
+        return {
+            "source": str(source),
+            "destination": str(target),
+            "name": source.name,
+            "source_type": source_type,
+            "destination_type": _path_type(target),
+            "conflict_kind": "directory-into-self",
+            "supported_policies": ["skip"],
+        }
     if source == target:
         return {
             "source": str(source),
@@ -281,7 +825,6 @@ def _conflict_record(source: Path, destination: Path) -> dict[str, object] | Non
     if not target.exists():
         return None
 
-    source_type = _path_type(source)
     destination_type = _path_type(target)
     if source_type == "directory" and destination_type == "directory":
         conflict_kind = "directory-merge"
@@ -338,9 +881,12 @@ IN_DELETE_SELF = 0x00000400
 IN_MOVE_SELF = 0x00000800
 IN_ATTRIB = 0x00000004
 IN_ONLYDIR = 0x01000000
+IN_ISDIR = 0x40000000
 IN_NONBLOCK = 0x00000800
 IN_CLOEXEC = 0x00080000
 DIR_WATCH_MASK = IN_CLOSE_WRITE | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF | IN_ATTRIB
+DIR_REFRESH_MASK = IN_CLOSE_WRITE | IN_MOVED_FROM | IN_MOVED_TO | IN_CREATE | IN_DELETE | IN_DELETE_SELF | IN_MOVE_SELF
+INOTIFY_EVENT_STRUCT = struct.Struct("iIII")
 
 
 def _dir_signature(path: Path) -> tuple:
@@ -456,20 +1002,46 @@ def empty_trash(trash_files_text: str, trash_info_text: str) -> None:
             entry.unlink(missing_ok=True)
 
 
-def _drain_inotify(fd: int) -> None:
+def _iter_inotify_masks(data: bytes):
+    offset = 0
+    size = INOTIFY_EVENT_STRUCT.size
+    while offset + size <= len(data):
+        _, mask, _, name_len = INOTIFY_EVENT_STRUCT.unpack_from(data, offset)
+        yield mask
+        offset += size + name_len
+
+
+def _should_emit_directory_change(masks) -> bool:
+    for mask in masks:
+        if mask & DIR_REFRESH_MASK:
+            return True
+    return False
+
+
+def _parent_is_alive(parent_pid: int) -> bool:
+    return parent_pid > 1 and os.getppid() == parent_pid and process_alive(parent_pid)
+
+
+def _drain_inotify(fd: int) -> list[int]:
+    masks: list[int] = []
     try:
-        while os.read(fd, 4096):
-            pass
+        while True:
+            data = os.read(fd, 4096)
+            if not data:
+                break
+            masks.extend(_iter_inotify_masks(data))
     except BlockingIOError:
-        return
+        return masks
     except OSError:
-        return
+        return masks
+    return masks
 
 
 def monitor_dir(path_text: str) -> None:
     path = Path(path_text).expanduser()
     if not path.is_dir():
         raise SystemExit(2)
+    parent_pid = os.getppid()
 
     try:
         libc = ctypes.CDLL("libc.so.6", use_errno=True)
@@ -482,7 +1054,7 @@ def monitor_dir(path_text: str) -> None:
             raise OSError(ctypes.get_errno())
     except Exception:
         last = _dir_signature(path)
-        while True:
+        while _parent_is_alive(parent_pid):
             time.sleep(1)
             current = _dir_signature(path)
             if current != last:
@@ -493,12 +1065,13 @@ def monitor_dir(path_text: str) -> None:
     poller = select.poll()
     poller.register(fd, select.POLLIN | select.POLLERR | select.POLLHUP)
     try:
-        while True:
-            events = poller.poll(30000)
+        while _parent_is_alive(parent_pid):
+            events = poller.poll(1000)
             if not events:
                 continue
-            _drain_inotify(fd)
-            _emit_changed()
+            masks = _drain_inotify(fd)
+            if _should_emit_directory_change(masks):
+                _emit_changed()
     finally:
         os.close(fd)
 
@@ -518,19 +1091,10 @@ def parse_args() -> argparse.Namespace:
     suggest = sub.add_parser("suggest-dirs")
     suggest.add_argument("base")
     suggest.add_argument("prefix")
+    suggest.add_argument("--request-id", default="")
 
     which = sub.add_parser("which")
     which.add_argument("program")
-
-    ql = sub.add_parser("quicklook")
-    ql.add_argument("selected")
-    ql.add_argument("pathfile")
-    ql.add_argument("pidfile")
-
-    qls = sub.add_parser("quicklook-sync")
-    qls.add_argument("selected")
-    qls.add_argument("pidfile")
-    qls.add_argument("pathfile")
 
     probe = sub.add_parser("network-mount-probe")
     probe.add_argument("root")
@@ -566,9 +1130,23 @@ def parse_args() -> argparse.Namespace:
     extract_cmd = sub.add_parser("extract-archive")
     extract_cmd.add_argument("archive_path")
     extract_cmd.add_argument("folder_name")
+    extract_cmd.add_argument("--password")
+    extract_cmd.add_argument("--password-stdin", action="store_true")
+    extract_cmd.add_argument("--conflict-policy", choices=["ask", "keep-both", "merge", "overwrite"], default="keep-both")
     compress_cmd = sub.add_parser("compress-folder")
     compress_cmd.add_argument("folder_path")
     compress_cmd.add_argument("archive_format")
+    desktop_shortcut_cmd = sub.add_parser("create-desktop-shortcut")
+    desktop_shortcut_cmd.add_argument("path")
+
+    open_with_cmd = sub.add_parser("open-with-apps")
+    open_with_cmd.add_argument("path")
+    launch_with_cmd = sub.add_parser("launch-open-with")
+    launch_with_cmd.add_argument("path")
+    launch_with_cmd.add_argument("desktop_file")
+    default_with_cmd = sub.add_parser("set-default-open-with")
+    default_with_cmd.add_argument("path")
+    default_with_cmd.add_argument("desktop_file")
 
     return parser.parse_args()
 
@@ -580,13 +1158,9 @@ def main() -> None:
     elif args.command == "rename":
         rename_path(args.source, args.new_name)
     elif args.command == "suggest-dirs":
-        suggest_dirs(args.base, args.prefix)
+        suggest_dirs(args.base, args.prefix, args.request_id)
     elif args.command == "which":
         raise SystemExit(0 if shutil.which(args.program) else 1)
-    elif args.command == "quicklook":
-        quicklook(args.selected, args.pathfile, args.pidfile)
-    elif args.command == "quicklook-sync":
-        quicklook_sync(args.selected, args.pidfile, args.pathfile)
     elif args.command == "network-mount-probe":
         network_mount_probe(args.root)
     elif args.command == "copy-uri-list":
@@ -604,9 +1178,18 @@ def main() -> None:
     elif args.command == "paste-image":
         paste_image(args.destination_dir, args.mime_type)
     elif args.command == "extract-archive":
-        extract_archive(args.archive_path, args.folder_name)
+        password = _read_password_from_stdin() if args.password_stdin else args.password
+        extract_archive(args.archive_path, args.folder_name, password=password, conflict_policy=args.conflict_policy)
     elif args.command == "compress-folder":
         compress_folder(args.folder_path, args.archive_format)
+    elif args.command == "create-desktop-shortcut":
+        print(json.dumps(create_desktop_shortcut(args.path), ensure_ascii=False), flush=True)
+    elif args.command == "open-with-apps":
+        print(json.dumps(open_with_apps(args.path), ensure_ascii=False), flush=True)
+    elif args.command == "launch-open-with":
+        print(json.dumps(launch_open_with(args.path, args.desktop_file), ensure_ascii=False), flush=True)
+    elif args.command == "set-default-open-with":
+        print(json.dumps(set_default_open_with(args.path, args.desktop_file), ensure_ascii=False), flush=True)
 
 
 if __name__ == "__main__":

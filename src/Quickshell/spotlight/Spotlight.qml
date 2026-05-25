@@ -5,7 +5,7 @@ import Quickshell.Io
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import "../components"
+import "./components" as Components
 import "../AstreaI18n" as AstreaI18n
 
 ShellRoot {
@@ -199,7 +199,7 @@ ShellRoot {
                                     anchors { fill: parent; leftMargin: 12; rightMargin: 12 }
                                     spacing: 15
 
-                                    AppIcon {
+                                    Components.AppIcon {
                                         Layout.preferredWidth: 30
                                         Layout.preferredHeight: 30
                                         entry: modelData
@@ -268,8 +268,7 @@ ShellRoot {
                 close()
             } else {
                 open = true
-                if (!performancePaused)
-                    maybeRefreshWeather()
+                maybeRefreshWeather(true)
             }
         }
 
@@ -321,19 +320,19 @@ ShellRoot {
 
         function applyConfig(config) {
             weatherEnabled = config.weather === undefined || config.weather === null ? true : !!config.weather
-            if (weatherEnabled && !performancePaused) maybeRefreshWeather()
+            if (weatherEnabled) maybeRefreshWeather(open)
         }
 
-        function maybeRefreshWeather() {
-            if (performancePaused || !weatherEnabled || weatherLoading) return
+        function maybeRefreshWeather(allowPaused) {
+            if ((performancePaused && !allowPaused) || !weatherEnabled || weatherLoading) return
             const now = Date.now()
             if (!weatherReady || weatherLastRefreshMs <= 0 || now - weatherLastRefreshMs >= weatherStaleMs) {
-                refreshWeather()
+                refreshWeather(allowPaused)
             }
         }
 
-        function refreshWeather() {
-            if (performancePaused || !weatherEnabled || weatherLoading) return
+        function refreshWeather(allowPaused) {
+            if ((performancePaused && !allowPaused) || !weatherEnabled || weatherLoading) return
             weatherLoading = true
             weatherStatusText = weatherReady ? "Atualizando" : "Carregando"
             weatherBuffer = ""

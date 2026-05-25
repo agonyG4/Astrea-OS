@@ -12,6 +12,7 @@ Live runtime path:
 
 Documentation vault:
 - `/home/agony/GitHub/Astrea-Dev/agent/Astrea`
+- `/home/agony/Documentos/Astrea`
 
 Current path relationship:
 - `/home/agony/.local/share/Astrea` resolves to `/home/agony/.local/share/Astrea-Rolling`
@@ -20,7 +21,9 @@ It provides:
 - persistent shell surfaces
 - standalone desktop apps
 - shared QML UI components
+- shared translation catalogs
 - system configuration pages
+- Polkit/authentication integration
 - wallpaper and lockscreen features
 - notification handling
 - app launch routing and temporary latency burst
@@ -47,5 +50,7 @@ Connected notes:
 - [[Astrea - Quickshell Runtime]]
 - [[Astrea - Settings App]]
 - [[Astrea - Explorer App]]
+- [[Astrea - Media Viewer App]]
+- [[Astrea - Wallpapers App]]
 - [[Astrea - Core Bridge]]
 - [[Astrea - System Layer]]

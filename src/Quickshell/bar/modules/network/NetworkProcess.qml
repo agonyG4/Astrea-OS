@@ -11,10 +11,25 @@ QtObject {
     property string ssid:      ""
     property string download:  "0 B/s"
     property string upload:    "0 B/s"
+    property bool performancePaused: false
 
     function refresh() {
+        if (performancePaused) {
+            statusFile.reload()
+            return
+        }
         statusRefreshProc.running = false
         statusRefreshProc.running = true
+    }
+
+    onPerformancePausedChanged: {
+        if (performancePaused) {
+            statusRefreshProc.running = false
+            statusStartProc.running = false
+            statusFile.reload()
+        } else {
+            refresh()
+        }
     }
 
     function applyStatus(text) {
@@ -45,7 +60,7 @@ QtObject {
         onExited: exitCode => {
             if (exitCode === 0)
                 statusFile.reload()
-            else {
+            else if (!root.performancePaused) {
                 statusStartProc.running = false
                 statusStartProc.running = true
             }

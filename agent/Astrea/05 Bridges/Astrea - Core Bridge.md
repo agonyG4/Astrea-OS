@@ -18,6 +18,16 @@ The bridge turns system state into JSON and applies requested changes through sc
 - `storage.py` -> `system/storage.py`
 - `system.py` -> `system/info.py`
 
+## Shared Helpers
+- `astrea_shared.py`
+  - XDG paths, atomic writes, desktop file parsing, icon resolution, and safe command helpers.
+- `state_json.py`
+  - small atomic JSON state helper. See [[Astrea - State JSON Bridge]].
+- `astrea_sessiond.py`
+  - lightweight session daemon/status scaffold. See [[Astrea - Session Daemon]].
+- `astrea_doctor.py`
+  - diagnostic helper for runtime checks.
+
 ## System Info
 `Core/bridge/system/info.py` returns JSON for system and hardware identity.
 
@@ -28,6 +38,7 @@ Consumers include:
 The About app uses this bridge as a single process instead of spawning separate shell commands for OS, kernel, desktop, CPU, GPU, memory, and storage fields.
 
 ## Domain Backends
+- [[Astrea - App Manager Bridge]]
 - [[Astrea - Explorer Backend]]
 - [[Astrea - Weather Bridge]]
 - [[Astrea - Audio Bridge]]

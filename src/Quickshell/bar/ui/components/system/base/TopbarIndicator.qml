@@ -8,7 +8,7 @@ IndicatorButton {
 
     signal activated(real anchorX)
 
-    popupRef: hostedPopup
+    popupRef: popupHost
     autoTogglePopup: false
 
     onClicked: anchorX => {

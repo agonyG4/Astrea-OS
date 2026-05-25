@@ -113,7 +113,7 @@ Rectangle {
         Text {
             width: parent.width
             text: title
-            color: Theme.textActive
+            color: Theme.shellTextActive
             opacity: Theme.opacityEmphasis
             font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption; weight: Font.DemiBold }
         }

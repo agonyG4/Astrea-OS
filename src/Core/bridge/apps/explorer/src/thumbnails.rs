@@ -40,7 +40,11 @@ pub fn run_warm(args: &[String]) -> Result<(), String> {
 }
 
 pub fn preview_url(path: &Path, is_dir: bool, modified_ms: i64) -> String {
-    if is_dir || file_media_type(path).is_none() {
+    let Some(media_type) = file_media_type(path) else {
+        return String::new();
+    };
+
+    if is_dir {
         return String::new();
     }
 
@@ -53,6 +57,11 @@ pub fn preview_url(path: &Path, is_dir: bool, modified_ms: i64) -> String {
             return format!("file://{}", p.to_string_lossy());
         }
     }
+
+    if media_type == "image" {
+        return format!("file://{}", path.to_string_lossy());
+    }
+
     String::new()
 }
 

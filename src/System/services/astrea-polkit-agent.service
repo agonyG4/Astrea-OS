@@ -1,0 +1,15 @@
+[Unit]
+Description=Astrea Polkit Authentication Agent
+Documentation=man:polkit(8)
+PartOf=graphical-session.target
+After=graphical-session.target
+Conflicts=hyprpolkitagent.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/quickshell -p %h/.local/share/Astrea/System/auth/astrea-polkit-agent.qml
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

@@ -110,7 +110,7 @@ SystemComponents.TopbarPopup {
 
             color: root.masterMuted
                 ? Qt.rgba(1, 0.23, 0.19, 0.25)
-                : (muteArea.containsMouse ? Theme.separator : Qt.rgba(1, 1, 1, 0.07))
+                : (muteArea.containsMouse ? Theme.shellSeparator : Qt.rgba(1, 1, 1, 0.07))
 
             border.width: 1
             border.color: root.masterMuted
@@ -123,7 +123,7 @@ SystemComponents.TopbarPopup {
             Text {
                 anchors.centerIn: parent
                 text:  root.volIcon(root.masterVol, root.masterMuted)
-                color: root.masterMuted ? Theme.iconWarning : Theme.iconMain
+                color: root.masterMuted ? Theme.iconWarning : Theme.shellIconMain
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSizeBody }
                 Behavior on color { ColorAnimation { duration: Theme.animationFast } }
             }
