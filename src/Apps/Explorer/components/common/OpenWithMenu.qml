@@ -5,6 +5,7 @@ import QtQuick.Window 2.15
 import Quickshell.Io
 import "../.."
 import "../../QuickshellComponents" as ShellComponents
+import "../../AstreaI18n" as AstreaI18n
 
 Item {
     id: root
@@ -69,7 +70,7 @@ Item {
 
     Window {
         id: openWithWindow
-        title: root.targetIsDirectory ? "Abrir pasta" : "Abrir com"
+        title: root.targetIsDirectory ? ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.title.open_folder"]) || "Open Folder") : ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.title.open_with"]) || "Open With")
         width: 430
         height: Math.min(720, Math.max(520, 220 + appsList.contentHeight))
         color: Theme.bg
@@ -118,7 +119,7 @@ Item {
 
                         Text {
                             Layout.fillWidth: true
-                            text: root.targetIsDirectory ? "Abrir pasta" : "Abrir com"
+                            text: root.targetIsDirectory ? ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.title.open_folder"]) || "Open Folder") : ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.title.open_with"]) || "Open With")
                             color: Theme.text
                             font.pixelSize: 20
                             font.weight: Font.DemiBold
@@ -144,12 +145,12 @@ Item {
                 Text {
                     Layout.fillWidth: true
                     text: root.loading
-                        ? "Procurando apps compatíveis..."
+                        ? ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.text.searching_compatible_apps"]) || "Searching for compatible apps...")
                         : root.errorText !== ""
                             ? root.errorText
                             : appsModel.count === 0
-                                ? "Nenhum app compatível encontrado para este arquivo."
-                                : "Escolha um aplicativo para abrir " + (root.targetName || "este item")
+                                ? ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.text.no_compatible_apps_for_file"]) || "No compatible app found for this file.")
+                                : ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.text.choose_app_to_open"]) || "Choose an app to open ") + (root.targetName || ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.text.this_item"]) || "this item"))
                     color: root.errorText !== "" ? "#ff6b6b" : Theme.textSec
                     font.pixelSize: 13
                     wrapMode: Text.WordWrap
@@ -279,7 +280,7 @@ Item {
                                 Text {
                                     id: setDefaultText
                                     anchors.centerIn: parent
-                                    text: "Definir padrão"
+                                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.label.set_as_default"]) || "Set as default")
                                     color: Theme.textSec
                                     font.pixelSize: 11
                                 }
@@ -303,7 +304,7 @@ Item {
                                 Text {
                                     id: defaultText
                                     anchors.centerIn: parent
-                                    text: "padrão"
+                                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.label.default"]) || "Default")
                                     color: "#9fd0ff"
                                     font.pixelSize: 11
                                     font.weight: Font.Medium
@@ -328,7 +329,7 @@ Item {
 
                         Text {
                             anchors.centerIn: parent
-                            text: "Cancelar"
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.label.cancel"]) || "Cancel")
                             color: Theme.text
                             font.pixelSize: 13
                         }
@@ -357,7 +358,7 @@ Item {
                 try {
                     var payload = JSON.parse(text || "{}")
                     if (payload.ok === false) {
-                        root.errorText = payload.error || "Nao foi possivel listar apps"
+                        root.errorText = payload.error || ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.error.could_not_list_apps"]) || "Could not list apps")
                         return
                     }
                     root.mimeText = payload.mime || ""
@@ -365,14 +366,14 @@ Item {
                     var sections = payload.sections || []
                     var apps = payload.apps || []
                     if (apps.length > 0) {
-                        appsModel.append({ "item_type": "section", "title": "Aplicativos recomendados" })
+                        appsModel.append({ "item_type": "section", "title": ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.label.recommended_apps"]) || "Recommended apps") })
                         for (var i = 0; i < apps.length; i++) {
                             apps[i].item_type = "app"
                             appsModel.append(apps[i])
                         }
                     }
                 } catch (error) {
-                    root.errorText = "Resposta invalida"
+                    root.errorText = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.error.invalid_response"]) || "Invalid response")
                 }
             }
         }
@@ -382,7 +383,7 @@ Item {
         onExited: function(exitCode) {
             root.loading = false
             if (exitCode !== 0 && root.errorText === "")
-                root.errorText = "Nao foi possivel listar apps"
+                root.errorText = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.error.could_not_list_apps"]) || "Could not list apps")
         }
     }
 
@@ -401,11 +402,11 @@ Item {
                 try {
                     var payload = JSON.parse(text || "{}")
                     if (payload.ok === false) {
-                        root.errorText = payload.error || "Nao foi possivel alterar o app padrao"
+                        root.errorText = payload.error || ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.error.could_not_change_default_app"]) || "Could not change the default app")
                         return
                     }
                 } catch (error) {
-                    root.errorText = "Resposta invalida"
+                    root.errorText = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.error.invalid_response"]) || "Invalid response")
                     return
                 }
                 root.openForPath(root.targetPath)
@@ -416,7 +417,7 @@ Item {
         }
         onExited: function(exitCode) {
             if (exitCode !== 0 && root.errorText === "")
-                root.errorText = "Nao foi possivel alterar o app padrao"
+                root.errorText = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.common.open_with_menu.error.could_not_change_default_app"]) || "Could not change the default app")
         }
     }
 }

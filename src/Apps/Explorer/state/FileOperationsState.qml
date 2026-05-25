@@ -1,5 +1,6 @@
 import QtQuick 2.15
 import Quickshell.Io
+import "../AstreaI18n" as AstreaI18n
 
 QtObject {
     id: ops
@@ -65,7 +66,7 @@ QtObject {
         if (app.selectedFiles.length === 0) return
         clipboardFiles = app.selectedFiles.map(function(name) { return joinPath(app.currentPath, name) })
         clipboardMode = "copy"
-        fileOperationStatus = clipboardFiles.length + " item(ns) copiados para a area de transferencia interna"
+        fileOperationStatus = clipboardFiles.length + " " + (clipboardFiles.length === 1 ? (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.label.item_singular"]) || "item")) : (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.label.item_plural"]) || "items"))) + " " + (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.status.copied_to_internal_clipboard"]) || "copied to internal clipboard"))
         syncSystemClipboardFiles(clipboardFiles)
     }
 
@@ -81,7 +82,7 @@ QtObject {
         }
         clipboardFiles = newlyCut
         clipboardMode = "cut"
-        fileOperationStatus = clipboardFiles.length + " item(ns) recortados para mover"
+        fileOperationStatus = clipboardFiles.length + " " + (clipboardFiles.length === 1 ? (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.label.item_singular"]) || "item")) : (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.label.item_plural"]) || "items"))) + " " + (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.status.cut_pending_move"]) || "cut (move pending)"))
         syncSystemClipboardFiles(clipboardFiles)
     }
 
@@ -980,9 +981,9 @@ QtObject {
                 return
             var err = String(systemClipboardWriteStderr.text || "")
             if (err.indexOf("wl-copy") !== -1 || err.indexOf("not found") !== -1)
-                ops.fileOperationStatus = "Clipboard interno ok; wl-copy indisponivel"
+                ops.fileOperationStatus = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.status.internal_clipboard_ok_wl_copy_unavailable"]) || "Internal clipboard OK; wl-copy unavailable")
             else
-                ops.fileOperationStatus = "Clipboard interno ok; falha ao sincronizar clipboard do sistema"
+                ops.fileOperationStatus = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.state.file_operations.status.internal_clipboard_ok_failed_sync_system_clipboard"]) || "Internal clipboard OK; failed to sync system clipboard")
         }
     }
 
