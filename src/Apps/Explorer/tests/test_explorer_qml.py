@@ -38,5 +38,12 @@ class ExplorerQmlShortcutWiringTests(unittest.TestCase):
         self.assertIn("shortcut: StandardKey.Paste", main_qml)
         self.assertIn("fileClipboardShortcutAllowed", main_qml)
 
+    def test_focus_file_surface_targets_content_item(self):
+        main_qml = (APP_ROOT / "Main.qml").read_text(encoding="utf-8")
+
+        self.assertIn("function focusFileSurface()", main_qml)
+        self.assertIn("contentItem.forceActiveFocus", main_qml)
+        self.assertNotIn("\n        forceActiveFocus()\n", main_qml)
+
 if __name__ == "__main__":
     unittest.main()

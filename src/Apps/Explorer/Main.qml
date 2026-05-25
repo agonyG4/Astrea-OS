@@ -39,7 +39,8 @@ ApplicationWindow {
     readonly property bool fileClipboardShortcutAllowed: !editableTextHasFocus && !modalTextInputActive
 
     function focusFileSurface() {
-        forceActiveFocus()
+        if (contentItem && contentItem.forceActiveFocus)
+            contentItem.forceActiveFocus()
     }
 
     Action { id: zoomInAction; shortcut: "Ctrl++"; onTriggered: AppState.increaseZoom() }
