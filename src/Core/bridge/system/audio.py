@@ -543,15 +543,18 @@ def _desktop_icon_for_app(name: str, props: dict) -> str:
 
 def _app_group_key(name: str, props: dict, inp: dict) -> str:
     normalized = str(name or "").strip().casefold()
-    process_id = str(props.get("application.process.id", "")).strip()
-    if process_id and normalized:
-        return f"pid:{process_id}:{normalized}"
-    client_id = str(props.get("client.id") or inp.get("client") or "").strip()
-    if client_id and normalized:
-        return f"client:{client_id}:{normalized}"
     restore_id = str(props.get("module-stream-restore.id", "")).strip().casefold()
     if restore_id:
         return f"restore:{restore_id}"
+    app_id = str(props.get("application.id") or props.get("application.name") or "").strip().casefold()
+    if app_id and normalized:
+        return f"app:{app_id}:{normalized}"
+    client_id = str(props.get("client.id") or inp.get("client") or "").strip()
+    if client_id and normalized:
+        return f"client:{client_id}:{normalized}"
+    process_id = str(props.get("application.process.id", "")).strip()
+    if process_id and normalized:
+        return f"pid:{process_id}:{normalized}"
     return f"input:{inp.get('index', 0)}"
 
 

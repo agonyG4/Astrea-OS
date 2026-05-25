@@ -459,12 +459,28 @@ Item {
 
         Timer { id: warmTimer; interval: 80; repeat: false; onTriggered: grid.warmVisible() }
 
+
+        TapHandler {
+            acceptedButtons: Qt.LeftButton
+            gesturePolicy: TapHandler.ReleaseWithinBounds
+
+            onTapped: function(eventPoint, button) {
+                var idx = grid.indexAt(eventPoint.position.x, eventPoint.position.y)
+                if (idx !== -1)
+                    return
+                root.resetActivationCandidate()
+                root.Window.window.focusFileSurface()
+                AppState.clearSelection()
+            }
+        }
+
         TapHandler {
             acceptedButtons: Qt.RightButton
             gesturePolicy: TapHandler.ReleaseWithinBounds
 
             onTapped: function(eventPoint, button) {
                 root.resetActivationCandidate()
+                root.Window.window.focusFileSurface()
                 AppState.clearSelection()
                 const pt = grid.mapToItem(contextMenu,
                                           eventPoint.position.x,
@@ -655,6 +671,7 @@ Item {
                                     mouse.accepted = true
                                     root.cancelQueuedIconDrag()
                                     tile.dragging = false
+                                    root.Window.window.focusFileSurface()
                                     AppState.handleSelection(
                                         itemName, itemSourceIndex,
                                         Boolean(mouse.modifiers & Qt.ControlModifier),
@@ -690,6 +707,7 @@ Item {
                                 root.cancelQueuedIconDrag()
                                 tile.dragging = false
                                 if (mouse.button === Qt.LeftButton) {
+                                    root.Window.window.focusFileSurface()
                                     root.handlePrimaryItemClick(
                                         itemPath, itemIsDir, itemUrl, itemName, itemSourceIndex, mouse.modifiers)
                                     return

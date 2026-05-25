@@ -26,5 +26,17 @@ class ExplorerQmlFeatureRemovalTests(unittest.TestCase):
                 self.assertNotIn(forbidden, combined)
 
 
+class ExplorerQmlShortcutWiringTests(unittest.TestCase):
+    def test_main_qml_routes_clipboard_shortcuts_through_actions(self):
+        main_qml = (APP_ROOT / "Main.qml").read_text(encoding="utf-8")
+
+        self.assertIn("id: explorerCopyAction", main_qml)
+        self.assertIn("id: explorerCutAction", main_qml)
+        self.assertIn("id: explorerPasteAction", main_qml)
+        self.assertIn("shortcut: StandardKey.Copy", main_qml)
+        self.assertIn("shortcut: StandardKey.Cut", main_qml)
+        self.assertIn("shortcut: StandardKey.Paste", main_qml)
+        self.assertIn("fileClipboardShortcutAllowed", main_qml)
+
 if __name__ == "__main__":
     unittest.main()

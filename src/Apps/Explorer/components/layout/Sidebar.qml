@@ -41,6 +41,7 @@ Item {
     property bool   sidebarMenuCanPin:    false
     property bool   sidebarMenuIsFavorite:false
     property string desktopLinkPath:      ""
+    property string desktopLinkError:     ""
 
     readonly property color sidebarIconIdle: Theme.isLight ? UI.Theme.textSecondary : Qt.rgba(1, 1, 1, 0.78)
     readonly property color sidebarIconHover: UI.Theme.textPrimary
@@ -117,6 +118,7 @@ Item {
         if (sidebarMenuPath === "" || sidebarMenuPath.indexOf("/") !== 0)
             return
         desktopLinkPath = sidebarMenuPath
+        desktopLinkError = ""
         closeMenus()
         desktopLinkProcess.running = false
         desktopLinkProcess.running = true
@@ -324,7 +326,7 @@ Item {
             z:           1
 
             Common.ContextMenuAction {
-                label: root.driveMenuMounted ? "Abrir" : "Montar"
+                label: root.driveMenuMounted ? (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.open"]) || "Open")) : (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.mount"]) || "Mount"))
                 actionEnabled: !root.driveMenuBusy && (root.driveMenuMounted || root.driveMenuCanMount)
                 onTriggered: {
                     root.closeDriveMenu()
@@ -357,7 +359,7 @@ Item {
             Common.ContextMenuDivider {}
 
             Common.ContextMenuAction {
-                label: root.driveMenuAutoMount ? "Não montar sempre" : "Montar sempre"
+                label: root.driveMenuAutoMount ? (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.do_not_always_mount"]) || "Do not always mount")) : (((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.always_mount"]) || "Always mount"))
                 actionEnabled: !root.driveMenuBusy
                 onTriggered: {
                     root.closeDriveMenu()
@@ -375,7 +377,7 @@ Item {
             z:           1
 
             Common.ContextMenuAction {
-                label: "Abrir"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.open"]) || "Open")
                 actionEnabled: root.sidebarMenuPath !== ""
                 onTriggered: {
                     root.closeSidebarMenu()
@@ -387,7 +389,7 @@ Item {
             }
 
             Common.ContextMenuAction {
-                label: "Abrir em nova aba"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.open_in_new_tab"]) || "Open in new tab")
                 actionEnabled: root.sidebarMenuPath !== "" && root.sidebarMenuPath.indexOf("/") === 0
                 onTriggered: {
                     root.closeSidebarMenu()
@@ -398,7 +400,7 @@ Item {
             Common.ContextMenuDivider { visible: root.sidebarMenuCanPin }
 
             Common.ContextMenuAction {
-                label: "Fixar na barra lateral"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.pin_to_sidebar"]) || "Pin to sidebar")
                 visible: root.sidebarMenuCanPin && !root.sidebarMenuIsFavorite
                 actionEnabled: true
                 onTriggered: {
@@ -410,7 +412,7 @@ Item {
             Common.ContextMenuDivider {}
 
             Common.ContextMenuAction {
-                label: "Criar atalho na Área de Trabalho"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.create_desktop_shortcut"]) || "Create desktop shortcut")
                 actionEnabled: root.sidebarMenuPath !== "" && root.sidebarMenuPath.indexOf("/") === 0
                 onTriggered: root.putSidebarItemOnDesktop()
             }
@@ -424,7 +426,7 @@ Item {
             Common.ContextMenuDivider { visible: root.sidebarMenuCanPin && root.sidebarMenuIsFavorite }
 
             Common.ContextMenuAction {
-                label: "Remover dos Favoritos"
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.remove_from_favorites"]) || "Remove from favorites")
                 visible: root.sidebarMenuCanPin && root.sidebarMenuIsFavorite
                 actionEnabled: true
                 destructive: true
@@ -438,29 +440,41 @@ Item {
 
     Process {
         id: desktopLinkProcess
-        command: [
-            "bash", "-lc",
-            "set -e; target=\"$1\"; " +
-            "[ -e \"$target\" ] || [ -L \"$target\" ] || exit 1; " +
-            "desktop=$(xdg-user-dir DESKTOP 2>/dev/null || true); " +
-            "[ -n \"$desktop\" ] && [ \"$desktop\" != \"$HOME\" ] || desktop=\"$HOME/Área de trabalho\"; " +
-            "[ -d \"$desktop\" ] || desktop=\"$HOME/Desktop\"; " +
-            "mkdir -p \"$desktop\"; " +
-            "name=$(basename -- \"$target\"); dest=\"$desktop/$name\"; " +
-            "if [ -e \"$dest\" ] || [ -L \"$dest\" ]; then " +
-            "  i=2; while [ -e \"$desktop/$name $i\" ] || [ -L \"$desktop/$name $i\" ]; do i=$((i+1)); done; dest=\"$desktop/$name $i\"; " +
-            "fi; " +
-            "ln -s -- \"$target\" \"$dest\"",
-            "_",
-            root.desktopLinkPath
-        ]
+        command: ["python3", AppState.helperPath, "create-desktop-shortcut", root.desktopLinkPath]
         running: false
-        stdout: StdioCollector {}
-        stderr: StdioCollector {}
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    var payload = JSON.parse(text || "{}")
+                    if (payload.ok !== true)
+                        root.desktopLinkError = payload.error || ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.error.failed_to_create_shortcut"]) || "Failed to create shortcut")
+                } catch (error) {
+                    root.desktopLinkError = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.error.invalid_shortcut_response"]) || "Invalid shortcut response")
+                }
+            }
+        }
+        stderr: StdioCollector {
+            onStreamFinished: if (text.trim() !== "") root.desktopLinkError = text.trim()
+        }
         onExited: function(exitCode) {
             if (exitCode === 0 && AppState.currentPath === AppState.defaultSidebarFavoritePaths[0])
                 AppState.refreshCurrentFolder()
+            if (exitCode !== 0 && root.desktopLinkError === "")
+                root.desktopLinkError = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.error.failed_to_create_desktop_shortcut"]) || "Failed to create desktop shortcut")
         }
+    }
+
+    Text {
+        visible: root.desktopLinkError !== ""
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 8
+        color: "#ff9a9a"
+        font.pixelSize: 11
+        text: root.desktopLinkError
+        wrapMode: Text.WordWrap
+        z: 100
     }
 
     Window {
@@ -494,15 +508,15 @@ Item {
             isLoading = true
             errorText = ""
             propType = ""
-            propSize = "Carregando..."
-            propModified = "Carregando..."
-            propPerms = "Carregando..."
-            propContains = targetIsDir ? "Carregando..." : ""
+            propSize = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.text.loading"]) || "Loading...")
+            propModified = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.text.loading"]) || "Loading...")
+            propPerms = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.text.loading"]) || "Loading...")
+            propContains = targetIsDir ? ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.text.loading"]) || "Loading...") : ""
             propProcess.command = [
                 "bash", "-lc",
                 "target=\"$1\"; " +
-                "[ -e \"$target\" ] || [ -L \"$target\" ] || { echo 'ERROR|Arquivo nao encontrado'; exit 1; }; " +
-                "meta=$(stat -Lc '%F|%s|%Y|%A' -- \"$target\" 2>/dev/null) || { echo 'ERROR|Erro ao ler metadados'; exit 1; }; " +
+                "[ -e \"$target\" ] || [ -L \"$target\" ] || { echo 'ERROR|'$2; exit 1; }; " +
+                "meta=$(stat -Lc '%F|%s|%Y|%A' -- \"$target\" 2>/dev/null) || { echo 'ERROR|'$3; exit 1; }; " +
                 "IFS='|' read -r kind bytes modified perms <<EOF\n$meta\nEOF\n" +
                 "if [ -d \"$target\" ]; then " +
                 "  size=$(du -sb -- \"$target\" 2>/dev/null | cut -f1); " +
@@ -512,7 +526,9 @@ Item {
                 "  printf 'OK|%s|%s|%s|%s|\\n' \"$kind\" \"$bytes\" \"$modified\" \"$perms\"; " +
                 "fi",
                 "_",
-                sidebarProperties.targetPath
+                sidebarProperties.targetPath,
+                ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.error.file_not_found"]) || "File not found"),
+                ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.error.failed_to_read_metadata"]) || "Failed to read metadata")
             ]
             propProcess.running = false
             propProcess.running = true
@@ -562,12 +578,12 @@ Item {
 
             Repeater {
                 model: [
-                    { lbl: "Caminho", val: sidebarProperties.targetPath },
-                    { lbl: "Tipo", val: sidebarProperties.propType },
-                    { lbl: "Tamanho", val: sidebarProperties.propSize },
-                    { lbl: "Conteúdo", val: sidebarProperties.propContains },
-                    { lbl: "Modificado", val: sidebarProperties.propModified },
-                    { lbl: "Permissões", val: sidebarProperties.propPerms }
+                    { lbl: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.path"]) || "Path"), val: sidebarProperties.targetPath },
+                    { lbl: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.type"]) || "Type"), val: sidebarProperties.propType },
+                    { lbl: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.size"]) || "Size"), val: sidebarProperties.propSize },
+                    { lbl: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.content"]) || "Content"), val: sidebarProperties.propContains },
+                    { lbl: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.modified"]) || "Modified"), val: sidebarProperties.propModified },
+                    { lbl: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.label.permissions"]) || "Permissions"), val: sidebarProperties.propPerms }
                 ]
 
                 Row {
@@ -647,12 +663,12 @@ Item {
                 onStreamFinished: {
                     var raw = text.trim()
                     if (!raw) {
-                        sidebarProperties.errorText = "Sem resposta do sistema."
+                        sidebarProperties.errorText = ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.error.no_system_response"]) || "No response from system.")
                         return
                     }
                     var parts = raw.split("|")
                     if (parts[0] !== "OK") {
-                        sidebarProperties.errorText = parts.length > 1 ? parts.slice(1).join("|") : "Erro ao carregar."
+                        sidebarProperties.errorText = parts.length > 1 ? parts.slice(1).join("|") : ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.layout.sidebar.error.failed_to_load"]) || "Failed to load.")
                         return
                     }
                     sidebarProperties.errorText = ""

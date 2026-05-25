@@ -22,6 +22,7 @@ Rectangle {
     property int selectedSuggestionIndex: -1
     readonly property bool searching: AppState.searchVisible || AppState.searchActive
     property bool emptyTrashConfirmVisible: false
+    property int suggestionRequestId: 0
 
     // ── Helpers ──────────────────────────────────────────────────
     function normalizePathInput(text) {
@@ -102,12 +103,14 @@ Rectangle {
             }
         }
 
+        suggestionRequestId += 1
         suggestionProcess.command = [
             "python3",
             AppState.helperPath,
             "suggest-dirs",
             basePath,
-            prefix
+            prefix,
+            "--request-id", String(suggestionRequestId)
         ]
         suggestionProcess.running = false
         suggestionProcess.running = true
@@ -954,9 +957,14 @@ Rectangle {
         running: false
         stdout: StdioCollector {
             onStreamFinished: {
+                var lines = text.split("\n")
+                var token = ""
+                if (lines.length > 0 && lines[0].indexOf("__request_id__:") === 0)
+                    token = lines.shift().slice("__request_id__:".length)
+                if (token !== "" && Number(token) !== toolbar.suggestionRequestId)
+                    return
                 pathSuggestions.clear()
                 toolbar.selectedSuggestionIndex = -1
-                var lines = text.split("\n")
                 for (var i = 0; i < lines.length; i++) {
                     var entry = lines[i].trim()
                     if (entry)

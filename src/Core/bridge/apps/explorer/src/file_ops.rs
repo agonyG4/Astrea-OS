@@ -50,7 +50,7 @@ fn parse_event_format(args: &[String]) -> (EventFormat, Vec<String>) {
 
 fn run_inner(args: &[String], format: EventFormat) -> Result<(), String> {
     if args.len() < 5 {
-        return Err("usage: explorer_backend file-op <copy|move|cut> <destination> <overwrite|skip|rename|keep-both> <rename> <paths...>".into());
+        return Err("usage: explorer_backend file-op <copy|move|cut> <destination> <merge|overwrite|skip|rename|keep-both> <rename> <paths...>".into());
     }
 
     let mode = parse_file_op_mode(&args[0])?;
@@ -130,7 +130,7 @@ fn parse_conflict_policy(policy: &str) -> Result<ConflictPolicy, String> {
     match policy {
         "skip" => Ok(ConflictPolicy::Skip),
         "overwrite" => Ok(ConflictPolicy::Overwrite),
-        "merge" => Ok(ConflictPolicy::Overwrite),
+        "merge" => Ok(ConflictPolicy::Overwrite), // merge directories; replaces files only when collisions occur
         "rename" => Ok(ConflictPolicy::Rename),
         "keep-both" => Ok(ConflictPolicy::KeepBoth),
         other => Err(format!("unsupported conflict policy: {other}")),
