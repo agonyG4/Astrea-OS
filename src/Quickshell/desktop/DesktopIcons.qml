@@ -323,7 +323,7 @@ Item {
         if (appLoadProcess.running)
             appLoadProcess.running = false
         appLoadStatus = "Atualizando..."
-        appLoadProcess.command = ["python3", scriptPath, "--json", "--write"]
+        appLoadProcess.command = ["python3", scriptPath, "--json"]
         appLoadProcess.running = true
     }
 

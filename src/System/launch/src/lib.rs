@@ -210,11 +210,12 @@ pub fn run_launch(request: LaunchRequest) -> Result<LaunchRecord, String> {
 
     let spawn = spawn_command(&command, config.isolate_launches);
     let (pid, status, detail) = match spawn {
-        Ok(pid) => {
+        Ok(pid_raw) => {
+            let launch_pid = normalize_launch_pid(pid_raw);
             if allow_pid_boost {
-                request_boost(&config, "app-launch-pid", Some(pid), boost_ms);
+                request_boost(&config, "app-launch-pid", launch_pid, boost_ms);
             }
-            (Some(pid), "ok".to_string(), "spawned".to_string())
+            (launch_pid, "ok".to_string(), "spawned".to_string())
         }
         Err(err) => (None, "error".to_string(), err),
     };
@@ -683,12 +684,33 @@ fn prepend_env(command: &mut CommandSpec, vars: Vec<(String, String)>) {
 }
 
 fn spawn_command(command: &CommandSpec, isolate_launches: bool) -> Result<u32, String> {
-    if isolate_launches && command_available("systemd-run") {
-        if let Ok(pid) = spawn_command_systemd(command) {
-            return Ok(pid);
+    spawn_command_with(
+        command,
+        isolate_launches,
+        command_available("systemd-run"),
+        spawn_command_systemd,
+        spawn_command_direct,
+    )
+}
+
+fn spawn_command_with<FSystemd, FDirect>(
+    command: &CommandSpec,
+    isolate_launches: bool,
+    systemd_available: bool,
+    systemd_spawn: FSystemd,
+    direct_spawn: FDirect,
+) -> Result<u32, String>
+where
+    FSystemd: Fn(&CommandSpec) -> Result<u32, String>,
+    FDirect: Fn(&CommandSpec) -> Result<u32, String>,
+{
+    if isolate_launches && systemd_available {
+        match systemd_spawn(command) {
+            Ok(pid) => return Ok(pid),
+            Err(_) => return direct_spawn(command),
         }
     }
-    spawn_command_direct(command)
+    direct_spawn(command)
 }
 
 fn spawn_command_direct(command: &CommandSpec) -> Result<u32, String> {
@@ -736,7 +758,9 @@ fn spawn_command_systemd(command: &CommandSpec) -> Result<u32, String> {
 
     let pid = wait_for_unit_main_pid(&unit).unwrap_or(0);
     if pid == 0 {
-        return Err("systemd-run did not expose a main pid".into());
+        // systemd-run --no-block can succeed before MainPID is visible;
+        // treat launch as accepted and return a sentinel pid.
+        return Ok(0);
     }
     if program.is_empty() {
         return Err("empty command".into());
@@ -792,6 +816,15 @@ fn unit_main_pid(unit: &str) -> Option<u32> {
         .trim()
         .parse::<u32>()
         .ok()
+}
+
+
+fn normalize_launch_pid(pid: u32) -> Option<u32> {
+    if pid == 0 {
+        None
+    } else {
+        Some(pid)
+    }
 }
 
 fn request_boost(config: &LaunchConfig, reason: &str, pid: Option<u32>, duration_ms: u64) {
@@ -1203,5 +1236,62 @@ mod tests {
                 "--flag".to_string()
             ]
         );
+    }
+}
+
+
+#[cfg(test)]
+mod launch_spawn_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    fn sample_command() -> CommandSpec {
+        CommandSpec {
+            argv: vec!["/usr/bin/true".into()],
+            working_dir: None,
+            desktop_file: None,
+        }
+    }
+
+    #[test]
+    fn systemd_success_with_zero_pid_does_not_fallback_to_direct_spawn() {
+        let direct_called = AtomicBool::new(false);
+        let result = spawn_command_with(
+            &sample_command(),
+            true,
+            true,
+            |_| Ok(0),
+            |_| {
+                direct_called.store(true, Ordering::SeqCst);
+                Ok(42)
+            },
+        );
+
+        assert_eq!(result.expect("launch accepted"), 0);
+        assert!(!direct_called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn systemd_failure_falls_back_to_direct_spawn() {
+        let direct_called = AtomicBool::new(false);
+        let result = spawn_command_with(
+            &sample_command(),
+            true,
+            true,
+            |_| Err("systemd failed".into()),
+            |_| {
+                direct_called.store(true, Ordering::SeqCst);
+                Ok(99)
+            },
+        );
+
+        assert_eq!(result.expect("fallback launch"), 99);
+        assert!(direct_called.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn zero_pid_is_treated_as_none_for_pid_boosting() {
+        assert_eq!(normalize_launch_pid(0), None);
+        assert_eq!(normalize_launch_pid(1234), Some(1234));
     }
 }

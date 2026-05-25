@@ -16,6 +16,12 @@ class LockscreenSecurityTests(unittest.TestCase):
         self.assertRegex(self.source, r"ShortcutInhibitor\s*\{[^}]*enabled:\s*true")
         self.assertRegex(self.source, r"ShortcutInhibitor\s*\{[^}]*window:\s*lockWindow")
 
+
+    def test_auth_helper_path_uses_astrea_root_fallback(self):
+        self.assertIn('Quickshell.env("ASTREA_ROOT") || (homeDir + "/.local/share/Astrea")', self.source)
+        self.assertIn('readonly property string authHelperPath: astreaRoot + "/System/auth/auth_helper"', self.source)
+        self.assertIn('command: [root.authHelperPath, root.currentUser]', self.source)
+
     def test_no_meta_key_unlock_bypass(self):
         self.assertNotIn("Qt.MetaModifier", self.source)
         self.assertNotRegex(
