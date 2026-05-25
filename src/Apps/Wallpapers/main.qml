@@ -206,7 +206,6 @@ ApplicationWindow {
             statusText = code === 0 ? "Removed" : ""
             if (code === 0)
                 pendingSlug = ""
-            deleteProc.output = ""
             loadWallpapers()
         }
     }

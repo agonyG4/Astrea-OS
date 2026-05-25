@@ -4,32 +4,33 @@ from __future__ import annotations
 import argparse
 import sys
 
-import gi
+def load_gtk():
+    import gi
+    gi.require_version("Gtk", "4.0")
+    gi.require_version("Gdk", "4.0")
+    gi.require_version("GLib", "2.0")
+    from gi.repository import Gdk, GLib, Gtk
+    return Gdk, GLib, Gtk
 
-gi.require_version("Gtk", "4.0")
-gi.require_version("Gdk", "4.0")
-gi.require_version("GLib", "2.0")
-from gi.repository import Gdk, GLib, Gtk
 
-
-class PromptWindow(Gtk.Window):
-    def __init__(self, args: argparse.Namespace, loop: GLib.MainLoop, exit_code: list[int]) -> None:
-        super().__init__()
+class PromptWindow:
+    def __init__(self, args: argparse.Namespace, loop, exit_code: list[int], Gtk) -> None:
         self.args = args
         self.loop = loop
         self.exit_code = exit_code
-        self.set_title("Astrea Authentication")
-        self.set_default_size(430, -1)
-        self.set_resizable(False)
-        self.set_modal(True)
-        self.connect("close-request", self.cancel)
+        self.window = Gtk.Window()
+        self.window.connect("close-request", self.cancel)
+        self.window.set_title("Astrea Authentication")
+        self.window.set_default_size(430, -1)
+        self.window.set_resizable(False)
+        self.window.set_modal(True)
 
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         root.set_margin_top(18)
         root.set_margin_bottom(18)
         root.set_margin_start(18)
         root.set_margin_end(18)
-        self.set_child(root)
+        self.window.set_child(root)
 
         title = Gtk.Label(label="Authentication Required", xalign=0)
         title.add_css_class("title")
@@ -117,6 +118,7 @@ def main() -> int:
     if args.self_test:
         print("astrea-polkit-prompt-ok")
         return 0
+    Gdk, GLib, Gtk = load_gtk()
 
     css = Gtk.CssProvider()
     css.load_from_data(
@@ -181,10 +183,10 @@ def main() -> int:
     )
     loop = GLib.MainLoop()
     exit_code = [1]
-    window = PromptWindow(args, loop, exit_code)
-    window.present()
+    window = PromptWindow(args, loop, exit_code, Gtk)
+    window.window.present()
     loop.run()
-    window.destroy()
+    window.window.destroy()
     return int(exit_code[0])
 
 
