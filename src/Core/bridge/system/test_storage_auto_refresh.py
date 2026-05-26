@@ -4,6 +4,7 @@ import importlib.util
 import io
 import json
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -211,6 +212,34 @@ prealloc   100%       23M          23M          25M
             paths = storage.default_compsize_paths()
 
         self.assertEqual(paths, [Path("/"), Path("/home")])
+
+    def test_compsize_stats_uses_stale_exact_cache_when_live_scan_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "storage-compsize.json"
+            cache_path.write_text(json.dumps({
+                "exact": True,
+                "compressed_total": 149_000_000_000,
+                "zstd_disk_usage": 47_300_000_000,
+                "zstd_saved": 101_700_000_000,
+                "source": "manual-compsize",
+                "updated_at": time.time() - storage.COMPSIZE_CACHE_AFTER_SECONDS - 60,
+            }), encoding="utf-8")
+            failed = storage.subprocess.CompletedProcess(
+                ["compsize", "-b", "-x", "/"],
+                1,
+                stdout="",
+                stderr="/root: Permission denied",
+            )
+
+            with mock.patch.object(storage, "COMPSIZE_CACHE", cache_path), \
+                    mock.patch.object(storage.shutil, "which", return_value="/usr/bin/compsize"), \
+                    mock.patch.object(storage.subprocess, "run", return_value=failed):
+                stats = storage.compsize_stats([Path("/")])
+
+        self.assertTrue(stats["exact"])
+        self.assertTrue(stats["stale"])
+        self.assertEqual(stats["zstd_disk_usage"], 47_300_000_000)
+        self.assertEqual(stats["error"], "/root: Permission denied")
 
 
 if __name__ == "__main__":

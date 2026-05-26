@@ -242,13 +242,16 @@ def parse_compsize_bytes(output: str) -> dict:
     return parse_compsize_output(output)
 
 
-def cached_compsize_stats() -> dict:
+def cached_compsize_stats(allow_stale: bool = False) -> dict:
     cached = read_json(COMPSIZE_CACHE, {})
     updated_at = cached.get("updated_at")
     if not updated_at:
         return {}
-    if time.time() - float(updated_at) > COMPSIZE_CACHE_AFTER_SECONDS:
+    age = time.time() - float(updated_at)
+    if age > COMPSIZE_CACHE_AFTER_SECONDS and not allow_stale:
         return {}
+    cached["stale"] = age > COMPSIZE_CACHE_AFTER_SECONDS
+    cached["age_seconds"] = max(0, age)
     return cached
 
 
@@ -256,17 +259,30 @@ def compsize_stats(paths: list[Path]) -> dict:
     cached = cached_compsize_stats()
     if cached:
         return cached
+    stale_cached = cached_compsize_stats(allow_stale=True)
     binary = shutil.which("compsize")
     if not binary:
+        if stale_cached:
+            stale_cached["error"] = "compsize not installed"
+            return stale_cached
         return {"exact": False, "error": "compsize not installed", "source": "unavailable"}
     command = [binary, "-b", "-x"] + [str(path) for path in paths if path.exists()]
     if len(command) <= 3:
+        if stale_cached:
+            stale_cached["error"] = "no compsize paths"
+            return stale_cached
         return {"exact": False, "error": "no compsize paths", "source": "unavailable"}
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=8)
     except (OSError, subprocess.TimeoutExpired) as err:
+        if stale_cached:
+            stale_cached["error"] = str(err)
+            return stale_cached
         return {"exact": False, "error": str(err), "source": "compsize"}
     if result.returncode != 0:
+        if stale_cached:
+            stale_cached["error"] = (result.stderr or result.stdout or "compsize failed").strip()
+            return stale_cached
         return {
             "exact": False,
             "error": (result.stderr or result.stdout or "compsize failed").strip(),
@@ -703,9 +719,13 @@ def print_sense_json(sense_script: Path) -> int:
             payload["compressed_total"] = int(exact.get("compressed_total") or 0)
             payload["compressed_saved"] = int(exact.get("zstd_saved") or exact.get("compressed_saved") or 0)
             payload["zstd_disk_usage"] = int(exact.get("zstd_disk_usage") or 0)
-            payload["compressed_source"] = "compsize"
+            payload["compressed_source"] = exact.get("source") or "compsize"
             payload["compressed_exact"] = True
+            payload["compressed_stale"] = bool(exact.get("stale"))
+            payload["compressed_updated_at"] = exact.get("updated_at")
             payload["compressed_algorithms"] = exact.get("by_algorithm", {})
+            if exact.get("error"):
+                payload["compressed_error"] = exact["error"]
         else:
             payload.setdefault("compressed_source", "allocated-estimate")
             payload.setdefault("compressed_exact", False)

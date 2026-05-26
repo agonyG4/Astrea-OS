@@ -33,6 +33,7 @@ ApplicationWindow {
 
     // ── Navigation state ──────────────────────────────────────────────────
     property int selectedIndex: 0
+    property int currentPageIndex: 0
 
     function resetWindowSize() {
         width = defaultWidth
@@ -46,6 +47,8 @@ ApplicationWindow {
         "pages/display/Display.qml",
         "pages/apps/Apps.qml",
         "pages/system/Performance.qml",
+        "pages/gaming/Gamescope.qml",
+        "pages/gaming/Proton.qml",
         "pages/connectivity/Internet.qml",
         "pages/connectivity/Bluetooth.qml",
         "pages/personalization/Personalization.qml",
@@ -55,18 +58,84 @@ ApplicationWindow {
         "pages/system/Storage.qml"
     ]
 
+    readonly property var sectionPages: ({
+        "-100": {
+            title: "Desempenho",
+            groups: [
+                {
+                    title: "",
+                    items: [
+                        { label: "SteamOS",     sublabel: "Gamescope session, resolution, scaling and launch flags", pageIndex: 6,  sym: "\uf11b", iconKey: "" },
+                        { label: "Proton",      sublabel: "Compatibility flags and astrea-gaming launch command",     pageIndex: 7,  sym: "\uf135", iconKey: "" },
+                        { label: "Performance", sublabel: "Power, latency and game performance controls",             pageIndex: 5,  sym: "",       iconKey: "performance" }
+                    ]
+                }
+            ]
+        },
+        "-101": {
+            title: "Aparência",
+            groups: [
+                {
+                    title: "",
+                    items: [
+                        { label: "Display",         sublabel: "Monitor layout, scale and refresh settings", pageIndex: 3,  sym: "",       iconKey: "display" },
+                        { label: "Personalization", sublabel: "Theme, accent and interface preferences",     pageIndex: 10, sym: "",       iconKey: "theme" },
+                        { label: "Paper",           sublabel: "Wallpaper, lock screen and screen saver",      pageIndex: 11, sym: "",       iconKey: "wallpaper" },
+                        { label: "Island",          sublabel: "Dynamic island and desktop overlay behavior",  pageIndex: 13, sym: "\uf0c2", iconKey: "" }
+                    ]
+                }
+            ]
+        },
+        "-102": {
+            title: "Mais Ajustes",
+            groups: [
+                {
+                    title: "",
+                    items: [
+                        { label: "Language", sublabel: "Language, region and locale preferences", pageIndex: 2,  sym: "\uf1ab", iconKey: "" },
+                        { label: "Apps",     sublabel: "Installed applications and defaults",      pageIndex: 4,  sym: "",       iconKey: "apps" },
+                        { label: "Storage",  sublabel: "Disk usage and cleanup options",           pageIndex: 14, sym: "\uf1c0", iconKey: "" }
+                    ]
+                }
+            ]
+        }
+    })
+
+    function loadPage(index, navIndex) {
+        if (index < 0 || index >= pages.length)
+            return
+        selectedIndex = navIndex === undefined ? index : navIndex
+        currentPageIndex = index
+        pageLoader.setSource(pages[index])
+    }
+
+    function loadSection(index) {
+        const section = sectionPages[String(index)]
+        if (!section)
+            return
+        selectedIndex = index
+        currentPageIndex = -1
+        pageLoader.setSource("pages/SectionOverview.qml", {
+            sectionTitle: section.title,
+            groups: section.groups,
+            sidebarIndex: index
+        })
+    }
+
     function navigateTo(index) {
-        if (index === selectedIndex) {
+        if (index < 0) {
+            loadSection(index)
+            return
+        }
+
+        if (index === currentPageIndex && selectedIndex === index) {
             // Allow returning to the main page of a section if we are on a sub-page (like lockscreen)
             if (pageLoader.source.toString().indexOf(pages[index]) === -1) {
-                pageLoader.setSource(pages[index])
+                loadPage(index, index)
             }
             return
         }
-        selectedIndex = index
-        if (index >= 0 && index < pages.length) {
-            pageLoader.setSource(pages[index])
-        }
+        loadPage(index, index)
     }
 
     function navigateToUserConfig() {
@@ -77,25 +146,21 @@ ApplicationWindow {
     Component.onCompleted: {
         resetWindowSize()
         Qt.callLater(resetWindowSize)
-        pageLoader.setSource(pages[0])
+        loadPage(0, 0)
     }
 
     // ── Nav model ─────────────────────────────────────────────────────────
     ListModel {
         id: navModel
-        ListElement { label: "System";          labelKey: "settings.nav.system";          sym: "\uf303"; iconSource: ""; iconKey: "" } // nf-linux-archlinux
-        ListElement { label: "Software Update"; labelKey: "settings.nav.software_update"; sym: "";       iconSource: ""; iconKey: "software-center" }
-        ListElement { label: "Language";        labelKey: "settings.nav.language";        sym: "\uf1ab"; iconSource: ""; iconKey: "" } // nf-fa-language
-        ListElement { label: "Display";         labelKey: "settings.nav.display";         sym: "";       iconSource: ""; iconKey: "display" }
-        ListElement { label: "Apps";            labelKey: "settings.nav.apps";            sym: "";       iconSource: ""; iconKey: "apps" }
-        ListElement { label: "Performance";     labelKey: "settings.nav.performance";     sym: "";       iconSource: ""; iconKey: "performance" }
-        ListElement { label: "Internet";        labelKey: "settings.nav.internet";        sym: "";       iconSource: ""; iconKey: "network" }
-        ListElement { label: "Bluetooth";       labelKey: "settings.nav.bluetooth";       sym: "";       iconSource: ""; iconKey: "bluetooth" }
-        ListElement { label: "Personalization"; labelKey: "settings.nav.personalization"; sym: "";       iconSource: ""; iconKey: "theme" }
-        ListElement { label: "Paper";           labelKey: "settings.nav.paper";           sym: "";       iconSource: ""; iconKey: "wallpaper" }
-        ListElement { label: "Audio";           labelKey: "settings.nav.audio";           sym: "";       iconSource: ""; iconKey: "audio" }
-        ListElement { label: "Island";          labelKey: "settings.nav.island";          sym: "\uf0c2"; iconSource: ""; iconKey: "" } // nf-fa-cloud
-        ListElement { label: "Storage";         labelKey: "settings.nav.storage";         sym: "\uf1c0"; iconSource: ""; iconKey: "" } // nf-fa-database
+        ListElement { kind: "page";   label: "System";          labelKey: "settings.nav.system";          sym: "\uf303"; iconSource: ""; iconKey: "";                pageIndex: 0;    sectionKey: ""; parentSection: ""; expanded: false }
+        ListElement { kind: "page";   label: "Software Update"; labelKey: "settings.nav.software_update"; sym: "";       iconSource: ""; iconKey: "software-center"; pageIndex: 1;    sectionKey: ""; parentSection: ""; expanded: false }
+        ListElement { kind: "page";   label: "Internet";        labelKey: "settings.nav.internet";        sym: "";       iconSource: ""; iconKey: "network";         pageIndex: 8;    sectionKey: ""; parentSection: ""; expanded: false }
+        ListElement { kind: "page";   label: "Bluetooth";       labelKey: "settings.nav.bluetooth";       sym: "";       iconSource: ""; iconKey: "bluetooth";       pageIndex: 9;    sectionKey: ""; parentSection: ""; expanded: false }
+        ListElement { kind: "page";   label: "Audio";           labelKey: "settings.nav.audio";           sym: "";       iconSource: ""; iconKey: "audio";           pageIndex: 12;   sectionKey: ""; parentSection: ""; expanded: false }
+        ListElement { kind: "spacer"; label: "";                labelKey: "";                            sym: "";       iconSource: ""; iconKey: "";                pageIndex: -999; sectionKey: ""; parentSection: ""; expanded: false }
+        ListElement { kind: "group";  label: "Desempenho";      labelKey: "";                            sym: "";       iconSource: ""; iconKey: "performance";     pageIndex: -100; sectionKey: ""; parentSection: ""; expanded: false }
+        ListElement { kind: "group";  label: "Aparência";       labelKey: "";                            sym: "";       iconSource: ""; iconKey: "theme";           pageIndex: -101; sectionKey: ""; parentSection: ""; expanded: false }
+        ListElement { kind: "group";  label: "Mais Ajustes";    labelKey: "";                            sym: "\uf013"; iconSource: ""; iconKey: "";                pageIndex: -102; sectionKey: ""; parentSection: ""; expanded: false }
     }
 
     // ── Drop shadow ───────────────────────────────────────────────────────
@@ -184,6 +249,9 @@ Item {
             }
             function onProfileImageChanged() {
                 sidebar.avatarVersion += 1
+            }
+            function onNavigateToPage(pageIndex, sidebarIndex) {
+                window.loadPage(pageIndex, sidebarIndex)
             }
         }
 

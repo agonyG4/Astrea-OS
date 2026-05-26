@@ -1,5 +1,6 @@
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Io
 import QtQuick
 
 Item {
@@ -9,6 +10,9 @@ Item {
     property int currentIndex: 0
     property var clients: []
     property int pendingDirection: 1
+    property int pendingOpenOffset: 0
+    property bool loadingClients: false
+    property bool openRequestActive: false
 
     GlobalShortcut {
         name: "alt_tab_next"
@@ -37,7 +41,24 @@ Item {
     }
 
     function openWithClients(direction) {
-        clients = collectClients()
+        if (clientRefreshProc.running) {
+            if (openRequestActive)
+                pendingOpenOffset += direction
+            else {
+                pendingOpenOffset = direction
+                openRequestActive = true
+            }
+            return
+        }
+
+        pendingOpenOffset = direction
+        loadingClients = true
+        openRequestActive = true
+        clientRefreshProc.running = true
+    }
+
+    function finishOpenWithClients(collectedClients) {
+        clients = collectedClients
 
         if (clients.length === 0) {
             cancel()
@@ -45,12 +66,16 @@ Item {
         }
 
         const activeAddress = Hyprland.activeToplevel ? Hyprland.activeToplevel.address : ""
-        let activeIndex = clients.findIndex(client => client.address === activeAddress)
+        let activeIndex = clients.findIndex(client => client.focusHistoryID === 0)
+        if (activeIndex < 0)
+            activeIndex = clients.findIndex(client => client.address === activeAddress)
         if (activeIndex < 0) activeIndex = 0
 
         currentIndex = clients.length > 1
-            ? (activeIndex + direction + clients.length) % clients.length
+            ? (activeIndex + pendingOpenOffset + clients.length) % clients.length
             : 0
+        pendingOpenOffset = 0
+        openRequestActive = false
         open = true
     }
 
@@ -88,6 +113,9 @@ Item {
     function cancel() {
         open = false
         clients = []
+        pendingOpenOffset = 0
+        loadingClients = false
+        openRequestActive = false
     }
 
     function collectClients() {
@@ -104,6 +132,47 @@ Item {
             const address = toplevel.address || ipc.address || ""
             const appClass = ipc.class || ipc.initialClass || ""
             const title = toplevel.title || ipc.title || ipc.initialTitle || appClass || "App"
+            const workspaceId = Number(workspace.id || 0)
+
+            if (!address || ipc.hidden || workspaceId <= 0) continue
+
+            filtered.push({
+                address: address,
+                className: appClass,
+                title: title,
+                name: displayNameFromMetadata(appClass, title),
+                workspaceId: workspaceId,
+                workspaceName: workspace.name || String(workspaceId),
+                focusHistoryID: Number(ipc.focusHistoryID || 999999),
+                icon: iconNameForClient(appClass, title)
+            })
+        }
+
+        filtered.sort((a, b) => {
+            if (a.focusHistoryID !== b.focusHistoryID) return a.focusHistoryID - b.focusHistoryID
+            return (a.name || "").localeCompare(b.name || "")
+        })
+        return filtered
+    }
+
+    function collectClientsFromHyprctl(payload) {
+        let parsed = []
+        try {
+            parsed = JSON.parse(payload || "[]")
+        } catch (error) {
+            return collectClients()
+        }
+
+        if (!Array.isArray(parsed)) return collectClients()
+
+        let filtered = []
+        for (let ipc of parsed) {
+            if (!ipc) continue
+
+            const workspace = ipc.workspace || {}
+            const address = ipc.address || ""
+            const appClass = ipc.class || ipc.initialClass || ""
+            const title = ipc.title || ipc.initialTitle || appClass || "App"
             const workspaceId = Number(workspace.id || 0)
 
             if (!address || ipc.hidden || workspaceId <= 0) continue
@@ -194,5 +263,19 @@ Item {
 
     function titleCase(text) {
         return (text || "App").replace(/[-_.]+/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+    }
+
+    Process {
+        id: clientRefreshProc
+        command: ["hyprctl", "clients", "-j"]
+        running: false
+        stdout: StdioCollector { id: clientRefreshOut }
+        onExited: function(exitCode) {
+            const collectedClients = exitCode === 0 ? root.collectClientsFromHyprctl(clientRefreshOut.text) : root.collectClients()
+            root.loadingClients = false
+            if (!root.openRequestActive)
+                return
+            root.finishOpenWithClients(collectedClients)
+        }
     }
 }

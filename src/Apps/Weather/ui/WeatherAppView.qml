@@ -36,6 +36,10 @@ FloatingWindow {
         return items
     }
 
+    function t(key, fallback, params) {
+        return AstreaI18n.I18n.tr(key, fallback, params)
+    }
+
     Behavior on color {
         ColorAnimation { duration: 220; easing.type: Easing.OutCubic }
     }
@@ -397,14 +401,18 @@ FloatingWindow {
                         rowSpacing: 10
 
                         UI.TextLabel {
-                            text: root.selectedDay ? "Chuva " + root.selectedDay.rain + "%" : ""
+                            text: root.selectedDay ? root.t("apps.weather.ui.weather_app_view.text.rain_percent", "Rain {percent}%", {
+                                percent: root.selectedDay.rain
+                            }) : ""
                             font.pixelSize: UI.Theme.fontSizeLarge
                             textColor: UI.Theme.textPrimary
                             Layout.fillWidth: true
                         }
 
                         UI.TextLabel {
-                            text: root.selectedDay ? "UV " + root.selectedDay.uv : ""
+                            text: root.selectedDay ? root.t("apps.weather.ui.weather_app_view.text.uv_index", "UV {value}", {
+                                value: root.selectedDay.uv
+                            }) : ""
                             font.pixelSize: UI.Theme.fontSizeLarge
                             horizontalAlignment: Text.AlignRight
                             textColor: UI.Theme.textPrimary
@@ -412,14 +420,18 @@ FloatingWindow {
                         }
 
                         UI.TextLabel {
-                            text: root.selectedDay ? "Nascer " + root.selectedDay.sunrise : ""
+                            text: root.selectedDay ? root.t("apps.weather.ui.weather_app_view.text.sunrise_time", "Sunrise {time}", {
+                                time: root.selectedDay.sunrise
+                            }) : ""
                             font.pixelSize: UI.Theme.fontSizeLarge
                             textColor: UI.Theme.textSecondary
                             Layout.fillWidth: true
                         }
 
                         UI.TextLabel {
-                            text: root.selectedDay ? "Pôr " + root.selectedDay.sunset : ""
+                            text: root.selectedDay ? root.t("apps.weather.ui.weather_app_view.text.sunset_time", "Sunset {time}", {
+                                time: root.selectedDay.sunset
+                            }) : ""
                             font.pixelSize: UI.Theme.fontSizeLarge
                             horizontalAlignment: Text.AlignRight
                             textColor: UI.Theme.textSecondary
@@ -617,7 +629,7 @@ FloatingWindow {
                                 }
 
                                 UI.DisplayLabel {
-                                    text: root.selectedAlert ? (root.selectedAlert.title || "Aviso meteorológico") : ""
+                                    text: root.selectedAlert ? (root.selectedAlert.title || root.t("apps.weather.ui.weather_app_view.text.weather_alert", "Weather alert")) : ""
                                     font.pixelSize: UI.Theme.fontSizeIconLarge
                                     font.weight: 500
                                     textColor: UI.Theme.textPrimary
@@ -640,7 +652,10 @@ FloatingWindow {
                         UI.TextLabel {
                             Layout.fillWidth: true
                             text: root.selectedAlert && root.selectedAlert.start && root.selectedAlert.end
-                                ? "Válido de " + root.selectedAlert.start + " até " + root.selectedAlert.end
+                                ? root.t("apps.weather.ui.weather_app_view.text.valid_from_to", "Valid from {start} to {end}", {
+                                    start: root.selectedAlert.start,
+                                    end: root.selectedAlert.end
+                                })
                                 : ""
                             visible: text !== ""
                             wrapMode: Text.WordWrap

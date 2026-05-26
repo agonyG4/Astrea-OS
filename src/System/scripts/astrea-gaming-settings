@@ -1,0 +1,479 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+DEFAULT_GAMESCOPE = {
+    "follow_monitor": True,
+    "width": 1920,
+    "height": 1080,
+    "refresh": 165,
+    "fullscreen": True,
+    "steam_integration": True,
+    "backend_drm": True,
+    "immediate_flips": True,
+    "hide_cursor": True,
+    "fancy_scaling": True,
+    "color_managed": True,
+    "virtual_white": True,
+    "multiple_xwaylands": True,
+    "hdr": False,
+    "output_connector": "*,eDP-1",
+    "extra_args": "",
+}
+
+DEFAULT_PROTON = {
+    "gamemode": True,
+    "mangohud": False,
+    "enable_nvapi": True,
+    "hide_nvidia_gpu": False,
+    "enable_esync": True,
+    "enable_fsync": True,
+    "dxvk_async": False,
+    "dxvk_hdr": False,
+    "vkd3d_dxr": False,
+    "fsr": False,
+    "fsr_strength": 2,
+    "custom_env": "",
+    "custom_prefix": "",
+}
+
+
+def config_home() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser()
+
+
+def state_home() -> Path:
+    return Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")).expanduser()
+
+
+def gamescope_path() -> Path:
+    return config_home() / "AstreaOS/gaming/gamescope.json"
+
+
+def proton_path() -> Path:
+    return config_home() / "AstreaOS/gaming/proton.json"
+
+
+def env_path() -> Path:
+    return config_home() / "environment.d/gamescope-session-plus.conf"
+
+
+def local_bin() -> Path:
+    return Path.home() / ".local/bin"
+
+
+def atomic_write_text(path: Path, text: str, mode: int | None = None) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
+    ) as handle:
+        handle.write(text)
+        tmp = Path(handle.name)
+    if mode is not None:
+        tmp.chmod(mode)
+    tmp.replace(path)
+
+
+def atomic_write_json(path: Path, payload: dict) -> None:
+    atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=4) + "\n")
+
+
+def normalize_bool(value: object) -> bool:
+    return bool(value)
+
+
+def normalize_int(value: object, fallback: int, minimum: int = 0, maximum: int = 100000) -> int:
+    try:
+        return max(minimum, min(maximum, int(str(value).strip())))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def normalize_gamescope(data: dict) -> dict:
+    cfg = {**DEFAULT_GAMESCOPE, **(data or {})}
+    cfg["follow_monitor"] = normalize_bool(cfg.get("follow_monitor"))
+    cfg["width"] = normalize_int(cfg.get("width"), DEFAULT_GAMESCOPE["width"], 640, 10000)
+    cfg["height"] = normalize_int(cfg.get("height"), DEFAULT_GAMESCOPE["height"], 360, 10000)
+    cfg["refresh"] = normalize_int(cfg.get("refresh"), DEFAULT_GAMESCOPE["refresh"], 30, 1000)
+    for key in (
+        "fullscreen",
+        "steam_integration",
+        "backend_drm",
+        "immediate_flips",
+        "hide_cursor",
+        "fancy_scaling",
+        "color_managed",
+        "virtual_white",
+        "multiple_xwaylands",
+        "hdr",
+    ):
+        cfg[key] = normalize_bool(cfg.get(key))
+    cfg["output_connector"] = str(cfg.get("output_connector") or DEFAULT_GAMESCOPE["output_connector"]).strip()
+    cfg["extra_args"] = str(cfg.get("extra_args") or "").strip()
+    return cfg
+
+
+def normalize_proton(data: dict) -> dict:
+    cfg = {**DEFAULT_PROTON, **(data or {})}
+    for key in (
+        "gamemode",
+        "mangohud",
+        "enable_nvapi",
+        "hide_nvidia_gpu",
+        "enable_esync",
+        "enable_fsync",
+        "dxvk_async",
+        "dxvk_hdr",
+        "vkd3d_dxr",
+        "fsr",
+    ):
+        cfg[key] = normalize_bool(cfg.get(key))
+    cfg["fsr_strength"] = normalize_int(cfg.get("fsr_strength"), DEFAULT_PROTON["fsr_strength"], 0, 5)
+    cfg["custom_env"] = str(cfg.get("custom_env") or "").strip()
+    cfg["custom_prefix"] = str(cfg.get("custom_prefix") or "").strip()
+    return cfg
+
+
+def load_json(path: Path, default: dict, normalizer) -> dict:
+    if not path.exists():
+        cfg = normalizer(default)
+        atomic_write_json(path, cfg)
+        return cfg
+    try:
+        data = json.loads(path.read_text(encoding="utf-8") or "{}")
+    except (OSError, json.JSONDecodeError):
+        data = {}
+    cfg = normalizer(data)
+    atomic_write_json(path, cfg)
+    return cfg
+
+
+def run(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+
+
+def monitors() -> list[dict]:
+    if not shutil.which("hyprctl"):
+        return []
+    proc = run(["hyprctl", "monitors", "-j"])
+    if proc.returncode != 0:
+        return []
+    try:
+        raw = json.loads(proc.stdout or "[]")
+    except json.JSONDecodeError:
+        return []
+    result = []
+    for monitor in raw:
+        width = normalize_int(monitor.get("width"), DEFAULT_GAMESCOPE["width"], 1, 10000)
+        height = normalize_int(monitor.get("height"), DEFAULT_GAMESCOPE["height"], 1, 10000)
+        refresh = normalize_int(round(float(monitor.get("refreshRate") or DEFAULT_GAMESCOPE["refresh"])), DEFAULT_GAMESCOPE["refresh"], 1, 1000)
+        result.append(
+            {
+                "name": monitor.get("name") or "",
+                "description": monitor.get("description") or "",
+                "width": width,
+                "height": height,
+                "refresh": refresh,
+                "focused": bool(monitor.get("focused")),
+            }
+        )
+    return result
+
+
+def monitor_defaults() -> dict:
+    found = monitors()
+    if not found:
+        return {
+            "width": DEFAULT_GAMESCOPE["width"],
+            "height": DEFAULT_GAMESCOPE["height"],
+            "refresh": DEFAULT_GAMESCOPE["refresh"],
+        }
+    picked = next((m for m in found if m.get("focused")), found[0])
+    return {
+        "width": picked["width"],
+        "height": picked["height"],
+        "refresh": picked["refresh"],
+    }
+
+
+def gamescope_dimensions(cfg: dict) -> dict:
+    if cfg.get("follow_monitor"):
+        return monitor_defaults()
+    return {
+        "width": normalize_int(cfg.get("width"), DEFAULT_GAMESCOPE["width"], 640, 10000),
+        "height": normalize_int(cfg.get("height"), DEFAULT_GAMESCOPE["height"], 360, 10000),
+        "refresh": normalize_int(cfg.get("refresh"), DEFAULT_GAMESCOPE["refresh"], 30, 1000),
+    }
+
+
+def gamescope_command(cfg: dict) -> list[str]:
+    dims = gamescope_dimensions(cfg)
+    command = ["gamescope"]
+    if cfg.get("backend_drm"):
+        command += ["--backend", "drm"]
+    if cfg.get("steam_integration"):
+        command.append("--steam")
+    if cfg.get("fullscreen"):
+        command.append("--fullscreen")
+    command += ["-W", str(dims["width"]), "-H", str(dims["height"]), "-r", str(dims["refresh"])]
+    if cfg.get("immediate_flips"):
+        command.append("--immediate-flips")
+    if cfg.get("hide_cursor"):
+        command += ["--hide-cursor-delay", "-1"]
+    if cfg.get("extra_args"):
+        command += shlex.split(cfg["extra_args"])
+    command += ["--", "steam", "-gamepadui", "-steamos3", "-steamdeck"]
+    return command
+
+
+def write_steam_console_launcher() -> Path:
+    path = local_bin() / "steam-console-launcher"
+    atomic_write_text(path, "#!/bin/bash\nexec steam -gamepadui -steamos3 -steamdeck \"$@\"\n", 0o755)
+    return path
+
+
+def write_gamescope_files(cfg: dict) -> dict:
+    cfg = normalize_gamescope(cfg)
+    dims = gamescope_dimensions(cfg)
+    command = gamescope_command(cfg)
+    command_text = shlex.join(command)
+    steam_console = write_steam_console_launcher()
+
+    env_lines = [
+        "# Generated by Astrea Settings. Manual edits may be overwritten.",
+        f"SCREEN_WIDTH={dims['width']}",
+        f"SCREEN_HEIGHT={dims['height']}",
+        f"SCREEN_REFRESH={dims['refresh']}",
+        f"ENABLE_GAMESCOPE_WSI={1 if cfg.get('steam_integration') else 0}",
+        "__GLX_VENDOR_LIBRARY_NAME=nvidia",
+        "GBM_BACKEND=nvidia-drm",
+        "WLR_NO_HARDWARE_CURSORS=1",
+        f"STEAM_MULTIPLE_XWAYLANDS={1 if cfg.get('multiple_xwaylands') else 0}",
+        f"STEAM_GAMESCOPE_COLOR_MANAGED={1 if cfg.get('color_managed') else 0}",
+        f"STEAM_GAMESCOPE_VIRTUAL_WHITE={1 if cfg.get('virtual_white') else 0}",
+        f"STEAM_GAMESCOPE_FANCY_SCALING_SUPPORT={1 if cfg.get('fancy_scaling') else 0}",
+        f"STEAM_GAMESCOPE_HDR_SUPPORTED={1 if cfg.get('hdr') else 0}",
+        f"GAMESCOPECMD={json.dumps(command_text)}",
+        f"CLIENTCMD={json.dumps(str(steam_console))}",
+        "",
+    ]
+    atomic_write_text(env_path(), "\n".join(env_lines))
+
+    launcher = local_bin() / "astrea-gamescope-session"
+    script = "\n".join(
+        [
+            "#!/bin/bash",
+            "set +e",
+            "export XDG_SESSION_TYPE=wayland",
+            f"export STEAM_GAMESCOPE_FANCY_SCALING_SUPPORT={1 if cfg.get('fancy_scaling') else 0}",
+            f"export STEAM_GAMESCOPE_COLOR_MANAGED={1 if cfg.get('color_managed') else 0}",
+            f"export STEAM_GAMESCOPE_VIRTUAL_WHITE={1 if cfg.get('virtual_white') else 0}",
+            f"export STEAM_MULTIPLE_XWAYLANDS={1 if cfg.get('multiple_xwaylands') else 0}",
+            "sudo -n /usr/bin/systemctl start plugin_loader.service 2>/dev/null || true",
+            "systemctl --user start steam-nvibrant.service 2>/dev/null || true",
+            "cleanup() { sudo -n /usr/bin/systemctl stop plugin_loader.service 2>/dev/null || true; }",
+            "trap cleanup HUP INT TERM",
+            command_text,
+            "status=$?",
+            "cleanup",
+            "exit $status",
+            "",
+        ]
+    )
+    atomic_write_text(launcher, script, 0o755)
+    return {"command": command_text, "launcher": str(launcher), "environment": str(env_path()), "dimensions": dims}
+
+
+def proton_env_and_prefix(cfg: dict) -> tuple[dict[str, str], list[str]]:
+    cfg = normalize_proton(cfg)
+    env: dict[str, str] = {}
+    prefix: list[str] = []
+    if cfg.get("gamemode") and shutil.which("gamemoderun"):
+        prefix.append("gamemoderun")
+    if cfg.get("mangohud") and shutil.which("mangohud"):
+        prefix.append("mangohud")
+    if cfg.get("enable_nvapi"):
+        env["PROTON_ENABLE_NVAPI"] = "1"
+    if cfg.get("hide_nvidia_gpu"):
+        env["PROTON_HIDE_NVIDIA_GPU"] = "1"
+    if not cfg.get("enable_esync"):
+        env["PROTON_NO_ESYNC"] = "1"
+    if not cfg.get("enable_fsync"):
+        env["PROTON_NO_FSYNC"] = "1"
+    if cfg.get("dxvk_async"):
+        env["DXVK_ASYNC"] = "1"
+    if cfg.get("dxvk_hdr"):
+        env["DXVK_HDR"] = "1"
+    if cfg.get("vkd3d_dxr"):
+        env["VKD3D_CONFIG"] = "dxr,dxr11"
+    if cfg.get("fsr"):
+        env["WINE_FULLSCREEN_FSR"] = "1"
+        env["WINE_FULLSCREEN_FSR_STRENGTH"] = str(cfg.get("fsr_strength", 2))
+    if cfg.get("custom_env"):
+        for item in shlex.split(cfg["custom_env"]):
+            if "=" in item:
+                key, value = item.split("=", 1)
+                if key:
+                    env[key] = value
+    if cfg.get("custom_prefix"):
+        prefix += shlex.split(cfg["custom_prefix"])
+    return env, prefix
+
+
+def write_astrea_gaming_wrapper() -> Path:
+    path = local_bin() / "astrea-gaming"
+    config = proton_path()
+    script = f"""#!/usr/bin/env python3
+import json
+import os
+import shlex
+import shutil
+import sys
+
+CONFIG = {str(config)!r}
+DEFAULT = {repr(DEFAULT_PROTON)}
+
+def load_config():
+    try:
+        with open(CONFIG, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except Exception:
+        data = {{}}
+    cfg = DEFAULT.copy()
+    cfg.update(data or {{}})
+    return cfg
+
+def main():
+    command = sys.argv[1:]
+    if not command:
+        print("Usage: astrea-gaming %command%", file=sys.stderr)
+        return 2
+    cfg = load_config()
+    env = os.environ.copy()
+    prefix = []
+    if cfg.get("gamemode") and shutil.which("gamemoderun"):
+        prefix.append("gamemoderun")
+    if cfg.get("mangohud") and shutil.which("mangohud"):
+        prefix.append("mangohud")
+    if cfg.get("enable_nvapi"):
+        env["PROTON_ENABLE_NVAPI"] = "1"
+    if cfg.get("hide_nvidia_gpu"):
+        env["PROTON_HIDE_NVIDIA_GPU"] = "1"
+    if not cfg.get("enable_esync"):
+        env["PROTON_NO_ESYNC"] = "1"
+    if not cfg.get("enable_fsync"):
+        env["PROTON_NO_FSYNC"] = "1"
+    if cfg.get("dxvk_async"):
+        env["DXVK_ASYNC"] = "1"
+    if cfg.get("dxvk_hdr"):
+        env["DXVK_HDR"] = "1"
+    if cfg.get("vkd3d_dxr"):
+        env["VKD3D_CONFIG"] = "dxr,dxr11"
+    if cfg.get("fsr"):
+        env["WINE_FULLSCREEN_FSR"] = "1"
+        env["WINE_FULLSCREEN_FSR_STRENGTH"] = str(cfg.get("fsr_strength", 2))
+    for item in shlex.split(str(cfg.get("custom_env") or "")):
+        if "=" in item:
+            key, value = item.split("=", 1)
+            if key:
+                env[key] = value
+    prefix += shlex.split(str(cfg.get("custom_prefix") or ""))
+    final = prefix + command
+    os.execvpe(final[0], final, env)
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+"""
+    atomic_write_text(path, script, 0o755)
+    return path
+
+
+def command_preview(proton_cfg: dict) -> str:
+    return "astrea-gaming %command%"
+
+
+def payload() -> dict:
+    gamescope = load_json(gamescope_path(), DEFAULT_GAMESCOPE, normalize_gamescope)
+    proton = load_json(proton_path(), DEFAULT_PROTON, normalize_proton)
+    gamescope_files = write_gamescope_files(gamescope)
+    wrapper = write_astrea_gaming_wrapper()
+    return {
+        "gamescope": gamescope,
+        "proton": proton,
+        "status": {
+            "monitors": monitors(),
+            "gamescope_command": gamescope_files["command"],
+            "gamescope_launcher": gamescope_files["launcher"],
+            "environment_file": gamescope_files["environment"],
+            "proton_command": "astrea-gaming %command%",
+            "proton_preview": command_preview(proton),
+            "proton_wrapper": str(wrapper),
+        },
+    }
+
+
+def save_gamescope(json_data: str, apply_files: bool = True) -> dict:
+    cfg = normalize_gamescope(json.loads(json_data or "{}"))
+    atomic_write_json(gamescope_path(), cfg)
+    result = {"ok": True, "gamescope": cfg}
+    if apply_files:
+        result["status"] = write_gamescope_files(cfg)
+    return result
+
+
+def save_proton(json_data: str, apply_files: bool = True) -> dict:
+    cfg = normalize_proton(json.loads(json_data or "{}"))
+    atomic_write_json(proton_path(), cfg)
+    result = {"ok": True, "proton": cfg}
+    if apply_files:
+        wrapper = write_astrea_gaming_wrapper()
+        result["status"] = {
+            "wrapper": str(wrapper),
+            "command": "astrea-gaming %command%",
+            "preview": command_preview(cfg),
+        }
+    return result
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Astrea gaming settings helper")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("get")
+    save_g = sub.add_parser("save-gamescope")
+    save_g.add_argument("json_data")
+    save_p = sub.add_parser("save-proton")
+    save_p.add_argument("json_data")
+    sub.add_parser("apply")
+    args = parser.parse_args()
+
+    if args.command == "get":
+        print(json.dumps(payload(), ensure_ascii=False))
+        return 0
+    if args.command == "save-gamescope":
+        print(json.dumps(save_gamescope(args.json_data), ensure_ascii=False))
+        return 0
+    if args.command == "save-proton":
+        print(json.dumps(save_proton(args.json_data), ensure_ascii=False))
+        return 0
+    if args.command == "apply":
+        gamescope = load_json(gamescope_path(), DEFAULT_GAMESCOPE, normalize_gamescope)
+        proton = load_json(proton_path(), DEFAULT_PROTON, normalize_proton)
+        write_gamescope_files(gamescope)
+        write_astrea_gaming_wrapper()
+        print(json.dumps({"ok": True, "proton_preview": command_preview(proton)}, ensure_ascii=False))
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

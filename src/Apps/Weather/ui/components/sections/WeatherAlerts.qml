@@ -46,7 +46,7 @@ Item {
                 }
 
                 UI.DisplayLabel {
-                    text: mainAlert ? (mainAlert.title || "Aviso meteorológico") : ""
+                    text: mainAlert ? (mainAlert.title || AstreaI18n.I18n.tr("apps.weather.ui.components.sections.weather_alerts.text.weather_alert", "Weather alert")) : ""
                     font.pixelSize: 19
                     font.weight: 500
                     textColor: UI.Theme.textPrimary
@@ -64,7 +64,9 @@ Item {
             }
 
             UI.TextLabel {
-                text: alerts.length > 1 ? alerts.length + " avisos" : "Detalhes"
+                text: alerts.length > 1
+                    ? AstreaI18n.I18n.tr("apps.weather.ui.components.sections.weather_alerts.text.alert_count", "{count} alerts", { count: alerts.length })
+                    : AstreaI18n.I18n.tr("apps.weather.ui.components.sections.weather_alerts.text.details", "Details")
                 font.pixelSize: 12
                 font.weight: 500
                 textColor: UI.Theme.textSecondary

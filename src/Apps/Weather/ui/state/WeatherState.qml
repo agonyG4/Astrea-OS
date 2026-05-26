@@ -1,6 +1,7 @@
 import Quickshell
 import Quickshell.Io
 import QtQuick 2.15
+import "../../AstreaI18n" as AstreaI18n
 
 Item {
     id: root
@@ -50,7 +51,9 @@ Item {
     }
 
     function missingBackendMessage() {
-        return "Backend do clima nao encontrado: " + weatherCli + ". Reinstale os servicos do Astrea ou rode astrea-services.sh doctor."
+        return AstreaI18n.I18n.tr("apps.weather.ui.state.weather_state.error.backend_missing", "Weather backend not found: {path}. Reinstall Astrea services or run astrea-services.sh doctor.", {
+            path: weatherCli
+        })
     }
 
     function setAlertNotificationsEnabled(enabled) {
@@ -78,7 +81,7 @@ Item {
                     root.errorMsg = ""
                 } catch(e) {
                     root.weatherData = null
-                    root.errorMsg = "Erro ao parsear JSON"
+                    root.errorMsg = AstreaI18n.I18n.tr("apps.weather.ui.state.weather_state.error.parse_json", "Could not parse weather JSON")
                 }
                 root.loading = false
             }
@@ -95,7 +98,7 @@ Item {
             if (exitCode === 126 || exitCode === 127)
                 root.markBackendMissing()
             else if (exitCode !== 0 && root.errorMsg === "")
-                root.errorMsg = "Falha ao atualizar o clima"
+                root.errorMsg = AstreaI18n.I18n.tr("apps.weather.ui.state.weather_state.error.refresh_failed", "Could not update weather")
             root.loading = false
         }
     }

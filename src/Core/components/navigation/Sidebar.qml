@@ -17,6 +17,34 @@ Item {
     property string avatarPath: ""
     property int avatarVersion: 0
     property bool   isSudo:     false
+    property int expansionVersion: 0
+
+    function translatedLabel(item) {
+        const key = item.labelKey !== undefined ? item.labelKey : ""
+        if (key.length > 0 && root.translationMessages && root.translationMessages[key])
+            return root.translationMessages[key]
+        return item.label || ""
+    }
+
+    function isSectionExpanded(sectionKey, version) {
+        version
+        if (!sectionKey || sectionKey.length === 0)
+            return true
+        for (let i = 0; i < root.model.count; i++) {
+            const item = root.model.get(i)
+            if (item.kind === "section" && item.sectionKey === sectionKey)
+                return !!item.expanded
+        }
+        return true
+    }
+
+    function toggleSection(index) {
+        const item = root.model.get(index)
+        if (!item || item.kind !== "section")
+            return
+        root.model.setProperty(index, "expanded", !item.expanded)
+        root.expansionVersion += 1
+    }
 
     Component.onCompleted: {
         userName   = Quickshell.env("USER") || Quickshell.env("LOGNAME") || "user"
@@ -135,16 +163,85 @@ Item {
         Repeater {
             model: root.model
             delegate: Item {
+                id: navDelegate
+
+                readonly property string itemKind: model.kind !== undefined && model.kind.length > 0 ? model.kind : "page"
+                readonly property int targetPageIndex: model.pageIndex !== undefined ? model.pageIndex : index
+                readonly property bool childOpen: itemKind !== "child"
+                    || root.isSectionExpanded(model.parentSection !== undefined ? model.parentSection : "", root.expansionVersion)
+                    || root.selectedIndex === targetPageIndex
+
                 width: parent.width
-                height: 40
+                height: itemKind === "spacer" ? 12 : (childOpen ? (itemKind === "section" ? 32 : (itemKind === "child" ? 36 : 40)) : 0)
+                visible: height > 0
+                clip: true
+
+                Behavior on height { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+
                 Components.NavItem {
                     anchors.fill: parent
-                    label:      model.labelKey !== undefined && model.labelKey.length > 0 ? ((root.translationMessages && root.translationMessages[model.labelKey]) || model.label) : model.label
+                    visible:    navDelegate.itemKind !== "section" && navDelegate.itemKind !== "spacer"
+                    label:      root.translatedLabel(model)
                     sym:        model.sym !== undefined ? model.sym : ""
                     iconSource: model.iconSource !== undefined ? model.iconSource : ""
                     iconKey:    model.iconKey !== undefined ? model.iconKey : ""
-                    selected:   root.selectedIndex === index
-                    onClicked:  root.selectIndex(index)
+                    leftInset:  navDelegate.itemKind === "child" ? 24 : 0
+                    compact:    navDelegate.itemKind === "child"
+                    selected:   root.selectedIndex === navDelegate.targetPageIndex
+                    onClicked:  root.selectIndex(navDelegate.targetPageIndex)
+                }
+
+                Rectangle {
+                    visible: navDelegate.itemKind === "section"
+                    anchors {
+                        fill: parent
+                        leftMargin: 8
+                        rightMargin: 8
+                        topMargin: 3
+                        bottomMargin: 3
+                    }
+                    radius: 8
+                    color: sectionMouse.containsMouse
+                        ? (Components.Theme.themeMode === 1 ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(1, 1, 1, 0.045))
+                        : "transparent"
+                    border.width: sectionMouse.containsMouse ? 1 : 0
+                    border.color: Components.Theme.themeMode === 1 ? Qt.rgba(0, 0, 0, 0.055) : Qt.rgba(1, 1, 1, 0.05)
+
+                    RowLayout {
+                        anchors {
+                            fill: parent
+                            leftMargin: 12
+                            rightMargin: 10
+                        }
+                        spacing: 8
+
+                        Text {
+                            text: root.isSectionExpanded(model.sectionKey !== undefined ? model.sectionKey : "", root.expansionVersion) ? "⌄" : "›"
+                            color: Components.Theme.textTertiary
+                            font.family: Components.Theme.fontFamily
+                            font.pixelSize: Components.Theme.fontSizeSmall
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.preferredWidth: 14
+                        }
+
+                        Text {
+                            text: root.translatedLabel(model)
+                            color: Components.Theme.textSecondary
+                            font.family: Components.Theme.fontFamily
+                            font.pixelSize: Components.Theme.fontSizeSmall
+                            font.weight: Components.Theme.fontWeightDemiBold
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    MouseArea {
+                        id: sectionMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.toggleSection(index)
+                    }
                 }
             }
         }

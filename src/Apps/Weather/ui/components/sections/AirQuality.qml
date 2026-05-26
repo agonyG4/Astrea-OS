@@ -87,12 +87,12 @@ ColumnLayout {
     }
 
     function aqiText(val) {
-        if (!val && val !== 0) return "Sem dados"
-        if (val <= 50) return "Boa"
-        if (val <= 100) return "Moderada"
-        if (val <= 150) return "Insalubre (grupos sensíveis)"
-        if (val <= 200) return "Insalubre"
-        if (val <= 300) return "Muito Insalubre"
-        return "Perigosa"
+        if (!val && val !== 0) return AstreaI18n.I18n.tr("apps.weather.ui.components.sections.air_quality.aqi.no_data", "No data")
+        if (val <= 50) return AstreaI18n.I18n.tr("apps.weather.ui.components.sections.air_quality.aqi.good", "Good")
+        if (val <= 100) return AstreaI18n.I18n.tr("apps.weather.ui.components.sections.air_quality.aqi.moderate", "Moderate")
+        if (val <= 150) return AstreaI18n.I18n.tr("apps.weather.ui.components.sections.air_quality.aqi.unhealthy_sensitive", "Unhealthy for sensitive groups")
+        if (val <= 200) return AstreaI18n.I18n.tr("apps.weather.ui.components.sections.air_quality.aqi.unhealthy", "Unhealthy")
+        if (val <= 300) return AstreaI18n.I18n.tr("apps.weather.ui.components.sections.air_quality.aqi.very_unhealthy", "Very unhealthy")
+        return AstreaI18n.I18n.tr("apps.weather.ui.components.sections.air_quality.aqi.hazardous", "Hazardous")
     }
 }

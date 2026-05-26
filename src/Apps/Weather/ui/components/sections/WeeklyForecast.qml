@@ -80,7 +80,7 @@ ColumnLayout {
                             spacing: 0
 
                             UI.TextLabel {
-                                text: index === 0 ? "Hoje" : modelData.day
+                                text: index === 0 ? AstreaI18n.I18n.tr("apps.weather.ui.components.sections.weekly_forecast.text.today", "Today") : modelData.day
                                 font.pixelSize: UI.Theme.fontSizeTitle
                                 font.weight: 400
                                 textColor: UI.Theme.textPrimary

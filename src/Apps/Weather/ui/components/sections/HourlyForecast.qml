@@ -28,7 +28,11 @@ ColumnLayout {
 
             UI.TextLabel {
                 Layout.fillWidth: true
-                text: weatherData ? weatherData.condition + ". Sensação térmica de " + WeatherFormat.temp(weatherData.feels_like) + ". Vento de " + WeatherFormat.wind(weatherData.wind) + "." : ""
+                    text: weatherData ? AstreaI18n.I18n.tr("apps.weather.ui.components.sections.hourly_forecast.text.summary", "{condition}. Feels like {feels}. Wind {wind}.", {
+                        condition: weatherData.condition,
+                        feels: WeatherFormat.temp(weatherData.feels_like),
+                        wind: WeatherFormat.wind(weatherData.wind)
+                    }) : ""
                 wrapMode: Text.WordWrap
                 font.pixelSize: 13
                 font.weight: 400
@@ -78,7 +82,7 @@ ColumnLayout {
                         spacing: 6
 
                         UI.TextLabel {
-                            text: index === 0 ? "Agora" : modelData.time
+                            text: index === 0 ? AstreaI18n.I18n.tr("apps.weather.ui.components.sections.hourly_forecast.text.now", "Now") : modelData.time
                             font.pixelSize: 11
                             font.weight: 500
                             textColor: UI.Theme.textSecondary

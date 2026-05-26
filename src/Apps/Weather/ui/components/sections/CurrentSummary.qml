@@ -7,7 +7,9 @@ import "../../../AstreaI18n" as AstreaI18n
 ColumnLayout {
     property var weatherData
     property var colors
-    readonly property string nextSunEventLabel: sunInfo.isAfterSunset ? "Nascer" : "Pôr"
+    readonly property string nextSunEventLabel: sunInfo.isAfterSunset
+        ? AstreaI18n.I18n.tr("apps.weather.ui.components.sections.current_summary.text.sunrise", "Sunrise")
+        : AstreaI18n.I18n.tr("apps.weather.ui.components.sections.current_summary.text.sunset", "Sunset")
     readonly property string nextSunEventTime: {
         if (!weatherData) return "--"
         if (sunInfo.isAfterSunset) {
@@ -53,7 +55,7 @@ ColumnLayout {
 
     UI.TextLabel {
         Layout.fillWidth: true
-        text: weatherData ? "H:" + weatherData.temp_max + "°  L:" + weatherData.temp_min + "°" : ""
+        text: weatherData ? AstreaI18n.I18n.tr("apps.weather.ui.components.sections.current_summary.text.high_short", "H:") + weatherData.temp_max + "°  " + AstreaI18n.I18n.tr("apps.weather.ui.components.sections.current_summary.text.low_short", "L:") + weatherData.temp_min + "°" : ""
         font.pixelSize: 14
         font.weight: 600
         horizontalAlignment: Text.AlignHCenter

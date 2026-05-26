@@ -3,11 +3,11 @@ from __future__ import annotations
 import json,re
 from pathlib import Path
 
-ROOT=Path(__file__).resolve().parents[3]
-I18N=ROOT/'src/System/i18n'
-QML_ROOT=ROOT/'src'
+ROOT=Path(__file__).resolve().parents[2]
+I18N=ROOT/'System/i18n'
+QML_ROOT=ROOT
 BAD_PATTERNS=(r'aaao',r'a3',r'maosicas',r'paoblico',r'vadeos',r'seaaes',r'opaaes',r'ordenaaao',r'visualizaaao')
-KEY_RE=re.compile(r'messages\s*\[\s*"([^"]+)"\s*\]')
+KEY_RE=re.compile(r'(?:messages\s*\[\s*|(?:\b|\.)(?:t|tr)\s*\(\s*)"([^"]+)"')
 
 def load(lang):
     return json.loads((I18N/f'{lang}.json').read_text(encoding='utf-8'))

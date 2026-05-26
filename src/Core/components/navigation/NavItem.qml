@@ -15,6 +15,8 @@ Item {
     // iconKey: filename without extension (e.g. "display"). When set,
     // the component tries the themed path first and falls back to iconSource.
     property string iconKey: ""
+    property int leftInset: 0
+    property bool compact: false
     required property bool   selected
     signal clicked()
 
@@ -55,13 +57,13 @@ Item {
 
     // ── Conteúdo ──────────────────────────────────────────────────────────
     RowLayout {
-        anchors { fill: parent; leftMargin: 16; rightMargin: 12 }
-        spacing: 12
+        anchors { fill: parent; leftMargin: 16 + root.leftInset; rightMargin: 12 }
+        spacing: root.compact ? 10 : 12
 
         Rectangle {
-            width:  28
-            height: 28
-            radius: 8
+            width:  root.compact ? 24 : 28
+            height: root.compact ? 24 : 28
+            radius: root.compact ? 7 : 8
             color: root.selected ? root.accent : (hma.containsMouse ? (root.isLight ? Qt.rgba(0, 0, 0, 0.07) : Qt.rgba(1, 1, 1, 0.1)) : (root.isLight ? Qt.rgba(0, 0, 0, 0.04) : Qt.rgba(1, 1, 1, 0.05)))
             Behavior on color { ColorAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
@@ -78,7 +80,7 @@ Item {
                 anchors.centerIn: parent
                 text:           root.sym
                 color:          root.selected ? root.accentForeground : (hma.containsMouse ? root.activeForeground : root.idleForeground)
-                font.pixelSize: Components.Theme.fontSizeNormal
+                font.pixelSize: root.compact ? Components.Theme.fontSizeSmall : Components.Theme.fontSizeNormal
                 font.family:    "JetBrainsMono Nerd Font"
                 visible:        root.iconSource === ""
                 Behavior on color { ColorAnimation { duration: 150 } }
@@ -152,7 +154,7 @@ Item {
             text:        root.label
             color:       root.selected ? root.activeForeground : (hma.containsMouse ? root.activeForeground : root.idleForeground)
             font.family: Components.Theme.fontFamily
-            font.pixelSize: Components.Theme.fontSizeNormal
+            font.pixelSize: root.compact ? Components.Theme.fontSizeSmall : Components.Theme.fontSizeNormal
             font.weight: root.selected ? Components.Theme.fontWeightDemiBold : Components.Theme.fontWeightMedium
             elide:       Text.ElideRight
             Layout.fillWidth: true

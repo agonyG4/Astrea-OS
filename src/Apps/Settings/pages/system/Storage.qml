@@ -19,6 +19,7 @@ Item {
     property real   compressionSaved: 0
     property real   zstdDiskUsage: 0
     property bool   compressionExact: false
+    property bool   compressionStale: false
     property real   categorizedTotal: 0
     property bool   scanning:         false
     property bool   refreshRunning:   false
@@ -30,16 +31,26 @@ Item {
     readonly property var homeData:   storageData.filter(d => !d.is_system)
     readonly property var systemData: storageData.filter(d => d.is_system)
 
+    function t(key, fallback, params) {
+        return AstreaI18n.I18n.tr(key, fallback, params)
+    }
+
     function isPacman(item) {
         return item && item.id === "sys:pacman"
     }
 
     function formatBytes(bytes) {
-        if (bytes < 1000)          return bytes.toFixed(0)              + " B"
-        if (bytes < 1000000)       return (bytes / 1000).toFixed(1)     + " KB"
-        if (bytes < 1000000000)    return (bytes / 1000000).toFixed(1)  + " MB"
-        if (bytes < 1000000000000) return (bytes / 1000000000).toFixed(1) + " GB"
-        return (bytes / 1000000000000).toFixed(1) + " TB"
+        bytes = Math.max(0, bytes || 0)
+        if (bytes < 1024) return bytes.toFixed(0) + " B"
+
+        const units = ["KiB", "MiB", "GiB", "TiB", "PiB"]
+        let value = bytes / 1024
+        let index = 0
+        while (value >= 1024 && index < units.length - 1) {
+            value /= 1024
+            index += 1
+        }
+        return value.toFixed(index >= 2 ? 2 : 1) + " " + units[index]
     }
 
     function usedPercent() {
@@ -55,18 +66,23 @@ Item {
     function usageText() {
         if (totalSize <= 0) {
             if (scanning)
-                return "Escaneando armazenamento..."
+                return t("apps.settings.pages.system.storage.status.scanning_storage", "Scanning storage...")
             if (errorMessage !== "")
-                return "Nenhum índice de armazenamento disponível"
-            return "Calculando..."
+                return t("apps.settings.pages.system.storage.status.no_storage_index", "No storage index available")
+            return t("apps.settings.pages.system.storage.status.calculating", "Calculating...")
         }
 
-        let text = formatBytes(totalSize) + " de " + formatBytes(diskTotal) + " usados"
+        let text = t("apps.settings.pages.system.storage.status.used_of_total", "{used} of {total} used", {
+            used: formatBytes(totalSize),
+            total: formatBytes(diskTotal)
+        })
         const compressed = compressionDisplayAmount()
         if (compressed > 0)
-            text += " · " + (compressionExact && zstdDiskUsage > 0 ? "" : "~") + formatBytes(compressed) + " Comprimidos"
+            text += " · " + (compressionExact && zstdDiskUsage > 0 && !compressionStale ? "" : "~") + t("apps.settings.pages.system.storage.status.compressed", "{amount} compressed", {
+                amount: formatBytes(compressed)
+            })
         if (refreshRunning)
-            text += " · atualizando"
+            text += " · " + t("apps.settings.pages.system.storage.status.updating", "updating")
         return text
     }
 
@@ -104,6 +120,7 @@ Item {
                     root.compressionSaved = d.compressed_saved || d.compression_saved || 0
                     root.zstdDiskUsage = d.zstd_disk_usage || 0
                     root.compressionExact = d.compressed_exact === true
+                    root.compressionStale = d.compressed_stale === true
                     root.refreshRunning = d.refresh_running === true
                     root.scanning = root.refreshRunning
                     root.cacheStale = d.cache_stale === true
@@ -119,11 +136,11 @@ Item {
                         refreshPollTimer.stop()
                     }
                 } catch (e) {
-                    root.errorMessage = "Could not parse storage data"
+                    root.errorMessage = root.t("apps.settings.pages.system.storage.error.parse", "Could not parse storage data")
                     console.log("Storage JSON error: " + e)
                 }
             } else {
-                root.errorMessage = "Could not load storage data"
+                root.errorMessage = root.t("apps.settings.pages.system.storage.error.load", "Could not load storage data")
             }
             root.loading = root.refreshRunning && root.storageData.length === 0
         }
@@ -138,7 +155,7 @@ Item {
             root.scanning = false
             if (exitCode !== 0) {
                 root.loading = false
-                root.errorMessage = root.storageData.length > 0 ? "" : "Could not scan storage"
+                root.errorMessage = root.storageData.length > 0 ? "" : root.t("apps.settings.pages.system.storage.error.scan", "Could not scan storage")
                 return
             }
             root.loading = true
@@ -156,7 +173,7 @@ Item {
                 scanProc.running = false
             root.scanning = false
             root.loading = false
-            root.errorMessage = "Storage scan timed out"
+            root.errorMessage = root.t("apps.settings.pages.system.storage.error.scan_timeout", "Storage scan timed out")
         }
     }
 
@@ -245,7 +262,9 @@ Item {
                             id: pctLabel
                             anchors.centerIn: parent
                             text: root.diskTotal > 0
-                                ? Math.round(root.usedPercent() * 100) + "% usado"
+                                ? root.t("apps.settings.pages.system.storage.status.percent_used", "{percent}% used", {
+                                    percent: Math.round(root.usedPercent() * 100)
+                                })
                                 : "—"
                             color: {
                                 const p = root.usedPercent()
@@ -346,7 +365,7 @@ Item {
         Item { Layout.fillWidth: true; implicitHeight: 24 }
 
         // ── User ──────────────────────────────────────────────────────────
-        SectionHeader { text: "USER"; Layout.bottomMargin: 10 }
+        SectionHeader { text: root.t("apps.settings.pages.system.storage.text.home", "HOME"); Layout.bottomMargin: 10 }
 
         Rectangle {
             Layout.fillWidth: true

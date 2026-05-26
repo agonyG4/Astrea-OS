@@ -3,13 +3,14 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import "AstreaComponents" as UI
+import "AstreaI18n" as AstreaI18n
 
 FloatingWindow {
     id: window
     visible: true
     implicitWidth: 980
     implicitHeight: 680
-    title: "Astrea Image Viewer"
+    title: t("apps.media_viewer.title", "Astrea Image Viewer")
     color: "transparent"
     onVisibleChanged: if (!visible) Qt.quit()
 
@@ -40,6 +41,10 @@ FloatingWindow {
         : null
     readonly property bool hasMedia: currentItem !== null
     readonly property bool currentIsImage: hasMedia && currentItem.kind === "image"
+
+    function t(key, fallback, params) {
+        return AstreaI18n.I18n.tr(key, fallback, params)
+    }
 
     function openTarget(target) {
         if (!target || openProc.running)
@@ -280,7 +285,7 @@ FloatingWindow {
     }
 
     Component.onCompleted: {
-        Qt.application.name = "Astrea Image Viewer"
+        Qt.application.name = t("apps.media_viewer.title", "Astrea Image Viewer")
         Qt.application.organization = "agony"
         Qt.application.domain = "local"
         if (startupTarget !== "")
@@ -311,14 +316,14 @@ FloatingWindow {
                     if (payload.ok === false) {
                         mediaModel.clear()
                         selectedIndex = -1
-                        errorMessage = payload.error || "Nao foi possivel abrir a imagem"
+                        errorMessage = payload.error || t("apps.media_viewer.error.open_image", "Could not open the image")
                     } else {
                         loadContext(payload)
                     }
                 } catch (error) {
                     mediaModel.clear()
                     selectedIndex = -1
-                    errorMessage = "Resposta invalida do visualizador"
+                    errorMessage = t("apps.media_viewer.error.invalid_viewer_response", "Invalid viewer response")
                 }
             }
         }
@@ -327,7 +332,7 @@ FloatingWindow {
             loading = false
             if (exitCode !== 0 && errorMessage === "") {
                 var text = openStderr.text.trim()
-                errorMessage = text || "Nao foi possivel abrir a imagem"
+                errorMessage = text || t("apps.media_viewer.error.open_image", "Could not open the image")
             }
         }
     }
@@ -350,11 +355,11 @@ FloatingWindow {
                         window.previewError = ""
                     } else {
                         window.currentPreviewUri = ""
-                        window.previewError = payload.error || "Formato nao suportado"
+                        window.previewError = payload.error || t("apps.media_viewer.error.unsupported_format", "Unsupported format")
                     }
                 } catch (error) {
                     window.currentPreviewUri = ""
-                    window.previewError = "Preview invalido"
+                    window.previewError = t("apps.media_viewer.error.invalid_preview", "Invalid preview")
                 }
             }
         }
@@ -362,7 +367,7 @@ FloatingWindow {
         onExited: function(exitCode) {
             if (exitCode !== 0 && window.currentPreviewUri === "" && window.previewError === "") {
                 var text = previewStderr.text.trim()
-                window.previewError = text || "Nao foi possivel gerar preview"
+                window.previewError = text || t("apps.media_viewer.error.preview_failed", "Could not generate preview")
             }
         }
     }
@@ -460,7 +465,7 @@ FloatingWindow {
                 UI.TextLabel {
                     anchors.centerIn: parent
                     width: Math.min(parent.width - 48, 360)
-                    text: window.previewError !== "" ? window.previewError : "Formato nao suportado pelo Qt"
+                    text: window.previewError !== "" ? window.previewError : window.t("apps.media_viewer.error.unsupported_qt_format", "Format not supported by Qt")
                     textColor: UI.Theme.textSecondary
                     font.pixelSize: 13
                     horizontalAlignment: Text.AlignHCenter
@@ -519,7 +524,7 @@ FloatingWindow {
 
                     UI.TextLabel {
                         Layout.fillWidth: true
-                        text: window.errorMessage !== "" ? "Nao foi possivel abrir" : (window.loading ? "Carregando" : "Solte uma imagem aqui")
+                        text: window.errorMessage !== "" ? window.t("apps.media_viewer.text.open_failed", "Could not open") : (window.loading ? window.t("apps.media_viewer.text.loading", "Loading") : window.t("apps.media_viewer.text.drop_image_here", "Drop an image here"))
                         textColor: window.errorMessage !== "" ? UI.Theme.errorColor : UI.Theme.textPrimary
                         font.pixelSize: 14
                         font.weight: Font.Medium
@@ -528,7 +533,7 @@ FloatingWindow {
 
                     UI.TextLabel {
                         Layout.fillWidth: true
-                        text: window.errorMessage !== "" ? window.errorMessage : "O Image Viewer mostra apenas arquivos de imagem."
+                        text: window.errorMessage !== "" ? window.errorMessage : window.t("apps.media_viewer.text.image_only_help", "Image Viewer only shows image files.")
                         textColor: UI.Theme.textSecondary
                         font.pixelSize: 11
                         horizontalAlignment: Text.AlignHCenter
@@ -647,7 +652,7 @@ FloatingWindow {
 
                     UI.TextLabel {
                         Layout.fillWidth: true
-                        text: "Abrir no Image Viewer"
+                        text: window.t("apps.media_viewer.text.open_in_image_viewer", "Open in Image Viewer")
                         textColor: UI.Theme.textPrimary
                         font.pixelSize: 14
                         font.weight: Font.Medium
@@ -656,7 +661,7 @@ FloatingWindow {
 
                     UI.TextLabel {
                         Layout.fillWidth: true
-                        text: "Solte a imagem aqui"
+                        text: window.t("apps.media_viewer.text.drop_image_here", "Drop an image here")
                         textColor: UI.Theme.textSecondary
                         font.pixelSize: 11
                         horizontalAlignment: Text.AlignHCenter
