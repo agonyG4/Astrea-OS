@@ -132,7 +132,7 @@ Item {
                                             visible: (row.modelData.iconKey || "") === ""
                                             text: row.modelData.sym || ""
                                             color: root.textSecondary
-                                            font.family: "JetBrainsMono Nerd Font"
+                                            font.family: Theme.iconFontFamily
                                             font.pixelSize: Theme.fontSizeNormal
                                         }
                                     }
