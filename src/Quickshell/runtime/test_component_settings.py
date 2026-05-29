@@ -14,9 +14,27 @@ class ComponentSettingsTests(unittest.TestCase):
         self.assertIn("FileView", source)
         self.assertIn("watchChanges: true", source)
         self.assertIn("function isEnabled(key)", source)
+        self.assertIn("property string _ensureConfigBuffer", source)
+        self.assertIn("onRead: data => root._ensureConfigBuffer += data", source)
+        self.assertIn("onExited: {", source)
+        self.assertNotIn("onRead: data => root.applyConfigText(data)", source)
 
         qmldir = (RUNTIME_DIR / "qmldir").read_text()
         self.assertIn("ComponentSettings 1.0 ComponentSettings.qml", qmldir)
+
+    def test_pretty_printed_component_json_is_parsed_as_one_payload(self):
+        source = (RUNTIME_DIR / "ComponentSettings.qml").read_text()
+        self.assertIn('readonly property string defaultConfigJson: JSON.stringify(defaults, null, 4)', source)
+        self.assertRegex(
+            source,
+            r"stdout:\s*SplitParser\s*\{\s*onRead: data => root\._ensureConfigBuffer \+= data\s*\}",
+        )
+        self.assertRegex(
+            source,
+            r"onExited:\s*\{\s*if \(root\._ensureConfigBuffer\.length > 0\)\s*root\.applyConfigText\(root\._ensureConfigBuffer\)",
+        )
+        pretty_json = '{\n    "desktop": false,\n    "topbar": true\n}'
+        self.assertIn('"desktop": false', pretty_json)
 
     def test_runtime_component_service_manager_controls_dependencies(self):
         source = (RUNTIME_DIR / "ComponentServiceManager.qml").read_text()
