@@ -101,9 +101,9 @@ class ManagerActionsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "com.example.App.desktop"
             source.write_text("[Desktop Entry]\nType=Application\nName=Example\nExec=/usr/bin/flatpak run com.example.App\nX-Flatpak=com.example.App\n", encoding="utf-8")
-            with mock.patch.object(manager.subprocess, "run") as run_mock, mock.patch.object(manager, "refresh_desktop_index"):
+            with mock.patch.object(manager, "package_owner", return_value=""), mock.patch.object(manager.subprocess, "run") as run_mock, mock.patch.object(manager, "refresh_desktop_index"):
                 result = manager.uninstall_app({"id": source.name, "desktop_file": str(source), "source": "system"})
-            run_mock.assert_called_once()
+            run_mock.assert_called_once_with(["flatpak", "uninstall", "--assumeyes", "--app", "com.example.App"], check=True, stdout=manager.subprocess.DEVNULL, stderr=manager.subprocess.PIPE, text=True)
             self.assertEqual(result["target"], "com.example.App")
 
     def test_uninstall_system_package_runs_pkexec_pacman(self):
@@ -112,6 +112,35 @@ class ManagerActionsTest(unittest.TestCase):
             result = manager.uninstall_app(app)
         run_mock.assert_called_once_with(["pkexec", "pacman", "-Rns", "--noconfirm", "brave-bin"], check=True, stdout=manager.subprocess.DEVNULL, stderr=manager.subprocess.PIPE, text=True)
         self.assertEqual(result["message"], "Pacote brave-bin desinstalado")
+
+    def test_pacman_owner_uses_machine_readable_query(self):
+        calls = []
+
+        def fake_output(command, *, timeout=3.0):
+            calls.append(command)
+            self.assertEqual(command, ["pacman", "-Qoq", "/usr/share/applications/spotify.desktop"])
+            return "spotify"
+
+        with mock.patch.object(manager, "command_output", side_effect=fake_output):
+            self.assertEqual(manager.pacman_owner(Path("/usr/share/applications/spotify.desktop")), "spotify")
+
+        self.assertEqual(calls, [["pacman", "-Qoq", "/usr/share/applications/spotify.desktop"]])
+
+    def test_package_owner_looks_through_shell_wrapper(self):
+        app = {
+            "id": "wrapped-app.desktop",
+            "desktop_file": "/usr/local/share/applications/wrapped-app.desktop",
+            "exec": "bash -c 'spotify --uri=%u'",
+            "source": "system",
+        }
+
+        def fake_owner(path):
+            if str(path) == "/usr/bin/spotify":
+                return "spotify"
+            return ""
+
+        with mock.patch.object(manager, "pacman_owner", side_effect=fake_owner), mock.patch.object(manager.shutil, "which", side_effect=lambda name: "/usr/bin/spotify" if name == "spotify" else None):
+            self.assertEqual(manager.package_owner(app), "spotify")
 
     def test_main_list_action_is_import_safe_and_returns_zero(self):
         with mock.patch.object(manager, "list_apps", return_value={"apps": [], "total": 0, "user_count": 0, "system_count": 0}), mock.patch("builtins.print"):

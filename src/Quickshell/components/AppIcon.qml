@@ -35,6 +35,7 @@ Item {
         const cls = String(value.className || value.class || value.initialClass || "").toLowerCase()
         const text = String((value.title || value.name || "") + " " + cls).toLowerCase()
 
+        if (cls === "org.vinegarhq.sober") return "org.vinegarhq.Sober"
         if (cls.indexOf("zen") >= 0) return "zen-browser"
         if (cls.indexOf("kitty") >= 0) return "kitty"
         if (cls.indexOf("code") >= 0 || cls.indexOf("cursor") >= 0) return "visual-studio-code"
@@ -45,7 +46,7 @@ Item {
         if (cls === "obs" || cls.indexOf("obsproject") >= 0 || cls.indexOf("obs-studio") >= 0) return "com.obsproject.Studio"
         if (text.indexOf("finder") >= 0) return "folder"
         if (cls.indexOf("org.quickshell") >= 0) return "application-x-executable"
-        return cls
+        return cls.indexOf(".") >= 0 ? "" : cls
     }
 
     function iconSource(name) {
@@ -56,14 +57,43 @@ Item {
         return "image://icon/" + text
     }
 
+    function reloadIcon() {
+        const nextSource = root.iconSource(root.iconName)
+        if (nextSource.length === 0)
+            return
+
+        image.source = ""
+        Qt.callLater(() => {
+            if (root.iconSource(root.iconName) === nextSource)
+                image.source = nextSource
+        })
+    }
+
+    onIconNameChanged: reloadIcon()
+
     Image {
         id: image
         anchors.fill: parent
-        sourceSize: Qt.size(root.width, root.height)
+        sourceSize: Qt.size(width, height)
         source: root.iconSource(root.iconName)
         fillMode: Image.PreserveAspectFit
         smooth: true
         mipmap: true
+        asynchronous: true
+        cache: true
+        visible: status === Image.Ready
+
+        onStatusChanged: {
+            if (status === Image.Error && root.iconName.length > 0)
+                iconRetryTimer.restart()
+        }
+    }
+
+    Timer {
+        id: iconRetryTimer
+        interval: 180
+        repeat: false
+        onTriggered: root.reloadIcon()
     }
 
     Rectangle {

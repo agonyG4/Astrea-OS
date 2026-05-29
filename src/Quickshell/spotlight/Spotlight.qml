@@ -3,7 +3,6 @@ import Quickshell.Wayland
 import Quickshell.Hyprland
 import Quickshell.Io
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 import "./components" as Components
 import "../AstreaI18n" as AstreaI18n
@@ -36,192 +35,211 @@ ShellRoot {
         onPressed: spotlight.toggle()
     }
 
-    Variants {
-        model: Quickshell.screens
-        delegate: PanelWindow {
-            id: win
-            required property var modelData
-            screen: modelData
-            WlrLayershell.namespace: "spotlight"
+    Loader {
+        active: spotlight.open
+        asynchronous: true
+        sourceComponent: Variants {
+            model: Quickshell.screens
+            delegate: PanelWindow {
+                id: win
+                required property var modelData
+                screen: modelData
+                WlrLayershell.namespace: "spotlight"
 
-            anchors.top: true
-            anchors.left: true
-            anchors.right: true
-            anchors.bottom: true
+                anchors.top: true
+                anchors.left: true
+                anchors.right: true
+                anchors.bottom: true
 
-            color: "transparent"
-            visible: spotlight.open && modelData === Quickshell.screens[0]
+                color: "transparent"
+                visible: spotlight.open && modelData === Quickshell.screens[0]
 
-            WlrLayershell.layer: WlrLayer.Overlay
-            WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
+                WlrLayershell.layer: WlrLayer.Overlay
+                WlrLayershell.keyboardFocus: WlrKeyboardFocus.Exclusive
 
-            MouseArea {
-                anchors.fill: parent
-                onClicked: spotlight.close()
-            }
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: spotlight.close()
+                }
 
-            Rectangle {
-                id: panel
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.top: parent.top
-                anchors.topMargin: parent.height * 0.25
+                Rectangle {
+                    id: panel
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.top
+                    anchors.topMargin: parent.height * 0.25
 
-                width: 600
-                height: searchInput.text.length > 0 ? Math.min(contentCol.implicitHeight + 28, 450) : 58
-                radius: 24
+                    width: 600
+                    height: searchInput.text.length > 0 ? Math.min(contentCol.implicitHeight + 28, 450) : 58
+                    radius: 24
 
-                color: '#80343434'
-                border.color: "#33FFFFFF"
-                border.width: 1
-                clip: true
+                    color: '#80343434'
+                    border.color: "#33FFFFFF"
+                    border.width: 1
+                    clip: true
 
-                scale: spotlight.open ? 1.0 : 0.98
-                opacity: spotlight.open ? 1.0 : 0.0
+                    scale: spotlight.open ? 1.0 : 0.98
+                    opacity: spotlight.open ? 1.0 : 0.0
 
-                Behavior on height  { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                Behavior on scale   { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
-                Behavior on opacity { NumberAnimation { duration: 120 } }
-
-                ColumnLayout {
-                    id: contentCol
-                    anchors { top: parent.top; left: parent.left; right: parent.right; margins: 14 }
-                    spacing: 0
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 30
-                        spacing: 12
-
-                        Text {
-                            text: "⌕"
-                            font.family: spotlight.fontFamily
-                            font.pixelSize: 24
-                            color: "#99FFFFFF"
-                            Layout.leftMargin: 8
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-
-                        TextField {
-                            id: searchInput
-                            Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignVCenter
-
-                            placeholderText: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["spotlight.placeholder"]) || "Spotlight Search"
-                            font.family: spotlight.fontFamily
-                            font.pixelSize: 22
-                            font.weight: Font.Light
-                            color: "white"
-                            placeholderTextColor: "#66FFFFFF"
-                            background: null
-
-                            topPadding: 0
-                            bottomPadding: 0
-                            leftPadding: 0
-
-                            verticalAlignment: TextInput.AlignVCenter
-
-                            onTextChanged: spotlight.scheduleResults(text)
-
-                            Keys.onEscapePressed: spotlight.close()
-                            Keys.onReturnPressed: if (resultList.count > 0) spotlight.launch(resultList.currentIndex)
-                            Keys.onDownPressed: if (resultList.count > 0) resultList.currentIndex = (resultList.currentIndex + 1) % resultList.count
-                            Keys.onUpPressed: if (resultList.count > 0) resultList.currentIndex = (resultList.currentIndex - 1 + resultList.count) % resultList.count
-
-                            Component.onCompleted: forceActiveFocus()
-                            onVisibleChanged: if (visible) { forceActiveFocus(); text = "" }
-                        }
-
-                        RowLayout {
-                            Layout.maximumWidth: 68
-                            Layout.alignment: Qt.AlignVCenter
-                            spacing: 1
-                            visible: spotlight.weatherEnabled
-
-                            Image {
-                                Layout.preferredWidth: 20
-                                Layout.preferredHeight: 20
-                                Layout.alignment: Qt.AlignVCenter
-                                source: spotlight.weatherIconSource
-                                visible: spotlight.weatherReady
-                                fillMode: Image.PreserveAspectFit
-                                smooth: false
-                                mipmap: true
-                                opacity: 0.78
-                            }
-
-                            Text {
-                                text: "○"
-                                visible: !spotlight.weatherReady
-                                font.pixelSize: 18
-                                color: searchInput.placeholderTextColor
-                                Layout.alignment: Qt.AlignVCenter
-                            }
-
-                            Text {
-                                Layout.maximumWidth: 46
-                                text: spotlight.weatherReady ? spotlight.weatherTemp + "°" : "--°"
-                                font.family: spotlight.fontFamily
-                                font.pixelSize: 18
-                                font.weight: Font.Medium
-                                color: searchInput.placeholderTextColor
-                                elide: Text.ElideRight
-                                verticalAlignment: Text.AlignVCenter
-                            }
-                        }
-                    }
+                    Behavior on height  { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+                    Behavior on scale   { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
+                    Behavior on opacity { NumberAnimation { duration: 120 } }
 
                     ColumnLayout {
-                        Layout.fillWidth: true
-                        visible: searchInput.text.length > 0 && resultList.count > 0
+                        id: contentCol
+                        anchors { top: parent.top; left: parent.left; right: parent.right; margins: 14 }
                         spacing: 0
 
-                        Rectangle {
+                        RowLayout {
                             Layout.fillWidth: true
-                            height: 1; color: "#15FFFFFF"
-                            Layout.topMargin: 12; Layout.bottomMargin: 8
-                        }
+                            Layout.preferredHeight: 30
+                            spacing: 12
 
-                        ListView {
-                            id: resultList
-                            Layout.fillWidth: true
-                            implicitHeight: Math.min(count, 6) * 50
-                            model: spotlight.results
-                            currentIndex: 0
-                            interactive: false
+                            Text {
+                                text: "⌕"
+                                font.family: spotlight.fontFamily
+                                font.pixelSize: 24
+                                color: "#99FFFFFF"
+                                Layout.leftMargin: 8
+                                Layout.alignment: Qt.AlignVCenter
+                            }
 
-                            delegate: Rectangle {
-                                width: resultList.width
-                                height: 50
-                                radius: 7
-                                color: resultList.currentIndex === index ? "#007AFF" : "transparent"
+                            Item {
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignVCenter
+                                Layout.preferredHeight: 30
 
-                                RowLayout {
-                                    anchors { fill: parent; leftMargin: 12; rightMargin: 12 }
-                                    spacing: 15
-
-                                    Components.AppIcon {
-                                        Layout.preferredWidth: 30
-                                        Layout.preferredHeight: 30
-                                        entry: modelData
-                                        fallbackRadius: 6
-                                        fallbackColor: "#22FFFFFF"
-                                    }
-
-                                    Text {
-                                        text: modelData ? modelData.name : ""
-                                        font.family: spotlight.fontFamily
-                                        font.pixelSize: 17
-                                        color: "white"
-                                        Layout.fillWidth: true
-                                        elide: Text.ElideRight
-                                    }
+                                Text {
+                                    anchors.fill: parent
+                                    text: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["spotlight.placeholder"]) || "Spotlight Search"
+                                    font.family: spotlight.fontFamily
+                                    font.pixelSize: 22
+                                    font.weight: Font.Light
+                                    color: searchInput.placeholderTextColor
+                                    verticalAlignment: Text.AlignVCenter
+                                    visible: searchInput.text.length === 0
+                                    renderType: Text.NativeRendering
                                 }
 
-                                MouseArea {
+                                TextInput {
+                                    id: searchInput
                                     anchors.fill: parent
-                                    hoverEnabled: true
-                                    onEntered: resultList.currentIndex = index
-                                    onClicked: spotlight.launch(index)
+                                    property color placeholderTextColor: "#66FFFFFF"
+
+                                    font.family: spotlight.fontFamily
+                                    font.pixelSize: 22
+                                    font.weight: Font.Light
+                                    color: "white"
+                                    selectionColor: "#407AFF"
+                                    selectedTextColor: "white"
+                                    clip: true
+
+                                    verticalAlignment: TextInput.AlignVCenter
+
+                                    onTextChanged: spotlight.scheduleResults(text)
+
+                                    Keys.onEscapePressed: spotlight.close()
+                                    Keys.onReturnPressed: if (resultList.count > 0) spotlight.launch(resultList.currentIndex)
+                                    Keys.onDownPressed: if (resultList.count > 0) resultList.currentIndex = (resultList.currentIndex + 1) % resultList.count
+                                    Keys.onUpPressed: if (resultList.count > 0) resultList.currentIndex = (resultList.currentIndex - 1 + resultList.count) % resultList.count
+
+                                    Component.onCompleted: forceActiveFocus()
+                                    onVisibleChanged: if (visible) { forceActiveFocus(); text = "" }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.maximumWidth: 68
+                                Layout.alignment: Qt.AlignVCenter
+                                spacing: 1
+                                visible: spotlight.weatherEnabled
+
+                                Image {
+                                    Layout.preferredWidth: 20
+                                    Layout.preferredHeight: 20
+                                    Layout.alignment: Qt.AlignVCenter
+                                    source: spotlight.weatherIconSource
+                                    sourceSize: Qt.size(40, 40)
+                                    visible: spotlight.weatherReady
+                                    fillMode: Image.PreserveAspectFit
+                                    smooth: true
+                                    mipmap: false
+                                    opacity: 0.78
+                                }
+
+                                Text {
+                                    text: "○"
+                                    visible: !spotlight.weatherReady
+                                    font.pixelSize: 18
+                                    color: searchInput.placeholderTextColor
+                                    Layout.alignment: Qt.AlignVCenter
+                                }
+
+                                Text {
+                                    Layout.maximumWidth: 46
+                                    text: spotlight.weatherReady ? spotlight.weatherTemp + "°" : "--°"
+                                    font.family: spotlight.fontFamily
+                                    font.pixelSize: 18
+                                    font.weight: Font.Medium
+                                    color: searchInput.placeholderTextColor
+                                    elide: Text.ElideRight
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            visible: searchInput.text.length > 0 && resultList.count > 0
+                            spacing: 0
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 1; color: "#15FFFFFF"
+                                Layout.topMargin: 12; Layout.bottomMargin: 8
+                            }
+
+                            ListView {
+                                id: resultList
+                                Layout.fillWidth: true
+                                implicitHeight: Math.min(count, 6) * 50
+                                model: spotlight.results
+                                currentIndex: 0
+                                interactive: false
+
+                                delegate: Rectangle {
+                                    width: resultList.width
+                                    height: 50
+                                    radius: 7
+                                    color: resultList.currentIndex === index ? "#007AFF" : "transparent"
+
+                                    RowLayout {
+                                        anchors { fill: parent; leftMargin: 12; rightMargin: 12 }
+                                        spacing: 15
+
+                                        Components.AppIcon {
+                                            Layout.preferredWidth: 30
+                                            Layout.preferredHeight: 30
+                                            entry: modelData
+                                            fallbackRadius: 6
+                                            fallbackColor: "#22FFFFFF"
+                                        }
+
+                                        Text {
+                                            text: modelData ? modelData.name : ""
+                                            font.family: spotlight.fontFamily
+                                            font.pixelSize: 17
+                                            color: "white"
+                                            Layout.fillWidth: true
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        onEntered: resultList.currentIndex = index
+                                        onClicked: spotlight.launch(index)
+                                    }
                                 }
                             }
                         }

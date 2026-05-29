@@ -1,5 +1,4 @@
 import QtQuick
-import Qt5Compat.GraphicalEffects
 import Quickshell
 import "../system/base" as SystemComponents
 import "../../.."
@@ -20,15 +19,9 @@ SystemComponents.TopbarIndicator {
         id: icon
         width: 16; height: 16
         source: root.quickshellAssetRoot + "topbar/control-center.png"
+        sourceSize: Qt.size(width, height)
         fillMode: Image.PreserveAspectFit
         smooth: true
-        mipmap: true
         opacity: root.pressed ? 0.7 : 1.0
-
-        layer.enabled: true
-        layer.smooth: true
-        layer.effect: ColorOverlay {
-            color: Theme.shellIconActive
-        }
     }
 }

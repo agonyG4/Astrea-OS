@@ -1,5 +1,4 @@
 import QtQuick
-import Qt5Compat.GraphicalEffects
 import "../../../.."
 
 Rectangle {
@@ -31,24 +30,16 @@ Rectangle {
         clip: true
         color: Theme.surface
 
-        Rectangle {
-            id: nowArtMask
-            anchors.fill: parent
-            radius: Theme.tileRadius
-            visible: false
-        }
-
         Image {
             anchors.fill: parent
             source: module.artSource
+            sourceSize: Qt.size(width, height)
             fillMode: Image.PreserveAspectCrop
             smooth: true
             mipmap: true
             cache: false
             asynchronous: true
             visible: module.artSource !== ""
-            layer.enabled: true
-            layer.effect: OpacityMask { maskSource: nowArtMask }
         }
 
         Text {
@@ -56,7 +47,7 @@ Rectangle {
             visible: module.artSource === ""
             text: "󰝚"
             color: Theme.shellIconMain
-            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIconLarge }
+            font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIconLarge }
         }
     }
 

@@ -5,6 +5,12 @@ function resetActivationCandidate(root) {
     root.lastActivationCandidateAt = 0
 }
 
+function focusFileSurface(root) {
+    const window = root && root.Window ? root.Window.window : null
+    if (window && window.focusFileSurface)
+        window.focusFileSurface()
+}
+
 function handlePrimaryItemClick(root, appState, path, isDir, fileUrl, fileName, index, modifiers) {
     const ctrl = Boolean(modifiers & Qt.ControlModifier)
     const shift = Boolean(modifiers & Qt.ShiftModifier)

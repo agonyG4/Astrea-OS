@@ -145,7 +145,7 @@ SystemComponents.TopbarPopup {
         Text {
             text:  "󰕿"
             color: Qt.rgba(1, 1, 1, 0.30)
-            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeTitle }
+            font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeTitle }
             anchors.verticalCenter: parent.verticalCenter
         }
 
@@ -226,7 +226,7 @@ SystemComponents.TopbarPopup {
         Text {
             text:  "󰕾"
             color: Qt.rgba(1, 1, 1, 0.30)
-            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeTitle }
+            font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeTitle }
             anchors.verticalCenter: parent.verticalCenter
         }
     }

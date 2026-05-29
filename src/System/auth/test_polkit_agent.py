@@ -15,6 +15,7 @@ SYSTEM_DIR = AUTH_DIR.parent
 AGENT = AUTH_DIR / "astrea-polkit-agent.py"
 PROMPT = AUTH_DIR / "astrea-polkit-prompt.py"
 QML_AGENT = AUTH_DIR / "astrea-polkit-agent.qml"
+QML_AGENT_COMPONENT = AUTH_DIR / "AstreaPolkitAgent.qml"
 SERVICE = SYSTEM_DIR / "services/astrea-polkit-agent.service"
 I18N_DIR = SYSTEM_DIR / "i18n"
 HYPR_WINDOW_RULES_SAMPLE = """
@@ -98,7 +99,11 @@ class AstreaPolkitAgentTests(unittest.TestCase):
         self.assertIn("astrea-polkit-agent.qml", source)
 
     def test_quickshell_agent_is_floating_window(self):
-        source = QML_AGENT.read_text()
+        wrapper = QML_AGENT.read_text()
+        source = QML_AGENT_COMPONENT.read_text()
+
+        self.assertIn("ShellRoot", wrapper)
+        self.assertIn("AstreaPolkitAgent {}", wrapper)
         self.assertIn("import Quickshell.Services.Polkit", source)
         self.assertIn("PolkitAgent", source)
         self.assertIn("FloatingWindow", source)
@@ -112,7 +117,7 @@ class AstreaPolkitAgentTests(unittest.TestCase):
         self.assertIn("activeFlow().submit(passwordField.text)", source)
 
     def test_quickshell_agent_uses_macos_style_profile_avatar(self):
-        source = QML_AGENT.read_text()
+        source = QML_AGENT_COMPONENT.read_text()
         self.assertIn('readonly property string avatarPath: "/var/lib/AccountsService/icons/" + userName', source)
         self.assertIn("import Qt5Compat.GraphicalEffects", source)
         self.assertIn("source: root.avatarPath", source)
@@ -132,7 +137,7 @@ class AstreaPolkitAgentTests(unittest.TestCase):
         self.assertIn("MacAuthButton", source)
 
     def test_quickshell_agent_uses_astrea_theme_and_i18n(self):
-        source = QML_AGENT.read_text()
+        source = QML_AGENT_COMPONENT.read_text()
         self.assertIn("import Quickshell.Io", source)
         self.assertIn("/.config/AstreaOS/ui/theme.json", source)
         self.assertIn("/System/i18n/i18n.py", source)
@@ -147,7 +152,7 @@ class AstreaPolkitAgentTests(unittest.TestCase):
         self.assertIn("function t(key, fallback)", source)
 
     def test_quickshell_agent_matches_app_theme_styles(self):
-        source = QML_AGENT.read_text()
+        source = QML_AGENT_COMPONENT.read_text()
         self.assertIn("readonly property bool isGlassShell", source)
         self.assertIn("readonly property bool isDefaultShell", source)
         self.assertIn("readonly property bool isFrostedShell", source)
@@ -162,7 +167,7 @@ class AstreaPolkitAgentTests(unittest.TestCase):
         self.assertIn("root.themedBorderColor()", source)
 
     def test_quickshell_agent_supports_form_tab_navigation(self):
-        source = QML_AGENT.read_text()
+        source = QML_AGENT_COMPONENT.read_text()
         self.assertIn("tabTarget: passwordField", source)
         self.assertIn("backtabTarget: usernameField", source)
         self.assertIn("property var tabTarget", source)

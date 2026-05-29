@@ -29,6 +29,16 @@ Item {
     property real pressMouseX: 0
     property real pressMouseY: 0
 
+    function iconSource(entry) {
+        if (!entry)
+            return "image://icon/application-x-executable"
+        if (entry.iconSource)
+            return entry.iconSource
+        if (!entry.icon)
+            return "image://icon/application-x-executable"
+        return "image://icon/" + entry.icon
+    }
+
     Binding {
         target: tile
         property: "x"
@@ -81,7 +91,8 @@ Item {
         y: hl.y + 8
         width: desktopState ? desktopState.iconSize : 52
         height: desktopState ? desktopState.iconSize : 52
-        source: tile.appData && tile.appData.icon ? "image://icon/" + tile.appData.icon : "image://icon/application-x-executable"
+        source: tile.iconSource(tile.appData)
+        sourceSize: Qt.size(width, height)
         asynchronous: true
         cache: true
         fillMode: Image.PreserveAspectFit

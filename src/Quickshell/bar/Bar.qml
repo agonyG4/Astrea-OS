@@ -105,6 +105,7 @@ Scope {
                     source: "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/ui/quickshell/bar/astrea.png"
                     width: 18
                     height: 18
+                    sourceSize: Qt.size(width, height)
                     fillMode: Image.PreserveAspectFit
                     opacity: Theme.opacityMuted
                 }

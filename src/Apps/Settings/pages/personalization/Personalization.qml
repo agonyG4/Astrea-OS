@@ -17,6 +17,7 @@ ScrollPage {
 
     readonly property var themeOptions: ["Dark", "Light"]
     readonly property var styleOptions: ["Transparent", "Default", "Frosted"]
+    readonly property var audioOsdOptions: ["Classic", "iOS"]
     readonly property var iconStyleOptions: ["Colored", "Clear"]
     readonly property var iconStyleValues: [1, 0]
     readonly property var iconThemeOptions: ["Default", "Dark"]
@@ -110,7 +111,6 @@ ScrollPage {
             SettingRow {
                 label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.personalization.label.accent_color"]) || "Accent color")
                 sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.personalization.sublabel.used_across_the_whole_shell"]) || "Used across the whole shell")
-                isLast: true
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
@@ -151,6 +151,30 @@ ScrollPage {
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.personalization.label.audio_osd_style"]) || "Audio indicator")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.personalization.personalization.sublabel.audio_osd_style"]) || "Volume change overlay style")
+                isLast: true
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+
+                SelectButton {
+                    implicitWidth: 140
+                    label: root.audioOsdOptions[Theme.audioOsdStyle]
+                    options: root.audioOsdOptions
+                    selectedIndex: Theme.audioOsdStyle
+                    accent: root.accent
+                    textPrimary: root.textPrimary
+                    textSecondary: root.textSecondary
+                    popupBg: root.popupBg
+                    onSelected: index => {
+                        Theme.audioOsdStyle = index
+                        Theme.save()
                     }
                 }
             }

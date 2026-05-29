@@ -31,13 +31,23 @@ ASTREA_SHARED = _load_astrea_shared()
 WP_CONF = Path.home() / ".config/wireplumber/wireplumber.conf.d/50-astrea-audio.conf"
 ALIASES_CONF = Path.home() / ".local/share/Astrea/System/config/audio-aliases.json"
 HIDDEN_OUTPUTS_CONF = Path.home() / ".local/share/Astrea/System/config/audio-hidden-outputs.json"
-SPATIAL_SINK = "effect_input.virtual-surround-7.1-hesuvi"
-SPATIAL_OUTPUT_STREAM = "effect_output.virtual-surround-7.1-hesuvi"
+SPATIAL_SINK = "effect_input.virtual-surround-7.1-astrea"
+SPATIAL_OUTPUT_STREAM = "effect_output.virtual-surround-7.1-astrea"
+LEGACY_SPATIAL_SINK = "effect_input.virtual-surround-7.1-hesuvi"
+LEGACY_SPATIAL_OUTPUT_STREAM = "effect_output.virtual-surround-7.1-hesuvi"
+SPATIAL_SINKS = (SPATIAL_SINK, LEGACY_SPATIAL_SINK)
+SPATIAL_OUTPUT_STREAMS = (SPATIAL_OUTPUT_STREAM, LEGACY_SPATIAL_OUTPUT_STREAM)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def run(cmd: list) -> str:
     try:
-        return subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True)
+        return subprocess.check_output(
+            cmd,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
     except Exception:
         return ""
 
@@ -50,6 +60,23 @@ def read_json(path: Path, default):
             return json.load(handle)
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return default
+
+
+def parse_command_json(raw: str, default):
+    try:
+        return json.loads(raw)
+    except Exception:
+        pass
+    # pactl may print localization/encoding warnings around otherwise valid JSON.
+    decoder = json.JSONDecoder()
+    starts = [idx for idx in (raw.find("["), raw.find("{")) if idx >= 0]
+    for start in sorted(starts):
+        try:
+            payload, _ = decoder.raw_decode(raw[start:])
+            return payload
+        except Exception:
+            continue
+    return default
 
 
 def atomic_write_json(path: Path, payload, *, indent: int | None = 2, sort_keys: bool = False) -> None:
@@ -184,9 +211,8 @@ def get_default_sink() -> str:
 
 def get_sinks() -> list:
     raw = run(["pactl", "-f", "json", "list", "sinks"])
-    try:
-        sinks = json.loads(raw)
-    except Exception:
+    sinks = parse_command_json(raw, [])
+    if not isinstance(sinks, list):
         return []
     result = []
     aliases = get_aliases()
@@ -213,19 +239,13 @@ def get_sinks() -> list:
 
 def get_sink_inputs() -> list:
     raw = run(["pactl", "-f", "json", "list", "sink-inputs"])
-    try:
-        inputs = json.loads(raw)
-    except Exception:
-        return []
+    inputs = parse_command_json(raw, [])
     return inputs if isinstance(inputs, list) else []
 
 
 def get_clients() -> dict[str, dict]:
     raw = run(["pactl", "-f", "json", "list", "clients"])
-    try:
-        clients = json.loads(raw)
-    except Exception:
-        return {}
+    clients = parse_command_json(raw, [])
     if not isinstance(clients, list):
         return {}
     result = {}
@@ -250,17 +270,29 @@ def _sink_name_by_index(sinks: list, index) -> str:
     return ""
 
 
+def _is_spatial_sink_name(name: str) -> bool:
+    return name in SPATIAL_SINKS
+
+
 def _spatial_output_input(inputs: list) -> dict | None:
     for inp in inputs:
         props = inp.get("properties", {})
-        if props.get("node.name") == SPATIAL_OUTPUT_STREAM:
+        if props.get("node.name") in SPATIAL_OUTPUT_STREAMS:
             return inp
     return None
 
 
+def _loaded_spatial_sink_name(sinks: list) -> str:
+    for sink_name in SPATIAL_SINKS:
+        if any(s.get("name") == sink_name for s in sinks):
+            return sink_name
+    return SPATIAL_SINK
+
+
 def spatial_state(sinks: list, inputs: list, default_sink: str) -> dict:
-    spatial_sink = next((s for s in sinks if s.get("name") == SPATIAL_SINK), None)
-    physical = [s for s in sinks if s.get("name") != SPATIAL_SINK and not s.get("virtual")]
+    active_spatial_sink = _loaded_spatial_sink_name(sinks)
+    spatial_sink = next((s for s in sinks if s.get("name") == active_spatial_sink), None)
+    physical = [s for s in sinks if not _is_spatial_sink_name(s.get("name", "")) and not s.get("virtual")]
     output_input = _spatial_output_input(inputs)
     target_name = _sink_name_by_index(sinks, output_input.get("sink")) if output_input else ""
     if not target_name and physical:
@@ -268,8 +300,8 @@ def spatial_state(sinks: list, inputs: list, default_sink: str) -> dict:
     target = next((s for s in physical if s.get("name") == target_name), None)
     return {
         "available": spatial_sink is not None,
-        "enabled": default_sink == SPATIAL_SINK,
-        "sink": SPATIAL_SINK,
+        "enabled": _is_spatial_sink_name(default_sink),
+        "sink": active_spatial_sink,
         "target_sink": target_name,
         "target_description": (target or {}).get("description", ""),
         "output_index": output_input.get("index") if output_input else None,
@@ -286,7 +318,7 @@ def build_outputs_state(sinks: list, spatial: dict, default_sink: str, hidden_na
 
     for sink in sinks:
         name = sink.get("name", "")
-        if not name or name == SPATIAL_SINK or sink.get("virtual"):
+        if not name or _is_spatial_sink_name(name) or sink.get("virtual"):
             continue
 
         item = dict(sink)
@@ -688,18 +720,18 @@ def apply_config(cfg: dict):
             target = cfg.get("target_sink")
             if target:
                 move_spatial_target(str(target))
-            run(["pactl", "set-default-sink", SPATIAL_SINK])
+            run(["pactl", "set-default-sink", current_spatial_sink()])
         else:
             target = str(cfg.get("target_sink") or current_spatial_target() or first_physical_sink())
             if target:
                 run(["pactl", "set-default-sink", target])
     if "set_default_sink" in cfg:
         target = str(cfg["set_default_sink"])
-        if target == SPATIAL_SINK:
-            run(["pactl", "set-default-sink", SPATIAL_SINK])
-        elif get_default_sink() == SPATIAL_SINK:
+        if _is_spatial_sink_name(target):
+            run(["pactl", "set-default-sink", current_spatial_sink()])
+        elif _is_spatial_sink_name(get_default_sink()):
             move_spatial_target(target)
-            run(["pactl", "set-default-sink", SPATIAL_SINK])
+            run(["pactl", "set-default-sink", current_spatial_sink()])
         else:
             run(["pactl", "set-default-sink", target])
     if "rename" in cfg and "name" in cfg:
@@ -724,10 +756,14 @@ def current_spatial_target() -> str:
     return spatial_state(sinks, inputs, get_default_sink()).get("target_sink", "")
 
 
+def current_spatial_sink() -> str:
+    return _loaded_spatial_sink_name(get_sinks())
+
+
 def first_physical_sink() -> str:
     for sink in get_sinks():
         name = sink.get("name", "")
-        if name and name != SPATIAL_SINK:
+        if name and not _is_spatial_sink_name(name) and not sink.get("virtual"):
             return name
     return ""
 

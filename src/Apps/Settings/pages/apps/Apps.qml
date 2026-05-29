@@ -310,6 +310,10 @@ ScrollPage {
                 appData: modelData
                 iconSize: 42
                 iconRadius: 10
+                fallbackColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+                fallbackBorderColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22)
+                fallbackTextColor: root.textPrimary
+                fallbackFontFamily: Theme.fontFamily
             }
 
             Column {
@@ -540,62 +544,6 @@ ScrollPage {
         }
     }
 
-    component AppIcon: Rectangle {
-        id: appIcon
-        required property var appData
-        property int iconSize: 52
-        property int iconRadius: 14
-        readonly property bool fileIconReady: fileIconImage.status === Image.Ready
-        readonly property bool themedIconReady: themedIconImage.status === Image.Ready
-        readonly property bool hasIcon: fileIconReady || themedIconReady
-
-        width: iconSize
-        height: iconSize
-        radius: iconRadius
-        color: hasIcon ? "transparent" : Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
-        border.width: hasIcon ? 0 : 1
-        border.color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22)
-        clip: true
-
-        Image {
-            id: fileIconImage
-            anchors.fill: parent
-            anchors.margins: Math.max(2, Math.round(parent.width * 0.04))
-            source: (appIcon.appData.icon_path && (appIcon.appData.icon_path.startsWith("/") || appIcon.appData.icon_path.startsWith("file://")))
-                ? (appIcon.appData.icon_path.startsWith("file://") ? appIcon.appData.icon_path : "file://" + appIcon.appData.icon_path)
-                : ""
-            fillMode: Image.PreserveAspectFit
-            smooth: true
-            asynchronous: true
-            cache: true
-            mipmap: true
-            visible: status === Image.Ready
-        }
-
-        Image {
-            id: themedIconImage
-            anchors.fill: parent
-            anchors.margins: Math.max(3, Math.round(parent.width * 0.07))
-            source: appIcon.appData.icon ? "image://icon/" + appIcon.appData.icon : ""
-            fillMode: Image.PreserveAspectFit
-            smooth: true
-            asynchronous: true
-            cache: true
-            mipmap: true
-            visible: !fileIconImage.visible && status === Image.Ready
-        }
-
-        Text {
-            anchors.centerIn: parent
-            text: (appIcon.appData.name || "?").slice(0, 1).toUpperCase()
-            color: root.textPrimary
-            font.family: Theme.fontFamily
-            font.pixelSize: Math.round(parent.width * 0.34)
-            font.weight: Font.DemiBold
-            visible: !appIcon.hasIcon
-        }
-    }
-
     Item {
         Layout.alignment: Qt.AlignHCenter
         visible: root.loading
@@ -791,6 +739,10 @@ ScrollPage {
                     appData: root.detailApp(root.selectedAppData)
                     iconSize: 64
                     iconRadius: 16
+                    fallbackColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.18)
+                    fallbackBorderColor: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.22)
+                    fallbackTextColor: root.textPrimary
+                    fallbackFontFamily: Theme.fontFamily
                     Layout.preferredWidth: 64
                     Layout.preferredHeight: 64
                 }

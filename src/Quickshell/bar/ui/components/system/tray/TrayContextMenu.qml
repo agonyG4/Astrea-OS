@@ -90,10 +90,10 @@ PopupComponents.TopbarPopup {
             anchors.verticalCenter: parent.verticalCenter
             width: 18
             height: 18
+            sourceSize: Qt.size(width, height)
             source: control.trayIconSource(control.trayItem ? (control.trayItem.icon || "") : "")
             fillMode: Image.PreserveAspectFit
             smooth: true
-            mipmap: true
         }
 
         Text {

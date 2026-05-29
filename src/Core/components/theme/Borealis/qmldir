@@ -1,0 +1,6 @@
+module Borealis
+Theme 1.0 Theme.qml
+singleton State 1.0 State.qml
+singleton Tokens 1.0 Tokens.qml
+singleton Apps 1.0 Apps.qml
+singleton Shell 1.0 Shell.qml

@@ -23,7 +23,7 @@ Rectangle {
         anchors.centerIn: parent
         text: mediaButton.icon
         color: Theme.shellIconMain
-        font { family: Theme.fontFamily; pixelSize: mediaButton.primary ? Theme.fontSizeIconLarge : Theme.fontSizeIcon }
+        font { family: Theme.iconFontFamily; pixelSize: mediaButton.primary ? Theme.fontSizeIconLarge : Theme.fontSizeIcon }
     }
 
     MouseArea {

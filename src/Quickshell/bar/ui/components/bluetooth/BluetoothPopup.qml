@@ -89,7 +89,7 @@ SystemComponents.TopbarPopup {
                 anchors.centerIn: parent
                 text:  root.powerPending ? "󰑐" : "󰂯"
                 color: root.btOn ? Theme.shellIconAccent : Theme.shellIconMuted
-                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeBody }
+                font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeBody }
                 Behavior on color { ColorAnimation { duration: Theme.animationFast } }
                 RotationAnimation on rotation {
                     running: root.powerPending
@@ -165,7 +165,7 @@ SystemComponents.TopbarPopup {
                 anchors.verticalCenter: parent.verticalCenter
                 text:  root.scanning ? "󰑐" : "󰍉"
                 color: root.scanning ? Theme.shellIconAccent : Theme.shellTextSecondary
-                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+                font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIcon }
                 RotationAnimation on rotation {
                     running: root.scanning
                     from: 0; to: 360
@@ -245,7 +245,7 @@ SystemComponents.TopbarPopup {
             anchors.centerIn: parent; spacing: Theme.spacingSmall
             Text {
                 anchors.verticalCenter: parent.verticalCenter
-                text: "󰒓"; color: Theme.shellTextSecondary; font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+                text: "󰒓"; color: Theme.shellTextSecondary; font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIcon }
             }
             Text {
                 anchors.verticalCenter: parent.verticalCenter
@@ -292,7 +292,7 @@ SystemComponents.TopbarPopup {
                 anchors.verticalCenter: parent.verticalCenter
                 text:  rowRoot.isPaired ? "󰂱" : "󰂴"
                 color: rowRoot.isConnected ? Theme.shellIconAccent : Theme.shellIconMain
-                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+                font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIcon }
                 Behavior on color { ColorAnimation { duration: Theme.animationFast } }
             }
 

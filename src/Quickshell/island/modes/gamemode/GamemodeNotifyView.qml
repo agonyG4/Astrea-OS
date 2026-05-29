@@ -12,7 +12,7 @@ Item {
 
     Text {
         anchors.centerIn: parent
-        text: "🎮"
+        text: "󰊴"
         font.family: root.fontFamily
         font.pixelSize: 48
         antialiasing: true

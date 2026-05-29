@@ -36,7 +36,7 @@ yes:Casa 5G:74:WPA2 WPA3
         self.assertTrue(networks[0]["active"])
         self.assertEqual(networks[1]["signal"], 92)
 
-    def test_wifi_payload_falls_back_to_simulation_without_wifi_device(self):
+    def test_wifi_payload_reports_unavailable_without_wifi_device(self):
         manager = load_module()
         with tempfile.TemporaryDirectory() as tmpdir:
             manager.STATE_DIR = Path(tmpdir)
@@ -45,10 +45,12 @@ yes:Casa 5G:74:WPA2 WPA3
                 payload = manager._wifi_payload()
 
         self.assertTrue(payload["success"])
-        self.assertTrue(payload["simulated"])
         self.assertFalse(payload["available"])
-        self.assertGreaterEqual(len(payload["networks"]), 3)
-        self.assertTrue(any(item["active"] for item in payload["networks"]))
+        self.assertFalse(payload["enabled"])
+        self.assertEqual(payload["device"], "")
+        self.assertEqual(payload["state"], "unavailable")
+        self.assertEqual(payload["connected_ssid"], "")
+        self.assertEqual(payload["networks"], [])
 
 
 if __name__ == "__main__":

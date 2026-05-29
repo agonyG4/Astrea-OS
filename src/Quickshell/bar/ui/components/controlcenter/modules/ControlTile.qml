@@ -43,7 +43,7 @@ Rectangle {
                 anchors.centerIn: parent
                 text: tile.icon
                 color: tile.active && !tile.error ? "#ffffff" : (tile.error ? Theme.iconWarning : Theme.shellIconMain)
-                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+                font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIcon }
                 RotationAnimation on rotation {
                     running: tile.busy
                     from: 0
@@ -98,7 +98,7 @@ Rectangle {
             anchors.centerIn: parent
             text: tile.icon
             color: tile.active && !tile.error ? "#ffffff" : (tile.error ? Theme.iconWarning : Theme.shellIconMain)
-            font { family: Theme.fontFamily; pixelSize: Math.max(12, tile.circleSize * 0.48) }
+            font { family: Theme.iconFontFamily; pixelSize: Math.max(12, tile.circleSize * 0.48) }
             RotationAnimation on rotation {
                 running: tile.busy
                 from: 0

@@ -32,11 +32,11 @@ Rectangle {
                 anchors.centerIn: parent
                 width: Math.min(18, parent.width)
                 height: width
+                sourceSize: Qt.size(width, height)
                 visible: root.iconIsImage
                 source: root.iconIsImage ? root.icon : ""
                 fillMode: Image.PreserveAspectFit
                 smooth: true
-                mipmap: true
             }
 
             Text {
@@ -44,6 +44,7 @@ Rectangle {
                 visible: !root.iconIsImage
                 text:  root.icon
                 color: _mouse.containsMouse ? Theme.shellIconActive : Theme.shellIconMain
+                font.family: Theme.iconFontFamily
                 font.pixelSize: Theme.fontSizeIcon
                 Behavior on color { ColorAnimation { duration: Theme.animationFast } }
             }

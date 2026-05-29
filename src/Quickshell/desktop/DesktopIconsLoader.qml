@@ -7,6 +7,7 @@ Item {
 
     readonly property string configPath: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/Astrea/desktop-icons/config.json"
     property bool enabled: false
+    property bool componentEnabled: true
     property bool gameModeActive: false
 
     Process {
@@ -17,7 +18,7 @@ Item {
             "import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); p.parent.mkdir(parents=True, exist_ok=True); cfg={'enabled': True};\nif p.exists():\n    cfg.update(json.loads(p.read_text(encoding='utf-8') or '{}'))\nelse:\n    p.write_text(json.dumps(cfg, indent=4) + '\\n', encoding='utf-8')\nprint(json.dumps(cfg))",
             root.configPath
         ]
-        running: true
+        running: root.componentEnabled
         stdout: StdioCollector { id: configStdout }
         onExited: function(exitCode) {
             if (exitCode !== 0) {
@@ -34,8 +35,18 @@ Item {
         }
     }
 
+    onComponentEnabledChanged: {
+        if (componentEnabled && !configProcess.running) {
+            configProcess.running = false
+            configProcess.running = true
+        } else if (!componentEnabled) {
+            configProcess.running = false
+            root.enabled = false
+        }
+    }
+
     Loader {
-        active: root.enabled && !root.gameModeActive
+        active: root.componentEnabled && root.enabled && !root.gameModeActive
         source: active ? Qt.resolvedUrl("DesktopIcons.qml") : ""
         onLoaded: if (item) item.performancePaused = Qt.binding(function() { return root.gameModeActive })
     }

@@ -17,6 +17,18 @@ Observed assets:
 - `Assets/ui/quickshell/island/*`
 - `Apps/Weather/assets/icons/weather/*`
 - `audio/hrir.wav`
+- `audio/astrea_sidefix_7p1_16ch_50ms_safe_-10dB.wav`
+
+## Audio Assets
+`audio/hrir.wav` is the canonical packaged Astrea Spatial Audio HRIR.
+
+Current format:
+- 48 kHz
+- 16 channels
+- 50 ms
+- 7.1 layout represented as 8 speaker positions times 2 ears
+
+The named sidefix file is kept beside it as a provenance/readability copy. Runtime PipeWire config should point to `/home/agony/.local/share/Astrea/audio/hrir.wav`.
 
 ## Data
 Folder: `Data/`

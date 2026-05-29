@@ -64,6 +64,7 @@ Use `Theme.*` tokens before introducing any hardcoded colors.
 - Media Viewer or Wallpapers: read `03 Apps/MOC - Apps.md` plus the specific app note.
 - Python, Rust, Bash, DBus, portal, or CLI behavior: read `05 Bridges/MOC - Bridges and Backends.md`.
 - Bluetooth, system services, display, theme side effects: read `06 System/MOC - System.md`.
+- Audio, PipeWire, spatial output, HRIR, or sink routing: read `05 Bridges/Astrea - Audio Bridge.md` plus `07 Data/Astrea - Assets and Data.md`.
 - Language/i18n or Polkit prompts: read `06 System/MOC - System.md`.
 - App launch, latency burst, or runtime service install: read `06 System/Astrea - Launcher and Latency.md`.
 - Paths, cache, generated state, assets: read `07 Data/MOC - Data.md` and `08 Dependencies/MOC - Dependencies.md`.

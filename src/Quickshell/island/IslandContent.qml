@@ -1,46 +1,34 @@
 import QtQuick
+import "."
 import "../bar" as Bar
-import "./modes/gamemode" as Gamemode
-import "./modes/music" as Music
+import "./core" as Core
 
 Rectangle {
     id: islandContent
 
+    property QtObject islandState: null
+
     // ── Estado derivado ───────────────────────────────────────────
     readonly property bool isGamemodeNotify:       island.showGamemodeNotify
-    readonly property bool isMouseOver:            mouseArea.hovered
+    readonly property bool isMouseOver:            interaction.hovered
+    readonly property bool isExpanded:             interaction.expanded
     readonly property real flipScale:              Math.abs(Math.cos(island.artFlipAngle * Math.PI / 180))
-    readonly property bool isNotch:                island.islandConfig.style === "Notch"
+    readonly property bool isNotch:                geometry.isNotch
 
     // ── Dimensões ─────────────────────────────────────────────────
-    width: {
-        if (isGamemodeNotify)  return isNotch ? 210 : 100
-        if (!island.hasMusic)
-            return isNotch ? 210 : 120
-        if (island.isExpanded)
-            return isNotch ? 380 : 360
-        if (!island.showCompactMusic)
-            return isNotch ? 210 : 120
-        return isNotch ? 210 : 180
-    }
-    height: {
-        if (isGamemodeNotify)  return 100
-        if (!island.hasMusic)
-            return isNotch ? 32 : 34
-        if (island.isExpanded)
-            return 160
-        if (!island.showCompactMusic)
-            return isNotch ? 32 : 34
-        return isNotch ? 32 : 34
+    Core.IslandGeometry {
+        id: geometry
+
+        style: island.islandConfig.style
+        hasMusic: island.hasMusic
+        isExpanded: island.isExpanded
+        showCompactMusic: island.showCompactMusic
+        showGamemodeNotify: islandContent.isGamemodeNotify
     }
 
-    property real currentRadius: {
-        if (isGamemodeNotify)  return 32
-        if (island.isExpanded) return (isNotch && !island.hasMusic) ? 17 : 32
-        return 17
-    }
-
-    radius:            currentRadius
+    width:             geometry.width
+    height:            geometry.height
+    radius:            geometry.radius
     color:             "transparent"
     clip:              true
     transformOrigin:   Item.Top
@@ -48,7 +36,7 @@ Rectangle {
     anchors {
         horizontalCenter: parent.horizontalCenter
         top:              parent.top
-        topMargin:        isNotch ? 0 : 8
+        topMargin:        geometry.topMargin
     }
 
     property real pulseScale: 1.0
@@ -60,14 +48,14 @@ Rectangle {
         NumberAnimation { target: islandContent; property: "pulseScale"; to: 1.0;   duration: 480; easing.type: Easing.BezierSpline; easing.bezierCurve: [0.34, 1.56, 0.64, 1.0] }
     }
 
-    Behavior on width         { NumberAnimation { duration: (island.isExpanded || isGamemodeNotify) ? flipAnim.containerExpandDuration  : flipAnim.containerCollapseDuration; easing.type: Easing.OutExpo } }
-    Behavior on height        { NumberAnimation { duration: (island.isExpanded || isGamemodeNotify) ? flipAnim.containerExpandDuration  : flipAnim.containerCollapseDuration; easing.type: Easing.OutExpo } }
-    Behavior on currentRadius { NumberAnimation { duration: flipAnim.radiusDuration; easing.type: Easing.OutExpo } }
+    Behavior on width  { NumberAnimation { duration: geometry.isExpandedOrNotify ? flipAnim.containerExpandDuration : flipAnim.containerCollapseDuration; easing.type: Easing.OutExpo } }
+    Behavior on height { NumberAnimation { duration: geometry.isExpandedOrNotify ? flipAnim.containerExpandDuration : flipAnim.containerCollapseDuration; easing.type: Easing.OutExpo } }
+    Behavior on radius { NumberAnimation { duration: flipAnim.radiusDuration; easing.type: Easing.OutExpo } }
 
     // ── Background ────────────────────────────────────────────────
     Rectangle {
         anchors.fill: parent
-        radius:       parent.currentRadius
+        radius:       parent.radius
         color:        Bar.Theme.islandBackground
 
         Rectangle {
@@ -79,39 +67,13 @@ Rectangle {
 
     }
 
-    HoverHandler { id: mouseArea }
-
-    // ── Compact: music bars ───────────────────────────────────────
-    Music.MusicCompactBars {
-        anchors.fill: parent
-        active: !isGamemodeNotify && island.showCompactMusic && !isMouseOver
-        bars: island.musicBars
-        minHeight: island.musicBarsMinHeight
-        maxHeight: island.musicBarsMaxHeightCompact
-        tint: island.dominantCol
+    Core.IslandInteraction {
+        id: interaction
     }
 
-    // ── Gamemode notify ───────────────────────────────────────────
-    Gamemode.GamemodeNotifyView {
-        anchors.fill: parent
-        active: isGamemodeNotify
-        fontFamily: Bar.Theme.fontFamilyDisplay
-    }
-
-    // ── Home: MusicView ───────────────────────────────────────────
-    Music.MusicView {
-        id: musicView
-        anchors.fill: parent
-    }
-
-    // ── Floating album art ────────────────────────────────────────
-    Music.MusicArtwork {
-        id:      floatingArt
-        active: island.hasMusic && !isGamemodeNotify && (island.showCompactMusic || island.isExpanded)
-        expanded: island.isExpanded && island.hasMusic && !isGamemodeNotify
-        artSource: island.artSource
+    IslandModeHost {
+        isGamemodeNotify: islandContent.isGamemodeNotify
+        isMouseOver: islandContent.isMouseOver
         flipScale: islandContent.flipScale
-        expandDuration: flipAnim.artExpandDuration
-        collapseDuration: flipAnim.artCollapseDuration
     }
 }

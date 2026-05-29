@@ -212,34 +212,107 @@ def steam_game_size(app: dict) -> dict | None:
     return None
 
 
+GENERIC_EXEC_WRAPPERS = {
+    "gamemoderun",
+    "mangohud",
+    "nohup",
+    "prime-run",
+    "setsid",
+}
+SHELL_COMMANDS = {"bash", "dash", "fish", "sh", "zsh"}
+
+
+def strip_desktop_exec_codes(tokens: list[str]) -> list[str]:
+    return [token for token in tokens if not token.startswith("%")]
+
+
+def resolve_command_path(command: str) -> Path | None:
+    if not command:
+        return None
+    path = Path(command).expanduser() if "/" in command else Path(shutil.which(command) or "")
+    return path if str(path) else None
+
+
+def executable_candidates_from_tokens(tokens: list[str]) -> list[Path]:
+    tokens = strip_desktop_exec_codes(tokens)
+    if not tokens:
+        return []
+
+    first = tokens[0]
+    first_name = Path(first).name
+
+    if first_name == "env":
+        rest = tokens[1:]
+        while rest:
+            token = rest[0]
+            if "=" in token:
+                rest = rest[1:]
+                continue
+            if token == "--":
+                rest = rest[1:]
+                continue
+            if token.startswith("-"):
+                rest = rest[1:]
+                if token in {"-u", "--unset"} and rest:
+                    rest = rest[1:]
+                continue
+            break
+        return executable_candidates_from_tokens(rest)
+
+    if first_name in SHELL_COMMANDS and "-c" in tokens:
+        index = tokens.index("-c")
+        if index + 1 < len(tokens):
+            command = tokens[index + 1].strip()
+            if command.startswith("exec "):
+                command = command[5:].strip()
+            try:
+                return executable_candidates_from_tokens(shlex.split(command))
+            except ValueError:
+                return []
+        return []
+
+    if first_name in GENERIC_EXEC_WRAPPERS:
+        return executable_candidates_from_tokens(tokens[1:])
+
+    resolved = resolve_command_path(first)
+    return [resolved] if resolved else []
+
+
 def executable_path(app: dict) -> Path | None:
     try:
         tokens = shlex.split(app.get("exec", ""))
     except ValueError:
         return None
-    if not tokens:
-        return None
-    first = tokens[0]
-    if first == "env" or first.endswith("/env"):
-        for token in tokens[1:]:
-            if "=" in token:
-                continue
-            first = token
-            break
-    resolved = Path(first).expanduser() if "/" in first else Path(shutil.which(first) or "")
-    return resolved if str(resolved) else None
+    candidates = executable_candidates_from_tokens(tokens)
+    return candidates[0] if candidates else None
 
 
 def pacman_owner(path: Path) -> str:
     try:
+        output = command_output(["pacman", "-Qoq", str(path)], timeout=3)
+    except Exception:
+        output = ""
+    for line in output.splitlines():
+        package = line.strip()
+        if package:
+            return package
+
+    try:
         output = command_output(["pacman", "-Qo", str(path)], timeout=3)
     except Exception:
         return ""
+
     marker = " is owned by "
-    if marker not in output:
-        return ""
-    owned = output.split(marker, 1)[1].strip()
-    return owned.rsplit(" ", 1)[0]
+    if marker in output:
+        owned = output.split(marker, 1)[1].strip()
+        return owned.split(" ", 1)[0]
+
+    markers = [" pertence a ", " é possuído por "]
+    for localized_marker in markers:
+        if localized_marker in output:
+            owned = output.split(localized_marker, 1)[1].strip()
+            return owned.split(" ", 1)[0]
+    return ""
 
 
 def pacman_installed_size(package: str) -> str:
@@ -324,9 +397,15 @@ def package_owner(app: dict) -> str:
     if owner:
         return owner
 
-    exe = executable_path(app)
-    if exe and exe.exists():
-        return pacman_owner(exe)
+    try:
+        tokens = shlex.split(app.get("exec", ""))
+    except ValueError:
+        tokens = []
+    for exe in executable_candidates_from_tokens(tokens):
+        if exe.exists():
+            owner = pacman_owner(exe)
+            if owner:
+                return owner
     return ""
 
 

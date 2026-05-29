@@ -34,6 +34,7 @@ Then read the domain MOC and the specific note for the task.
 | Settings, Explorer, Weather, Media Viewer, Wallpapers, About | [[MOC - Apps]] |
 | shared controls, file UI, paper/lockscreen modules | [[MOC - Core]] |
 | Python/Rust/Bash backend, JSON bridge, portal, weather daemon | [[MOC - Bridges and Backends]] |
+| audio, PipeWire, spatial output, HRIR, sink routing | [[Astrea - Audio Bridge]] and [[Astrea - Assets and Data]] |
 | systemd, Polkit, i18n, Bluetooth, launch, display side effects | [[MOC - System]] |
 | paths, caches, state, assets, generated files | [[MOC - Data]] |
 | external tools or outside-project dependency | [[MOC - Dependencies]] |

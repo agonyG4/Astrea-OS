@@ -73,7 +73,7 @@ Rectangle {
         anchors.bottomMargin: Theme.spacingLarge
         text: sliderCard.leftIcon
         color: sliderCard.muted ? Theme.shellIconMuted : Theme.shellIconMain
-        font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+        font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIcon }
 
         MouseArea {
             anchors.fill: parent
@@ -166,6 +166,6 @@ Rectangle {
         anchors.bottomMargin: Theme.spacingLarge
         text: sliderCard.rightIcon
         color: sliderCard.muted ? Theme.shellIconMuted : Theme.shellIconMain
-        font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+        font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIcon }
     }
 }

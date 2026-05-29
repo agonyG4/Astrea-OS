@@ -6,9 +6,16 @@ import argparse
 import ctypes
 import json
 import os
+import re
 import select
+import shutil
+import subprocess
 import sys
+import tempfile
 import time
+import urllib.error
+import urllib.request
+import zipfile
 from pathlib import Path
 
 BRIDGE_DIR = Path(__file__).resolve().parents[2] / "Core" / "bridge"
@@ -53,6 +60,239 @@ def display_path(path: Path) -> str:
     if raw.startswith(home_prefix + "/"):
         return "$HOME/" + raw[len(home_prefix) + 1:]
     return raw
+
+
+def file_url(path: Path | str) -> str:
+    return Path(path).expanduser().resolve().as_uri()
+
+
+def steam_appid(parsed: dict[str, str]) -> str:
+    exec_line = str(parsed.get("exec") or "")
+    icon = str(parsed.get("icon") or "")
+
+    match = re.search(r"steam://rungameid/(\d+)", exec_line)
+    if match:
+        return match.group(1)
+
+    match = re.fullmatch(r"steam_icon_(\d+)", icon)
+    return match.group(1) if match else ""
+
+
+def steam_root() -> Path:
+    return Path.home() / ".local/share/Steam"
+
+
+def hicolor_icon_path(appid: str, size: int) -> Path:
+    return Path.home() / ".local/share/icons/hicolor" / f"{size}x{size}" / "apps" / f"steam_icon_{appid}.png"
+
+
+def update_icon_cache() -> None:
+    command = shutil.which("gtk-update-icon-cache")
+    if not command:
+        return
+    subprocess.run(
+        [command, "-f", "-t", str(Path.home() / ".local/share/icons/hicolor")],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=5,
+        check=False,
+    )
+
+
+def appinfo_hash_candidates(appid: str, name: str = "") -> list[str]:
+    path = steam_root() / "appcache/appinfo.vdf"
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return []
+
+    candidates: list[str] = []
+
+    markers = []
+    if name:
+        markers.append(name.encode("utf-8", errors="ignore"))
+    markers.append(appid.encode("ascii", errors="ignore"))
+
+    for marker in markers:
+        start = 0
+        while marker:
+            index = data.find(marker, start)
+            if index < 0:
+                break
+            chunk = data[max(0, index - 1024): index + 4096]
+            for raw in re.findall(rb"[0-9a-f]{40}", chunk):
+                value = raw.decode("ascii")
+                if value not in candidates:
+                    candidates.append(value)
+            start = index + len(marker)
+
+    return candidates
+
+
+def download_steam_icon_asset(appid: str, hash_value: str, ext: str, target: Path) -> bool:
+    url = f"https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/{appid}/{hash_value}.{ext}"
+    request = urllib.request.Request(url, headers={"User-Agent": "AstreaDesktopIcons/1.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=3) as response:
+            data = response.read(1024 * 1024)
+    except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
+        return False
+
+    if ext == "ico" and not data.startswith(b"\x00\x00\x01\x00"):
+        return False
+    if ext == "zip" and not data.startswith(b"PK"):
+        return False
+
+    try:
+        target.write_bytes(data)
+        return True
+    except OSError:
+        return False
+
+
+def steam_icon_assets(appid: str, name: str = "") -> list[Path]:
+    games_dir = steam_root() / "steam/games"
+    assets: list[Path] = []
+    seen: set[str] = set()
+    candidates = appinfo_hash_candidates(appid, name)
+
+    for hash_value in candidates:
+        for ext in ("ico", "zip"):
+            path = games_dir / f"{hash_value}.{ext}"
+            if path.is_file() and str(path) not in seen:
+                assets.append(path)
+                seen.add(str(path))
+
+    for hash_value in candidates:
+        for ext in ("ico", "zip"):
+            path = games_dir / f"{hash_value}.{ext}"
+            if str(path) in seen:
+                continue
+            try:
+                games_dir.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                continue
+            if download_steam_icon_asset(appid, hash_value, ext, path):
+                assets.append(path)
+                seen.add(str(path))
+
+    return assets
+
+
+def install_png_icon(appid: str, source: Path, size: int) -> bool:
+    target = hicolor_icon_path(appid, size)
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+        return True
+    except OSError:
+        return False
+
+
+def install_zip_icon(appid: str, path: Path) -> bool:
+    installed = False
+    try:
+        with zipfile.ZipFile(path) as archive:
+            for name in archive.namelist():
+                match = re.search(r"icon[_-](\d+)(?:px)?\.png$", name, flags=re.IGNORECASE)
+                if not match:
+                    continue
+                size = int(match.group(1))
+                if size not in {16, 24, 32, 48, 64, 96, 128, 256}:
+                    continue
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as handle:
+                    handle.write(archive.read(name))
+                    temp_path = Path(handle.name)
+                try:
+                    installed = install_png_icon(appid, temp_path, size) or installed
+                finally:
+                    temp_path.unlink(missing_ok=True)
+    except (OSError, zipfile.BadZipFile, KeyError):
+        return False
+    return installed
+
+
+def install_ico_icon(appid: str, path: Path) -> bool:
+    magick = shutil.which("magick")
+    if not magick:
+        return False
+
+    try:
+        result = subprocess.run(
+            [magick, "identify", "-format", "%p %w %h\n", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    if result.returncode != 0:
+        return False
+
+    frames: list[tuple[int, int]] = []
+    for line in result.stdout.splitlines():
+        match = re.match(r"(\d+)\s+(\d+)\s+(\d+)", line.strip())
+        if not match:
+            continue
+        index, width, height = map(int, match.groups())
+        if width == height and width in {16, 24, 32, 48, 64, 96, 128, 256}:
+            frames.append((width, index))
+    if not frames:
+        return False
+
+    installed = False
+    for size, index in sorted(frames, reverse=True):
+        target = hicolor_icon_path(appid, size)
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            result = subprocess.run(
+                [magick, f"{path}[{index}]", str(target)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5,
+                check=False,
+            )
+            installed = (result.returncode == 0) or installed
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+    return installed
+
+
+def ensure_steam_icon(appid: str, name: str = "") -> str:
+    icon_name = f"steam_icon_{appid}"
+    existing = ASTREA_SHARED.resolve_icon_path(icon_name)
+    if existing:
+        return existing
+
+    installed = False
+    for asset in steam_icon_assets(appid, name):
+        if asset.suffix.lower() == ".zip":
+            installed = install_zip_icon(appid, asset) or installed
+        elif asset.suffix.lower() == ".ico":
+            installed = install_ico_icon(appid, asset) or installed
+        if installed:
+            break
+
+    if installed:
+        update_icon_cache()
+        return ASTREA_SHARED.resolve_icon_path(icon_name)
+    return ""
+
+
+def icon_source_for(parsed: dict[str, str]) -> str:
+    appid = steam_appid(parsed)
+
+    if appid:
+        steam_icon_path = ensure_steam_icon(appid, str(parsed.get("name") or ""))
+        if steam_icon_path:
+            return file_url(steam_icon_path)
+
+    icon_path = str(parsed.get("icon_path") or "")
+    if icon_path:
+        return file_url(icon_path)
+
+    return ""
 
 
 def next_folder_path(desktop_dir: Path, base_name: str = "Nova Pasta") -> Path:
@@ -169,6 +409,7 @@ def collect_apps() -> list[dict[str, str]]:
             "name": str(parsed.get("name") or ""),
             "generic": str(parsed.get("generic") or ""),
             "icon": str(parsed.get("icon") or FALLBACK_ICON),
+            "iconSource": icon_source_for(parsed),
             "desktop": desktop_file,
             "kind": "app",
         })

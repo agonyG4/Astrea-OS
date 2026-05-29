@@ -282,6 +282,11 @@ Item {
 
     function stopDesktopIconWork() {
         refreshDebounce.stop()
+        saveStateDebounce.stop()
+        if (stateLoadProcess.running)
+            stateLoadProcess.running = false
+        if (stateSaveProcess.running)
+            stateSaveProcess.running = false
         if (appLoadProcess.running)
             appLoadProcess.running = false
         if (desktopSignatureProbe.running)
@@ -461,6 +466,8 @@ Item {
     Component.onCompleted: {
         stateLoadProcess.running = true
     }
+
+    Component.onDestruction: stopDesktopIconWork()
 
     function launchDesktop(path) {
         if (!path)

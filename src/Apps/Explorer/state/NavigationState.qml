@@ -29,26 +29,6 @@ QtObject {
     property int fileModelRevision: 0
     property bool fileModelFilling: false
     property string watchedDirectoryPath: ""
-    property string _pendingParseMode: ""
-    property WorkerScript jsonWorker: WorkerScript {
-        id: jsonWorker
-        source: "JsonWorker.js"
-        onMessage: function(msg) {
-            if (!msg.ok) {
-                navigation.fileModel.clear()
-                navigation.loadError = navigation._pendingParseMode === "search"
-                    ? "Erro ao pesquisar" : "Erro ao carregar diretório"
-                navigation.loadingDir = false
-                app.previewsEnabled = false
-                return
-            }
-            navigation.replaceFileModel(msg.items)
-            navigation.loadError = ""
-            navigation.loadingDir = false
-            if (navigation.loadError === "")
-                app.previewsEnabled = true
-        }
-    }
 
     function initialize() {
         var requestedPath = Quickshell.env("ASTREA_EXPLORER_START_PATH") || ""

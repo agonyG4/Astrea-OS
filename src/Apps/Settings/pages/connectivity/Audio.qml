@@ -22,7 +22,7 @@ Item {
 
     readonly property string _script:
         (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/system/audio.py"
-    readonly property string spatialSinkName: "effect_input.virtual-surround-7.1-hesuvi"
+    readonly property string spatialSinkName: "effect_input.virtual-surround-7.1-astrea"
 
     // ── State ─────────────────────────────────────────────────────────────
     property bool   loading:      true
@@ -560,6 +560,7 @@ Item {
                                         anchors.centerIn: parent
                                         width: 18; height: 18
                                         source: root.appIconSource(modelData)
+                                        sourceSize: Qt.size(width, height)
                                         visible: status === Image.Ready
                                         fillMode: Image.PreserveAspectFit
                                         smooth: true; mipmap: true

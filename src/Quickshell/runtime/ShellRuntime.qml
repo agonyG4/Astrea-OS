@@ -8,10 +8,15 @@ import "../island/modes/music" as Music
 Item {
     id: root
 
-    property alias musicState: musicMonitor
-    property alias networkState: networkStatus
-    property alias bluetoothState: bluetoothStatus
-    property alias audioState: audioStatus
+    property var componentSettings: null
+    readonly property bool topbarEnabled: !componentSettings || componentSettings.topbar
+    readonly property bool islandEnabled: !componentSettings || componentSettings.island
+    readonly property bool musicMonitoringEnabled: topbarEnabled || islandEnabled
+
+    readonly property var musicState: musicLoader.item
+    readonly property var networkState: networkLoader.item
+    readonly property var bluetoothState: bluetoothLoader.item
+    readonly property var audioState: audioLoader.item
     property alias gameModeState: gameMode
     readonly property bool gameModeActive: gameMode.active
 
@@ -19,39 +24,58 @@ Item {
     property int volumeOsdLevel: 50
     property bool volumeOsdMuted: false
 
+    function showVolumeOsd(level, muted) {
+        root.volumeOsdLevel = Math.max(0, Math.min(150, level))
+        root.volumeOsdMuted = muted
+        root.volumeOsdSerial += 1
+    }
+
     GameModeManager {
         id: gameMode
     }
 
-    Music.MusicMonitor {
-        id: musicMonitor
-        performancePaused: root.gameModeActive
+    Loader {
+        id: musicLoader
+        active: root.musicMonitoringEnabled
+        sourceComponent: Music.MusicMonitor {
+            performancePaused: false
+        }
     }
 
-    NetworkProcess {
-        id: networkStatus
-        performancePaused: root.gameModeActive
+    Loader {
+        id: networkLoader
+        active: root.topbarEnabled
+        sourceComponent: NetworkProcess {
+            performancePaused: root.gameModeActive
+        }
     }
 
-    BluetoothProcess {
-        id: bluetoothStatus
-        performancePaused: root.gameModeActive
+    Loader {
+        id: bluetoothLoader
+        active: root.topbarEnabled
+        sourceComponent: BluetoothProcess {
+            performancePaused: root.gameModeActive
+        }
     }
 
-    AudioProcess {
-        id: audioStatus
-        performancePaused: root.gameModeActive
+    Loader {
+        id: audioLoader
+        active: root.topbarEnabled
+        sourceComponent: AudioProcess {
+            performancePaused: root.gameModeActive
+            onVolumeChanged: (level, muted) => root.showVolumeOsd(level, muted)
+        }
     }
 
     IpcHandler {
         target: "astrea-osd"
 
         function showVolume(level: int, muted: bool): void {
-            root.volumeOsdLevel = Math.max(0, Math.min(150, level))
-            root.volumeOsdMuted = muted
-            audioStatus.level = root.volumeOsdLevel
-            audioStatus.muted = muted
-            root.volumeOsdSerial += 1
+            root.showVolumeOsd(level, muted)
+            if (root.audioState) {
+                root.audioState.level = root.volumeOsdLevel
+                root.audioState.muted = muted
+            }
         }
     }
 }

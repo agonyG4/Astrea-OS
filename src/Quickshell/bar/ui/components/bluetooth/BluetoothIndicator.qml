@@ -56,7 +56,7 @@ SystemComponents.TopbarIndicator {
         Text {
             anchors.centerIn: parent
             text:  root.btOn ? "󰂯" : "󰂲"
-            font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+            font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIcon }
             color: !root.btOn ? Theme.shellIconMuted
                  : root.connectedCount > 0 ? Theme.shellIconAccent
                  : Theme.shellIconMain

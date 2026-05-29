@@ -1,5 +1,4 @@
 import QtQuick
-import QtQuick.Controls
 import Quickshell
 import Quickshell.Services.SystemTray
 import "../../../.."
@@ -46,17 +45,44 @@ Row {
             color:  isHovered || isPressed ? (isPressed ? Qt.rgba(1, 1, 1, 0.2) : Theme.shellSeparator) : "transparent"
             Behavior on color { ColorAnimation { duration: Theme.animationFast } }
 
-            ToolTip.visible: isHovered && (modelData.tooltipTitle !== "" || modelData.title !== "")
-            ToolTip.text:    modelData.tooltipTitle || modelData.title || ""
-            ToolTip.delay:   500
-
             Image {
                 anchors.centerIn: parent
                 width: 16; height: 16
+                sourceSize: Qt.size(width, height)
                 source:   root.trayIconSource(modelData.icon || "")
                 fillMode: Image.PreserveAspectFit
                 smooth: true
-                mipmap: true
+            }
+
+            Rectangle {
+                id: trayTooltip
+                readonly property string label: modelData.tooltipTitle || modelData.title || ""
+                z: 100
+                visible: trayHover.hovered && label !== ""
+                opacity: visible ? 1 : 0
+                anchors.horizontalCenter: parent.horizontalCenter
+                y: parent.height + 6
+                width: Math.min(260, tooltipText.implicitWidth + 18)
+                height: 28
+                radius: Theme.radiusSmall
+                color: Theme.background
+                border.width: 1
+                border.color: Theme.border
+
+                Behavior on opacity { NumberAnimation { duration: Theme.animationFast } }
+
+                Text {
+                    id: tooltipText
+                    anchors.centerIn: parent
+                    width: parent.width - 12
+                    text: trayTooltip.label
+                    color: Theme.shellTextActive
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeCaption
+                    elide: Text.ElideRight
+                    horizontalAlignment: Text.AlignHCenter
+                    renderType: Text.NativeRendering
+                }
             }
 
             HoverHandler { id: trayHover }

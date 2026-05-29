@@ -88,13 +88,19 @@ Item {
                                 width: 92
                                 height: 92
                                 radius: 22
-                                color: index === root.controller.currentIndex ? "#347DFF" : "transparent"
-                                border.color: index === root.controller.currentIndex ? "#88FFFFFF" : "transparent"
-                                border.width: 1
-                                scale: index === root.controller.currentIndex ? 1.06 : 1.0
+                                color: "transparent"
 
-                                Behavior on color { ColorAnimation { duration: 90 } }
-                                Behavior on scale { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: parent.radius
+                                    color: index === root.controller.currentIndex ? "#347DFF" : "transparent"
+                                    border.color: index === root.controller.currentIndex ? "#88FFFFFF" : "transparent"
+                                    border.width: 1
+                                    scale: index === root.controller.currentIndex ? 1.06 : 1.0
+
+                                    Behavior on color { ColorAnimation { duration: 90 } }
+                                    Behavior on scale { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
+                                }
 
                                 AppIcon {
                                     anchors.centerIn: parent

@@ -63,8 +63,10 @@ Rectangle {
             source: root.iconSource
             width: root.iconSize
             height: root.iconSize
+            sourceSize: Qt.size(width, height)
             fillMode: Image.PreserveAspectFit
             smooth: true
+            mipmap: true
             opacity: root.enabled ? 1 : Components.Theme.opacityMuted
         }
 

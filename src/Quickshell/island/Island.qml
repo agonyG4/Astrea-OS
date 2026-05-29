@@ -10,6 +10,7 @@ PanelWindow {
     id: island
     property QtObject sharedMusicState: null
     property alias islandConfig: config
+    property alias gamemodeActive: islandState.gamemodeActive
     property bool canRemapLayer: false
     property bool remapVisible: true
     
@@ -30,88 +31,54 @@ PanelWindow {
 
     // ── Config ────────────────────────────────────────────────────
     Core.IslandConfig { id: config }
-    Core.IslandModeRouter {
-        id: modeRouter
+    Core.IslandState {
+        id: islandState
+
+        sharedMusicState: island.sharedMusicState
         musicEnabled: islandConfig.music
-        musicTitle: island.musicTitleText
-        shouldDisplayMusic: island.shouldDisplayMusic
-        notifyVisible: island.showGamemodeNotify
+        gamemodeNotifyEnabled: islandConfig.show_gamemode_notify
+        isExpanded: islandContent.isExpanded
+        onFlipRequested: flipAnim.triggerFlip()
     }
 
-    // ── Estado ───────────────────────────────────────────────────
-    readonly property string artUrlCache: sharedMusicState ? sharedMusicState.artUrlCache : ""
-    readonly property var    musicBars: sharedMusicState ? sharedMusicState.musicBars : [0, 0, 0, 0, 0, 0]
-    readonly property var    cavaBars: musicBars
-    readonly property string dominantCol: sharedMusicState ? sharedMusicState.dominantCol : "#ffffff"
-    readonly property real   musicPosition: sharedMusicState ? sharedMusicState.musicPosition : 0
-    readonly property real   musicLength: sharedMusicState ? sharedMusicState.musicLength : 1
-    property real   smoothPosition: 0
-    readonly property string musicTitleText: sharedMusicState ? sharedMusicState.musicTitleText : ""
-    readonly property string musicArtistText: sharedMusicState ? sharedMusicState.musicArtistText : ""
-    readonly property bool   shouldDisplayMusic: sharedMusicState ? sharedMusicState.shouldDisplayMusic : false
-    property string artSource:       ""
-    readonly property bool   isPlaying: sharedMusicState ? sharedMusicState.isPlaying : false
-    property int    musicBarsMinHeight:         4
-    property int    musicBarsMaxHeightExpanded: 32
-    property int    musicBarsMaxHeightCompact:  18
-    property int    cavaMinHeight:              musicBarsMinHeight
-    property int    cavaMaxHeightExpanded:      musicBarsMaxHeightExpanded
-    property int    cavaMaxHeightCompact:       musicBarsMaxHeightCompact
+    // ── Estado público / compatibilidade ─────────────────────────
+    property alias artUrlCache: islandState.artUrlCache
+    property alias musicBars: islandState.musicBars
+    property alias cavaBars: islandState.cavaBars
+    property alias dominantCol: islandState.dominantCol
+    property alias musicPosition: islandState.musicPosition
+    property alias musicLength: islandState.musicLength
+    property alias smoothPosition: islandState.smoothPosition
+    property alias musicTitleText: islandState.musicTitleText
+    property alias musicArtistText: islandState.musicArtistText
+    property alias shouldDisplayMusic: islandState.shouldDisplayMusic
+    property alias artSource: islandState.artSource
+    property alias isPlaying: islandState.isPlaying
+    property alias musicBarsMinHeight: islandState.musicBarsMinHeight
+    property alias musicBarsMaxHeightExpanded: islandState.musicBarsMaxHeightExpanded
+    property alias musicBarsMaxHeightCompact: islandState.musicBarsMaxHeightCompact
+    property alias cavaMinHeight: islandState.cavaMinHeight
+    property alias cavaMaxHeightExpanded: islandState.cavaMaxHeightExpanded
+    property alias cavaMaxHeightCompact: islandState.cavaMaxHeightCompact
+    property alias activeMode: islandState.activeMode
+    property alias hasMusic: islandState.hasMusic
+    property alias showCompactMusic: islandState.showCompactMusic
+    property alias isExpanded: islandState.isExpanded
+    property alias musicBarsActive: islandState.musicBarsActive
+    property alias cavaActive: islandState.cavaActive
+    property alias showGamemodeNotify: islandState.showGamemodeNotify
+    property alias artFlipPhase: islandState.artFlipPhase
+    property alias artFlipDirection: islandState.artFlipDirection
+    property alias artFlipAngle: islandState.artFlipAngle
+    property alias pendingArtSource: islandState.pendingArtSource
+    property alias isShuffle: islandState.isShuffle
+    property alias isLoop: islandState.isLoop
+    property alias isLoopTrack: islandState.isLoopTrack
+    property alias isLoopPlaylist: islandState.isLoopPlaylist
+    property alias loopMode: islandState.loopMode
+    property alias targetArtSource: islandState.targetArtSource
+    property alias targetArtPath: islandState.targetArtPath
 
-    readonly property string activeMode: modeRouter.activeMode
-    readonly property bool hasMusic: modeRouter.hasMusic
-    readonly property bool showCompactMusic: modeRouter.showCompactMusic
-    property bool isExpanded:         islandContent.isMouseOver
-    property bool musicBarsActive:    hasMusic && !showGamemodeNotify
-    property bool cavaActive:         musicBarsActive
-    property bool gamemodeActive:     false
-    property bool showGamemodeNotify: false
-
-    // ── Flip ──────────────────────────────────────────────────────
-    property int    artFlipPhase:     0
-    property int    artFlipDirection: 1
-    property real   artFlipAngle:     0
-    property string pendingArtSource: ""
-
-    // ── Playback ──────────────────────────────────────────────────
-    readonly property bool   isShuffle: sharedMusicState ? sharedMusicState.isShuffle : false
-    readonly property bool   isLoop: sharedMusicState ? sharedMusicState.isLoop : false
-    readonly property bool   isLoopTrack: sharedMusicState ? sharedMusicState.isLoopTrack : false
-    readonly property bool   isLoopPlaylist: sharedMusicState ? sharedMusicState.isLoopPlaylist : false
-    readonly property string loopMode: sharedMusicState ? sharedMusicState.loopMode : "none"
-    readonly property string targetArtSource: sharedMusicState ? sharedMusicState.artSource : ""
-    readonly property string targetArtPath: sharedMusicState ? sharedMusicState.artPath : ""
-
-    // ── Bindings ──────────────────────────────────────────────────
-    Binding on smoothPosition {
-        when:  isExpanded && isPlaying && musicLength > musicPosition
-        value: musicPosition
-        restoreMode: Binding.RestoreNone
-    }
-
-    onIsExpandedChanged: if (isExpanded) syncPosition()
-    onMusicPositionChanged: syncPosition()
-    onIsPlayingChanged: {
-        syncPosition()
-    }
-    onMusicTitleTextChanged: {
-        smoothPositionAnim.stop()
-        smoothPosition = 0
-    }
-    onTargetArtSourceChanged: {
-        if (!targetArtSource) {
-            artSource = ""
-            pendingArtSource = ""
-            return
-        }
-        triggerArtFlip(targetArtSource, targetArtPath)
-    }
-    onGamemodeActiveChanged: {
-        if (gamemodeActive && islandConfig.show_gamemode_notify) {
-            showGamemodeNotify = true
-            gamemodeNotifyTimer.restart()
-        }
-    }
     Connections {
         target: islandConfig
         function onAlways_on_topChanged() {
@@ -125,53 +92,32 @@ PanelWindow {
 
     // ── Helpers ───────────────────────────────────────────────────
     function formatTime(us) {
-        const s = Math.floor(us / 1_000_000)
-        const m = Math.floor(s / 60)
-        return m + ":" + String(s % 60).padStart(2, "0")
+        return islandState.formatTime(us)
     }
 
     function triggerArtFlip(newSource, localPath, direction) {
-        if (direction !== undefined) artFlipDirection = direction
-        if (newSource === artSource && pendingArtSource === "") return
-        if (artFlipPhase !== 0) { pendingArtSource = newSource; return }
-        pendingArtSource = newSource
-        flipAnim.triggerFlip()
+        islandState.triggerArtFlip(newSource, localPath, direction)
     }
 
     function syncPosition() {
-        smoothPositionAnim.stop()
-        smoothPosition = musicPosition
-        if (isExpanded && isPlaying && musicLength > musicPosition) {
-            smoothPositionAnim.to       = musicLength
-            smoothPositionAnim.duration = (musicLength - musicPosition) / 1000
-            smoothPositionAnim.start()
-        }
+        islandState.syncPosition()
     }
 
     // ── Timers / animações ────────────────────────────────────────
-    Timer {
-        id: gamemodeNotifyTimer
-        interval: 3000
-        onTriggered: island.showGamemodeNotify = false
-    }
-
     Timer {
         id: layerRemapTimer
         interval: 1
         onTriggered: island.remapVisible = true
     }
 
-    NumberAnimation {
-        id: smoothPositionAnim
-        target: island; property: "smoothPosition"
-        easing.type: Easing.Linear
-        duration: 0; to: 0
-    }
-
     // ── Componentes ───────────────────────────────────────────────
     Core.IslandProcesses { id: procs }
     Effects.IslandAnimations { id: flipAnim }
-    IslandContent    { id: islandContent }
+    IslandContent {
+        id: islandContent
+
+        islandState: islandState
+    }
 
     Component.onCompleted: canRemapLayer = true
 }

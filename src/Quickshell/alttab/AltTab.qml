@@ -15,7 +15,12 @@ ShellRoot {
         active: switcher.open
     }
 
-    Ui.AltTabView {
-        controller: switcher
+    Loader {
+        active: switcher.open
+        asynchronous: true
+
+        sourceComponent: Ui.AltTabView {
+            controller: switcher
+        }
     }
 }

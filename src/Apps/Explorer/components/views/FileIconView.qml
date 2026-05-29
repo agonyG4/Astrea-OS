@@ -113,7 +113,7 @@ Item {
             return false
 
         const targetPath = destinationPath || AppState.currentPath
-        const dropMode = DragDropSupport.dropModeFor(drop)
+        const dropMode = DragDropSupport.dropModeFor(drop, AppState)
         const urls = [].concat(drop.urls || [])
 
         drop.accepted = true
@@ -397,6 +397,8 @@ Item {
         readonly property int   columns: Math.max(1, Math.floor(width / preferredTileWidth))
         readonly property int   tileWidth: Math.max(minimumTileWidth, Math.floor(width / columns))
         readonly property int   iconSize:   Math.round(tileWidth * (AppState.isPortalDialog ? 0.68 : 0.55))
+        readonly property var   iconDecodeSizes: [48, 64, 96, 128, 160]
+        readonly property int   iconDecodeSize: AppState.isPortalDialog ? 96 : iconDecodeSizes[AppState.thumbnailLevel()]
         readonly property int   previewReqSize: AppState.isPortalDialog ? 160 : 128
         readonly property int   fontSize:   Math.round(11 + AppState.thumbnailLevel())
         readonly property int   textHeight: Math.round(fontSize * 1.4)
@@ -469,7 +471,7 @@ Item {
                 if (idx !== -1)
                     return
                 root.resetActivationCandidate()
-                root.Window.window.focusFileSurface()
+                ViewShared.focusFileSurface(root)
                 AppState.clearSelection()
             }
         }
@@ -480,7 +482,7 @@ Item {
 
             onTapped: function(eventPoint, button) {
                 root.resetActivationCandidate()
-                root.Window.window.focusFileSurface()
+                ViewShared.focusFileSurface(root)
                 AppState.clearSelection()
                 const pt = grid.mapToItem(contextMenu,
                                           eventPoint.position.x,
@@ -616,11 +618,14 @@ Item {
                             Image {
                                 anchors.centerIn: parent
                                 visible: !tile.hasPreview || previewImage.status !== Image.Ready
-                                source: AppState.portalIconSource(tile.cachedIconName, grid.iconSize)
+                                source: AppState.portalIconSource(tile.cachedIconName, grid.iconDecodeSize)
                                 width: grid.iconSize; height: grid.iconSize
                                 fillMode: Image.PreserveAspectFit
-                                asynchronous: true; smooth: true
-                                sourceSize: Qt.size(grid.iconSize, grid.iconSize)
+                                asynchronous: true
+                                cache: true
+                                retainWhileLoading: true
+                                smooth: true
+                                sourceSize: Qt.size(grid.iconDecodeSize, grid.iconDecodeSize)
                             }
 
                             Image {
@@ -671,7 +676,7 @@ Item {
                                     mouse.accepted = true
                                     root.cancelQueuedIconDrag()
                                     tile.dragging = false
-                                    root.Window.window.focusFileSurface()
+                                    ViewShared.focusFileSurface(root)
                                     AppState.handleSelection(
                                         itemName, itemSourceIndex,
                                         Boolean(mouse.modifiers & Qt.ControlModifier),
@@ -707,7 +712,7 @@ Item {
                                 root.cancelQueuedIconDrag()
                                 tile.dragging = false
                                 if (mouse.button === Qt.LeftButton) {
-                                    root.Window.window.focusFileSurface()
+                                    ViewShared.focusFileSurface(root)
                                     root.handlePrimaryItemClick(
                                         itemPath, itemIsDir, itemUrl, itemName, itemSourceIndex, mouse.modifiers)
                                     return

@@ -1,2 +1,4 @@
 ShellRuntime 1.0 ShellRuntime.qml
 GameModeManager 1.0 GameModeManager.qml
+ComponentSettings 1.0 ComponentSettings.qml
+ComponentServiceManager 1.0 ComponentServiceManager.qml

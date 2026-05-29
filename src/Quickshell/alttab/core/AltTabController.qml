@@ -209,9 +209,11 @@ Item {
     }
 
     function iconNameForClient(className, title) {
+        const rawClass = String(className || "").trim()
         const cls = String(className || "").toLowerCase()
         const text = String(title || "").toLowerCase()
 
+        if (cls === "org.vinegarhq.sober") return "org.vinegarhq.Sober"
         if (cls.indexOf("zen") >= 0) return "zen-browser"
         if (cls.indexOf("kitty") >= 0) return "kitty"
         if (cls.indexOf("code") >= 0 || cls.indexOf("cursor") >= 0) return "visual-studio-code"
@@ -227,7 +229,7 @@ Item {
         if (text.indexOf("weather") >= 0 || text.indexOf("clima") >= 0) return "weather-clear"
         if (text.indexOf("screen") >= 0 && text.indexOf("time") >= 0) return "preferences-system-time"
         if (cls.indexOf("org.quickshell") >= 0) return "application-x-executable"
-        return cls
+        return rawClass.indexOf(".") >= 0 ? "" : cls
     }
 
     function desktopIconForClient(className, title) {

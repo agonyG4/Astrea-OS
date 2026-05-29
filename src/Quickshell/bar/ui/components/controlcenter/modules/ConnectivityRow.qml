@@ -36,7 +36,7 @@ Rectangle {
                 anchors.centerIn: parent
                 text: rowRoot.icon
                 color: rowRoot.active && !rowRoot.error ? "#ffffff" : (rowRoot.error ? Theme.iconWarning : Theme.shellIconMain)
-                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+                font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIcon }
                 RotationAnimation on rotation {
                     running: rowRoot.busy
                     from: 0

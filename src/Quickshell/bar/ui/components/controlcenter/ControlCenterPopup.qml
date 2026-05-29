@@ -102,7 +102,7 @@ SystemComponents.TopbarPopup {
                     anchors.verticalCenter: parent.verticalCenter
                     text: control.customizeMode ? "󰅖" : "󰏫"
                     color: control.customizeMode ? Theme.shellIconActive : Theme.shellIconMain
-                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeSmall }
+                    font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeSmall }
                 }
 
                 Text {

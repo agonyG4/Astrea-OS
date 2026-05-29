@@ -128,6 +128,8 @@ def resolve_icon_path(icon_name: str) -> str:
     for suffix in ["-dark", "-light", "-Dark", "-Light"]:
         if theme.endswith(suffix):
             theme_variants.append(theme[: -len(suffix)])
+    if "hicolor" not in theme_variants:
+        theme_variants.append("hicolor")
 
     base_dirs = [Path.home() / ".local/share/icons", Path("/usr/share/icons")]
     sizes = ["256x256", "128x128", "96x96", "64x64", "48x48", "32x32", "24x24", "22x22", "16x16", "scalable"]

@@ -70,6 +70,17 @@ Observed config/state paths:
 - `~/.config/AstreaOS/system/settings.json`
 - `~/.config/AstreaOS/ui/theme.json`
 - WirePlumber config under `~/.config/wireplumber`
+- PipeWire spatial audio config under `~/.config/pipewire/pipewire.conf.d/astrea-audio-engine.conf`
+
+## Audio Page
+`pages/connectivity/Audio.qml` consumes `Core/bridge/system/audio.py`.
+
+Astrea Spatial Audio currently uses:
+- sink: `effect_input.virtual-surround-7.1-astrea`
+- asset: `/home/agony/.local/share/Astrea/audio/hrir.wav`
+- config reference in repo: `System/config/pipewire/astrea-audio-engine.conf`
+
+The bridge keeps fallback support for the older `effect_input.virtual-surround-7.1-hesuvi` name, but new Settings UI logic should use the sink returned by the bridge instead of hardcoding only the legacy name.
 
 ## Desktop Icons Page
 `pages/display/Desktop.qml` controls the resident desktop-icons overlay loaded by the main Quickshell shell. It is currently not exposed as a sidebar item; the page remains available for future routing or internal reuse.

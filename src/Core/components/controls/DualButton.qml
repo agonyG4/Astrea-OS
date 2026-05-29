@@ -182,8 +182,10 @@ Rectangle {
                 source: root.leftIconSource
                 width: root.iconSize
                 height: root.iconSize
+                sourceSize: Qt.size(width, height)
                 fillMode: Image.PreserveAspectFit
                 smooth: true
+                mipmap: true
                 opacity: root.leftEnabled ? 1 : Components.Theme.opacityMuted
             }
 
@@ -261,8 +263,10 @@ Rectangle {
                 source: root.rightIconSource
                 width: root.iconSize
                 height: root.iconSize
+                sourceSize: Qt.size(width, height)
                 fillMode: Image.PreserveAspectFit
                 smooth: true
+                mipmap: true
                 opacity: root.rightEnabled ? 1 : Components.Theme.opacityMuted
             }
 

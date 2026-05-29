@@ -5,6 +5,7 @@ import signal
 import shutil
 import subprocess
 import importlib.util
+import threading
 import time
 from pathlib import Path
 
@@ -30,7 +31,9 @@ REFRESH_HEALTH_SEC = 300
 AUTOCONNECT_SEC = 120
 MAX_SLEEP_SEC = 5.0
 COMMAND_CACHE_SEC = 300
+PIPEWIRE_AUDIO_DEBOUNCE_SEC = 0.06
 NETWORK_ROUTE_CACHE_SEC = 30
+WIFI_SSID_CACHE_SEC = 30
 
 refresh_requested = False
 running = True
@@ -40,6 +43,9 @@ bluetooth_module = None
 network_sample: dict[str, tuple[float, int, int]] = {}
 network_route_iface = ""
 network_route_time = 0.0
+wifi_ssid_cache: dict[str, tuple[float, str]] = {}
+json_lock = threading.Lock()
+audio_monitor_proc: subprocess.Popen | None = None
 
 
 def dependency_payload(name: str, *, kind: str = "dependency_missing") -> dict:
@@ -74,23 +80,24 @@ def run_cmd(args, timeout=6):
 
 
 def write_json_if_changed(path, payload):
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    data = (
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        + "\n"
-    )
-    if json_cache.get(path) == data and path.exists():
-        return
-    try:
-        if path.exists() and path.read_text(encoding="utf-8") == data:
-            json_cache[path] = data
+    with json_lock:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        data = (
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            + "\n"
+        )
+        if json_cache.get(path) == data and path.exists():
             return
-    except OSError:
-        pass
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(data, encoding="utf-8")
-    tmp.replace(path)
-    json_cache[path] = data
+        try:
+            if path.exists() and path.read_text(encoding="utf-8") == data:
+                json_cache[path] = data
+                return
+        except OSError:
+            pass
+        tmp = path.with_name(f".{path.name}.tmp")
+        tmp.write_text(data, encoding="utf-8")
+        tmp.replace(path)
+        json_cache[path] = data
 
 
 def load_bluetooth_module():
@@ -135,6 +142,71 @@ def audio_status():
             {"degraded": True, "error": proc.stderr.strip() or "wpctl_failed"}
         )
     return payload
+
+
+def write_audio_status():
+    write_json_if_changed(AUDIO_PATH, audio_status())
+
+
+def pipewire_audio_monitor():
+    global audio_monitor_proc
+
+    if not command_available("pw-mon"):
+        return
+
+    while running:
+        try:
+            proc = subprocess.Popen(
+                ["pw-mon"],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+            audio_monitor_proc = proc
+        except Exception:
+            time.sleep(5)
+            continue
+
+        started_at = time.monotonic()
+        last_refresh = 0.0
+
+        try:
+            if proc.stdout is None:
+                proc.wait(timeout=1)
+                time.sleep(2)
+                continue
+
+            for line in proc.stdout:
+                if not running:
+                    break
+                if time.monotonic() - started_at < 0.8:
+                    continue
+                if (
+                    "Spa:Pod:Object:Param:Props:volume" not in line
+                    and "Spa:Pod:Object:Param:Props:mute" not in line
+                    and "Spa:Pod:Object:Param:Props:channelVolumes" not in line
+                ):
+                    continue
+
+                now = time.monotonic()
+                if now - last_refresh < PIPEWIRE_AUDIO_DEBOUNCE_SEC:
+                    continue
+                last_refresh = now
+                write_audio_status()
+        finally:
+            if audio_monitor_proc is proc:
+                audio_monitor_proc = None
+            try:
+                proc.terminate()
+                proc.wait(timeout=1)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+
+        if running:
+            time.sleep(2)
 
 
 def format_rate(bytes_per_second: float) -> str:
@@ -235,6 +307,24 @@ def active_network_iface() -> str:
     return iface
 
 
+def wifi_ssid_for_iface(iface: str) -> str:
+    now = time.monotonic()
+    cached = wifi_ssid_cache.get(iface)
+    if cached and now - cached[0] < WIFI_SSID_CACHE_SEC:
+        return cached[1]
+
+    ssid = ""
+    if command_available("nmcli"):
+        wifi = run_cmd(
+            ["nmcli", "-t", "-g", "GENERAL.CONNECTION", "device", "show", iface],
+            timeout=3,
+        ).stdout
+        ssid = wifi.strip().splitlines()[0] if wifi.strip() else ""
+
+    wifi_ssid_cache[iface] = (now, ssid)
+    return ssid
+
+
 def network_status():
     if not command_available("ip"):
         payload = dependency_payload("ip")
@@ -269,13 +359,7 @@ def network_status():
 
     if (Path("/sys/class/net") / iface / "wireless").exists():
         net_type = "wifi"
-        ssid = ""
-        if command_available("nmcli"):
-            wifi = run_cmd(
-                ["nmcli", "-t", "-g", "GENERAL.CONNECTION", "device", "show", iface],
-                timeout=3,
-            ).stdout
-            ssid = wifi.strip().splitlines()[0] if wifi.strip() else ""
+        ssid = wifi_ssid_for_iface(iface)
     else:
         net_type = "wired"
         ssid = "Ethernet"
@@ -362,6 +446,12 @@ def handle_refresh(_signum, _frame):
 def handle_stop(_signum, _frame):
     global running
     running = False
+    proc = audio_monitor_proc
+    if proc is not None:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
 
 
 def main():
@@ -369,6 +459,8 @@ def main():
     signal.signal(signal.SIGUSR1, handle_refresh)
     signal.signal(signal.SIGTERM, handle_stop)
     signal.signal(signal.SIGINT, handle_stop)
+
+    threading.Thread(target=pipewire_audio_monitor, daemon=True).start()
 
     next_audio = next_network = next_bluetooth = next_health = next_autoconnect = 0.0
     bluetooth_powered = False
@@ -382,7 +474,7 @@ def main():
             refresh_requested = False
 
         if now >= next_audio:
-            write_json_if_changed(AUDIO_PATH, audio_status())
+            write_audio_status()
             next_audio = now + REFRESH_AUDIO_SEC
 
         if now >= next_health:

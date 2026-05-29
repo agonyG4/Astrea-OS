@@ -9,6 +9,9 @@ QtObject {
     property int level: 50
     property bool muted: false
     property bool performancePaused: false
+    property bool statusInitialized: false
+
+    signal volumeChanged(int level, bool muted)
 
     function refresh() {
         if (performancePaused) {
@@ -38,6 +41,7 @@ QtObject {
     function setVolume(value) {
         var nextLevel = clampLevel(value)
         root.level = nextLevel
+        root.volumeChanged(root.level, root.muted)
         volSetProc.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", nextLevel + "%"]
         volSetProc.running = false
         volSetProc.running = true
@@ -46,8 +50,14 @@ QtObject {
     function applyStatus(text) {
         try {
             var payload = JSON.parse(text || "{}")
-            root.level = payload.level !== undefined ? clampLevel(payload.level) : root.level
-            root.muted = payload.muted === true
+            var nextLevel = payload.level !== undefined ? clampLevel(payload.level) : root.level
+            var nextMuted = payload.muted === true
+            var changed = root.statusInitialized && (nextLevel !== root.level || nextMuted !== root.muted)
+            root.level = nextLevel
+            root.muted = nextMuted
+            if (changed)
+                root.volumeChanged(root.level, root.muted)
+            root.statusInitialized = true
         } catch (error) {
         }
     }

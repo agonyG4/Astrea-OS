@@ -53,5 +53,48 @@ class ExplorerQmlShortcutWiringTests(unittest.TestCase):
         self.assertIn("id: archiveExtractStderr", file_ops_qml)
         self.assertIn("ops.archiveExtractionError || archiveErr", file_ops_qml)
 
+
+class ExplorerDialogAndDragRegressionTests(unittest.TestCase):
+    def test_views_do_not_assume_main_window_focus_helper_exists(self):
+        for relative in [
+            "components/views/FileIconView.qml",
+            "components/views/FileListView.qml",
+        ]:
+            with self.subTest(relative=relative):
+                source = (APP_ROOT / relative).read_text(encoding="utf-8")
+                self.assertNotIn("root.Window.window.focusFileSurface()", source)
+                self.assertIn("ViewShared.focusFileSurface(root)", source)
+
+    def test_drag_drop_detects_internal_multi_selection_without_drop_source(self):
+        drag_support = (APP_ROOT / "AstreaFiles" / "DragDropSupport.js").read_text(encoding="utf-8")
+        icon_view = (APP_ROOT / "components" / "views" / "FileIconView.qml").read_text(encoding="utf-8")
+        list_view = (APP_ROOT / "components" / "views" / "FileListView.qml").read_text(encoding="utf-8")
+
+        self.assertIn("function dropModeFor(drop, appState)", drag_support)
+        self.assertIn("selectedPathsInCurrentFolder", drag_support)
+        self.assertIn("dropModeFor(drop, AppState)", icon_view)
+        self.assertIn("handleDroppedUrls(AppState, drop, destinationPath)", list_view)
+
+
+class ExplorerIconRenderingRegressionTests(unittest.TestCase):
+    def test_icon_grid_decodes_theme_icons_at_stable_size_during_resize(self):
+        icon_view = (APP_ROOT / "components" / "views" / "FileIconView.qml").read_text(encoding="utf-8")
+
+        self.assertIn("readonly property int   iconDecodeSize", icon_view)
+        self.assertIn("AppState.portalIconSource(tile.cachedIconName, grid.iconDecodeSize)", icon_view)
+        self.assertIn("sourceSize: Qt.size(grid.iconDecodeSize, grid.iconDecodeSize)", icon_view)
+        self.assertNotIn("sourceSize: Qt.size(grid.iconSize, grid.iconSize)", icon_view)
+
+    def test_theme_icon_fallbacks_retain_cached_image_while_loading(self):
+        for relative in [
+            "components/views/FileIconView.qml",
+            "components/views/FileListView.qml",
+            "components/layout/PreviewPanel.qml",
+        ]:
+            with self.subTest(relative=relative):
+                source = (APP_ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("cache: true", source)
+                self.assertIn("retainWhileLoading: true", source)
+
 if __name__ == "__main__":
     unittest.main()
