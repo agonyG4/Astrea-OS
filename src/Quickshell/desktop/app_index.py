@@ -38,6 +38,7 @@ parse_desktop_file = ASTREA_SHARED.parse_desktop_file
 xdg_desktop_dir = ASTREA_SHARED.xdg_desktop_dir
 
 MAX_APPS = 64
+MAX_ICON_ASSET_BYTES = 2 * 1024 * 1024
 DESKTOP_CONFIG_DEFAULT = {"enabled": True}
 DESKTOP_STATE_DEFAULT = {"sortMode": "name", "iconPreset": "medium", "iconsHidden": False, "positions": {}}
 IN_CLOSE_WRITE = 0x00000008
@@ -84,6 +85,30 @@ def steam_root() -> Path:
 
 def hicolor_icon_path(appid: str, size: int) -> Path:
     return Path.home() / ".local/share/icons/hicolor" / f"{size}x{size}" / "apps" / f"steam_icon_{appid}.png"
+
+
+def atomic_copy_file(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    tmp.unlink(missing_ok=True)
+    try:
+        shutil.copyfile(source, tmp)
+        os.replace(tmp, target)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.unlink(missing_ok=True)
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def update_icon_cache() -> None:
@@ -134,17 +159,19 @@ def download_steam_icon_asset(appid: str, hash_value: str, ext: str, target: Pat
     request = urllib.request.Request(url, headers={"User-Agent": "AstreaDesktopIcons/1.0"})
     try:
         with urllib.request.urlopen(request, timeout=3) as response:
-            data = response.read(1024 * 1024)
+            data = response.read(MAX_ICON_ASSET_BYTES + 1)
     except (OSError, urllib.error.URLError, urllib.error.HTTPError, TimeoutError):
         return False
 
+    if len(data) > MAX_ICON_ASSET_BYTES:
+        return False
     if ext == "ico" and not data.startswith(b"\x00\x00\x01\x00"):
         return False
     if ext == "zip" and not data.startswith(b"PK"):
         return False
 
     try:
-        target.write_bytes(data)
+        atomic_write_bytes(target, data)
         return True
     except OSError:
         return False
@@ -182,8 +209,7 @@ def steam_icon_assets(appid: str, name: str = "") -> list[Path]:
 def install_png_icon(appid: str, source: Path, size: int) -> bool:
     target = hicolor_icon_path(appid, size)
     try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
+        atomic_copy_file(source, target)
         return True
     except OSError:
         return False
@@ -200,8 +226,11 @@ def install_zip_icon(appid: str, path: Path) -> bool:
                 size = int(match.group(1))
                 if size not in {16, 24, 32, 48, 64, 96, 128, 256}:
                     continue
+                info = archive.getinfo(name)
+                if info.file_size > MAX_ICON_ASSET_BYTES:
+                    continue
                 with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as handle:
-                    handle.write(archive.read(name))
+                    handle.write(archive.read(info))
                     temp_path = Path(handle.name)
                 try:
                     installed = install_png_icon(appid, temp_path, size) or installed
@@ -244,17 +273,24 @@ def install_ico_icon(appid: str, path: Path) -> bool:
     installed = False
     for size, index in sorted(frames, reverse=True):
         target = hicolor_icon_path(appid, size)
+        temp_target = target.with_name(f".{target.name}.{os.getpid()}.tmp")
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
+            temp_target.unlink(missing_ok=True)
             result = subprocess.run(
-                [magick, f"{path}[{index}]", str(target)],
+                [magick, f"{path}[{index}]", str(temp_target)],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=5,
                 check=False,
             )
-            installed = (result.returncode == 0) or installed
+            if result.returncode == 0:
+                os.replace(temp_target, target)
+                installed = True
+            else:
+                temp_target.unlink(missing_ok=True)
         except (OSError, subprocess.TimeoutExpired):
+            temp_target.unlink(missing_ok=True)
             continue
     return installed
 

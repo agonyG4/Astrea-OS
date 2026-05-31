@@ -1,5 +1,6 @@
 import QtQuick
 import "../../../.."
+import "../../../../../AstreaI18n" as AstreaI18n
 
 ControlTile {
     id: module
@@ -8,6 +9,10 @@ ControlTile {
     property string moduleKind: ""
     property string moduleSize: "small"
     property string moduleGroup: ""
+
+    function t(key, fallback, params) {
+        return AstreaI18n.I18n.tr(key, fallback, params)
+    }
 
     icon: {
         if (moduleKind === "wifi")
@@ -29,27 +34,31 @@ ControlTile {
         if (moduleKind === "wifi")
             return control ? control.wifiTitle : "Wi-Fi"
         if (moduleKind === "bluetooth")
-            return "Bluetooth"
+            return t("quickshell.bar.ui.components.controlcenter.module.bluetooth", "Bluetooth")
         if (moduleKind === "airdrop")
-            return "AirDrop"
+            return t("quickshell.bar.ui.components.controlcenter.module.airdrop", "AirDrop")
         if (moduleKind === "focus")
-            return "Foco"
+            return t("quickshell.bar.ui.components.controlcenter.module.focus", "Focus")
         if (moduleKind === "mirror")
-            return "Espelhar"
+            return t("quickshell.bar.ui.components.controlcenter.module.mirror", "Mirror")
         return moduleKind
     }
 
     subtitle: {
         if (moduleKind === "wifi")
-            return control ? control.wifiSubtitle : "Desconectado"
+            return control ? control.wifiSubtitle : t("quickshell.bar.ui.components.controlcenter.status.disconnected", "Disconnected")
         if (moduleKind === "bluetooth")
-            return control ? control.bluetoothSubtitle : "Desligado"
+            return control ? control.bluetoothSubtitle : t("quickshell.bar.ui.components.controlcenter.status.off", "Off")
         if (moduleKind === "airdrop")
-            return control && control.airdropOn ? "Ativo" : "Desativado"
+            return control && control.airdropOn
+                ? t("quickshell.bar.ui.components.controlcenter.status.active", "Active")
+                : t("quickshell.bar.ui.components.controlcenter.status.inactive", "Inactive")
         if (moduleKind === "focus")
-            return control && control.focusOn ? "Ativo" : "Desativado"
+            return control && control.focusOn
+                ? t("quickshell.bar.ui.components.controlcenter.status.active", "Active")
+                : t("quickshell.bar.ui.components.controlcenter.status.inactive", "Inactive")
         if (moduleKind === "mirror")
-            return "Tela"
+            return t("quickshell.bar.ui.components.controlcenter.module.display", "Display")
         return ""
     }
 

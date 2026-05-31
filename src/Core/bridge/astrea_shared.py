@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 FALLBACK_ICON = "application-x-executable"
+LANGUAGE_KEYS = ("language", "locale", "ui_language", "lang")
 
 
 def astrea_root() -> Path:
@@ -103,6 +104,34 @@ def application_dirs() -> list[Path]:
     return deduped
 
 
+def _normalize_language(value: str | None) -> str:
+    if not isinstance(value, str):
+        return ""
+    language = value.strip()
+    if not language:
+        return ""
+    language = language.split(":", 1)[0]
+    language = language.split(".", 1)[0]
+    language = language.split("@", 1)[0]
+    language = language.replace("-", "_")
+    return "" if language in {"C", "POSIX"} else language
+
+
+def astrea_language() -> str:
+    path = Path(os.environ.get(
+        "ASTREA_SYSTEM_SETTINGS_PATH",
+        xdg_config_home() / "AstreaOS/system/settings.json",
+    )).expanduser()
+    payload = read_json(path, {})
+    if not isinstance(payload, dict):
+        return ""
+    for key in LANGUAGE_KEYS:
+        language = _normalize_language(payload.get(key))
+        if language:
+            return language
+    return ""
+
+
 def _current_icon_theme() -> str:
     try:
         theme = subprocess.check_output(
@@ -156,14 +185,31 @@ def resolve_icon_path(icon_name: str) -> str:
 
 
 def localized_keys(base: str) -> list[str]:
-    lang, _ = locale.getlocale()
+    selected_language = astrea_language()
+    candidates: list[str] = []
+    if selected_language:
+        candidates.append(selected_language)
+    else:
+        lang, _ = locale.getlocale()
+        candidates.append(lang)
+        for env_key in ("LANGUAGE", "LC_MESSAGES", "LC_ALL", "LANG"):
+            candidates.append(os.environ.get(env_key))
     keys: list[str] = []
-    if lang:
-        normalized = lang.replace("-", "_")
-        keys.append(f"{base}[{normalized}]")
+    seen: set[str] = set()
+
+    def add(key: str) -> None:
+        if key and key not in seen:
+            seen.add(key)
+            keys.append(key)
+
+    for raw in candidates:
+        normalized = _normalize_language(raw)
+        if not normalized:
+            continue
+        add(f"{base}[{normalized}]")
         if "_" in normalized:
-            keys.append(f"{base}[{normalized.split('_', 1)[0]}]")
-    keys.append(base)
+            add(f"{base}[{normalized.split('_', 1)[0]}]")
+    add(base)
     return keys
 
 

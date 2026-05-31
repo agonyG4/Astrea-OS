@@ -13,8 +13,13 @@ Item {
     property bool backendMissing: false
     readonly property string astreaRoot: (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + ""
     property string weatherCli: astreaRoot + "/bin/weather-cli"
+    property string city: ""
+    property string countryCode: ""
     property bool alertNotificationsEnabled: true
     property bool settingsLoaded: false
+    property bool settingsBusy: false
+    property string settingsError: ""
+    property bool pendingRefreshAfterSave: false
 
     Component.onCompleted: settingsLoadProc.running = true
 
@@ -32,6 +37,14 @@ Item {
             root.backendMissing = false
         loading = true
         errorMsg = ""
+        var command = ["/usr/bin/env", "ASTREA_ROOT=" + root.astreaRoot, root.weatherCli, "get"]
+        var targetCity = (root.city || "").trim()
+        if (targetCity.length > 0)
+            command.push(targetCity)
+        command.push("--json")
+        if (force === true)
+            command.push("--force")
+        weatherProc.command = command
         weatherProc.running = true
     }
 
@@ -57,16 +70,35 @@ Item {
     }
 
     function setAlertNotificationsEnabled(enabled) {
-        alertNotificationsEnabled = enabled
-        if (root.backendMissing)
+        saveSettings(root.city, enabled, false)
+    }
+
+    function setCity(value) {
+        saveSettings(value, root.alertNotificationsEnabled, true)
+    }
+
+    function saveSettings(nextCity, notificationsEnabled, refreshAfterSave) {
+        var cleanCity = (nextCity || "").trim().replace(/\s+/g, " ")
+        if (root.backendMissing || root.settingsBusy)
             return
-        settingsSaveProc.command = [
+        root.settingsBusy = true
+        root.settingsError = ""
+        root.pendingRefreshAfterSave = refreshAfterSave === true
+        var command = [
             "/usr/bin/env",
             "ASTREA_ROOT=" + root.astreaRoot,
             root.weatherCli,
             "settings",
-            enabled ? "true" : "false"
+            "--notifications",
+            notificationsEnabled ? "true" : "false"
         ]
+        if (cleanCity.length > 0) {
+            command.push("--city")
+            command.push(cleanCity)
+        } else {
+            command.push("--clear-city")
+        }
+        settingsSaveProc.command = command
         settingsSaveProc.running = true
     }
 
@@ -76,7 +108,9 @@ Item {
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
-                    root.weatherData = JSON.parse(this.text)
+                    var payload = JSON.parse(this.text)
+                    root.weatherData = payload
+                    root.countryCode = payload.country_code || ""
                     root.backendMissing = false
                     root.errorMsg = ""
                 } catch(e) {
@@ -114,8 +148,10 @@ Item {
                     var data = JSON.parse(this.text)
                     root.backendMissing = false
                     root.alertNotificationsEnabled = data.notifications_enabled !== false
+                    root.city = data.city || ""
                 } catch(e) {
                     root.alertNotificationsEnabled = true
+                    root.city = ""
                 }
                 root.settingsLoaded = true
                 root.refresh()
@@ -142,7 +178,33 @@ Item {
 
     Process {
         id: settingsSaveProc
-        stdout: StdioCollector {}
-        stderr: StdioCollector {}
+        stdout: StdioCollector {
+            onStreamFinished: {
+                if (this.text.trim().length === 0)
+                    return
+                try {
+                    var data = JSON.parse(this.text)
+                    root.alertNotificationsEnabled = data.notifications_enabled !== false
+                    root.city = data.city || ""
+                    root.settingsError = ""
+                } catch(e) {
+                    root.settingsError = AstreaI18n.I18n.tr("apps.weather.ui.state.weather_state.error.settings_parse_failed", "Could not read saved settings")
+                }
+            }
+        }
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (this.text.trim().length > 0)
+                    root.settingsError = this.text.trim()
+            }
+        }
+        onExited: exitCode => {
+            root.settingsBusy = false
+            if (exitCode !== 0 && root.settingsError === "")
+                root.settingsError = AstreaI18n.I18n.tr("apps.weather.ui.state.weather_state.error.settings_save_failed", "Could not save weather settings")
+            if (exitCode === 0 && root.pendingRefreshAfterSave)
+                root.refresh(true)
+            root.pendingRefreshAfterSave = false
+        }
     }
 }

@@ -26,3 +26,46 @@ pub fn escape(s: &str) -> String {
     }
     out
 }
+
+#[cfg(unix)]
+pub fn file_url(path: &std::path::Path) -> String {
+    use std::os::unix::ffi::OsStrExt;
+
+    let mut out = String::from("file://");
+    for &byte in path.as_os_str().as_bytes() {
+        match byte {
+            b'/' | b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+#[cfg(not(unix))]
+pub fn file_url(path: &std::path::Path) -> String {
+    let mut out = String::from("file://");
+    for byte in path.to_string_lossy().as_bytes() {
+        match *byte {
+            b'/' | b'\\' | b':' | b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(*byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn file_url_percent_encodes_spaces_hashes_and_unicode() {
+        let url = file_url(Path::new("/tmp/a # b 😀.png"));
+
+        assert_eq!(url, "file:///tmp/a%20%23%20b%20%F0%9F%98%80.png");
+    }
+}

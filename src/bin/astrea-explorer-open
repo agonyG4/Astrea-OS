@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -d "$script_dir/../Apps" && -d "$script_dir/../System" ]]; then
+  default_root="$(realpath -- "$script_dir/..")"
+else
+  default_root="$HOME/.local/share/Astrea"
+fi
+
+target="${1:-$HOME}"
+
+if [[ "$target" == file://* ]]; then
+  target="${target#file://}"
+  if command -v python3 >/dev/null 2>&1; then
+    target="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.unquote(sys.argv[1]))' "$target")"
+  fi
+fi
+
+if [[ -f "$target" ]]; then
+  target="$(dirname -- "$target")"
+fi
+
+if [[ ! -d "$target" ]]; then
+  target="$HOME"
+fi
+
+export QML_XHR_ALLOW_FILE_READ=1
+export ASTREA_ROOT="${ASTREA_ROOT:-$default_root}"
+export ASTREA_EXPLORER_START_PATH="$target"
+exec quickshell -p "$ASTREA_ROOT/Apps/Explorer/Main.qml"

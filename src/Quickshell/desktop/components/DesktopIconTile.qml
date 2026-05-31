@@ -1,5 +1,6 @@
 import QtQuick
 import "../../bar"
+import "../../components" as ShellComponents
 
 Item {
     id: tile
@@ -28,16 +29,6 @@ Item {
     property real pressTileY: 0
     property real pressMouseX: 0
     property real pressMouseY: 0
-
-    function iconSource(entry) {
-        if (!entry)
-            return "image://icon/application-x-executable"
-        if (entry.iconSource)
-            return entry.iconSource
-        if (!entry.icon)
-            return "image://icon/application-x-executable"
-        return "image://icon/" + entry.icon
-    }
 
     Binding {
         target: tile
@@ -85,19 +76,19 @@ Item {
         }
     }
 
-    Image {
+    ShellComponents.AppIcon {
         id: appIcon
         anchors.horizontalCenter: parent.horizontalCenter
         y: hl.y + 8
         width: desktopState ? desktopState.iconSize : 52
         height: desktopState ? desktopState.iconSize : 52
-        source: tile.iconSource(tile.appData)
-        sourceSize: Qt.size(width, height)
-        asynchronous: true
-        cache: true
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-        mipmap: true
+        entry: tile.appData
+        iconRadius: Math.max(8, Math.round(width * 0.18))
+        fallbackRadius: iconRadius
+        fallbackColor: "transparent"
+        fallbackIconName: "application-x-executable"
+        showFallbackText: false
+        sourcePixelSize: Math.max(128, Math.round(width * 3))
     }
 
     Text {

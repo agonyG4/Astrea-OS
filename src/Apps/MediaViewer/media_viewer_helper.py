@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import hashlib
+import os
 import shutil
 import subprocess
 import sys
@@ -63,6 +64,7 @@ DIRECT_IMAGE_EXTENSIONS = {
 
 PREVIEW_CACHE_VERSION = "display-lanczos-v1"
 PREVIEW_MAX_DIMENSION = 1920
+PREVIEW_CONVERT_TIMEOUT = 30
 
 def media_kind(path: Path) -> str:
     suffix = path.suffix.lower()
@@ -96,6 +98,14 @@ def preview_cache_path(path: Path, cache_dir=None) -> Path:
     return cache_root / (hashlib.sha256(fingerprint).hexdigest() + ".png")
 
 
+def preview_temp_path(output: Path) -> Path:
+    return output.with_name(f".{output.name}.{os.getpid()}.tmp")
+
+
+def publish_preview(temp_output: Path, output: Path) -> None:
+    os.replace(temp_output, output)
+
+
 def preview_image(path, runner=subprocess.run, cache_dir=None) -> dict:
     path = normalize_target(path)
     if not path.is_file():
@@ -111,6 +121,8 @@ def preview_image(path, runner=subprocess.run, cache_dir=None) -> dict:
         return {"ok": True, "path": str(path), "uri": output.as_uri(), "source": "cache"}
 
     output.parent.mkdir(parents=True, exist_ok=True)
+    temp_output = preview_temp_path(output)
+    temp_output.unlink(missing_ok=True)
     magick = "magick" if shutil.which("magick") else ("convert" if shutil.which("convert") else "")
     if magick:
         input_arg = str(path)
@@ -126,14 +138,14 @@ def preview_image(path, runner=subprocess.run, cache_dir=None) -> dict:
             "filter:blur=0.92",
             "-resize",
             f"{PREVIEW_MAX_DIMENSION}x{PREVIEW_MAX_DIMENSION}>",
-            "png:" + str(output),
+            "png:" + str(temp_output),
         ]
         try:
-            runner(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            runner(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=PREVIEW_CONVERT_TIMEOUT)
+            publish_preview(temp_output, output)
             return {"ok": True, "path": str(path), "uri": output.as_uri(), "source": "converted"}
         except Exception:
-            if output.exists():
-                output.unlink()
+            temp_output.unlink(missing_ok=True)
 
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg:
@@ -147,14 +159,14 @@ def preview_image(path, runner=subprocess.run, cache_dir=None) -> dict:
             str(path),
             "-frames:v",
             "1",
-            str(output),
+            str(temp_output),
         ]
         try:
-            runner(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            runner(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=PREVIEW_CONVERT_TIMEOUT)
+            publish_preview(temp_output, output)
             return {"ok": True, "path": str(path), "uri": output.as_uri(), "source": "converted"}
         except Exception:
-            if output.exists():
-                output.unlink()
+            temp_output.unlink(missing_ok=True)
 
     return {"ok": False, "error": "Formato nao suportado pelo Qt e nenhum conversor conseguiu gerar preview"}
 

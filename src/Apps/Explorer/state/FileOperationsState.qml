@@ -794,9 +794,10 @@ QtObject {
                     ? "Compactacao concluida"
                     : "Extracao concluida"
                 ops.archiveExtractionError = ""
-                app.refreshCurrentFolder()
-                if (ops.archiveOperationMode === "extract" && ops.archiveExtractionRevealName !== "")
-                    archiveRevealTimer.restart()
+                if (ops.archiveOperationMode === "extract" && ops.archiveExtractionDestination !== "")
+                    app.navigateTo(ops.archiveExtractionDestination)
+                else
+                    app.refreshCurrentFolder()
             } else if (ops.archivePasswordPromptVisible || ops.archiveConflictVisible) {
                 ops.archiveExtractionRunning = false
                 return
@@ -813,7 +814,7 @@ QtObject {
     }
 
     property Timer archiveExtractionHideTimer: Timer {
-        interval: 1800
+        interval: ops.archiveExtractionError !== "" ? 6000 : 1800
         repeat: false
         onTriggered: {
             ops.archiveExtractionRunning = false

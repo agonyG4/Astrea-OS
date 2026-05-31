@@ -1,6 +1,7 @@
 import Quickshell
 import Quickshell.Io
 import QtQuick
+import ".." as Modules
 
 QtObject {
     id: root
@@ -14,21 +15,7 @@ QtObject {
     signal volumeChanged(int level, bool muted)
 
     function refresh() {
-        if (performancePaused) {
-            statusFile.reload()
-            return
-        }
-        statusRefreshProc.running = false
-        statusRefreshProc.running = true
-    }
-
-    onPerformancePausedChanged: {
-        if (performancePaused) {
-            statusRefreshProc.running = false
-            statusFile.reload()
-        } else {
-            refresh()
-        }
+        statusBridge.refresh()
     }
 
     function clampLevel(value) {
@@ -62,24 +49,16 @@ QtObject {
         }
     }
 
-    property var statusFile: FileView {
-        path: root.statusPath
-        preload: true
-        blockLoading: true
-        watchChanges: true
-        printErrors: false
-        onFileChanged: reload()
-        onLoaded: root.applyStatus(text())
-    }
-
     property var volSetProc: Process {
         command: []
         running: false
     }
 
-    property var statusRefreshProc: Process {
-        command: ["systemctl", "--user", "kill", "-s", "USR1", "astrea-status.service"]
-        running: false
-        onExited: statusFile.reload()
+    property var statusBridge: Modules.StatusFile {
+        statusPath: root.statusPath
+        performancePaused: root.performancePaused
+        startOnRefreshFailure: false
+        signalName: "USR1"
+        onLoaded: text => root.applyStatus(text)
     }
 }

@@ -251,7 +251,7 @@ pub fn serve_launchd() -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("create launchd socket dir: {err}"))?;
     }
-    let _ = fs::remove_file(&path);
+    prepare_socket_path(&path)?;
     let listener =
         UnixListener::bind(&path).map_err(|err| format!("bind launchd socket: {err}"))?;
     let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
@@ -271,6 +271,16 @@ pub fn serve_launchd() -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+fn prepare_socket_path(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if UnixStream::connect(path).is_ok() {
+        return Err(format!("launchd socket already active: {}", path.display()));
+    }
+    fs::remove_file(path).map_err(|err| format!("remove stale launchd socket: {err}"))
 }
 
 pub fn resolve_request(request: &LaunchRequest) -> Result<CommandSpec, String> {
@@ -777,6 +787,8 @@ fn systemd_run_args(command: &CommandSpec, unit: &str) -> Vec<String> {
         format!("--unit={unit}"),
         "--property=ExitType=cgroup".into(),
         "--property=Slice=app.slice".into(),
+        "--property=StartupCPUWeight=10000".into(),
+        "--property=StartupIOWeight=10000".into(),
     ];
     if let Some(dir) = &command.working_dir {
         args.push(format!("--working-directory={}", dir.to_string_lossy()));
@@ -818,13 +830,8 @@ fn unit_main_pid(unit: &str) -> Option<u32> {
         .ok()
 }
 
-
 fn normalize_launch_pid(pid: u32) -> Option<u32> {
-    if pid == 0 {
-        None
-    } else {
-        Some(pid)
-    }
+    if pid == 0 { None } else { Some(pid) }
 }
 
 fn request_boost(config: &LaunchConfig, reason: &str, pid: Option<u32>, duration_ms: u64) {
@@ -980,8 +987,14 @@ fn default_latency_socket_paths() -> Vec<String> {
                 .to_string_lossy()
                 .to_string(),
         );
+    } else {
+        paths.push(
+            xdg_state_home()
+                .join("Astrea/runtime/astrea-latencyd.sock")
+                .to_string_lossy()
+                .to_string(),
+        );
     }
-    paths.push("/tmp/astrea-latencyd.sock".into());
     paths
 }
 
@@ -1213,6 +1226,19 @@ mod tests {
     }
 
     #[test]
+    fn default_latency_sockets_do_not_use_world_writable_tmp() {
+        let config = LaunchConfig::default();
+        assert!(
+            config
+                .latency
+                .socket_paths
+                .iter()
+                .all(|path| !path.starts_with("/tmp/")),
+            "latency sockets must stay in the user runtime/state area"
+        );
+    }
+
+    #[test]
     fn builds_systemd_run_args_for_transient_app_service() {
         let command = CommandSpec {
             argv: vec!["/usr/bin/example".into(), "--flag".into()],
@@ -1227,6 +1253,8 @@ mod tests {
         assert!(args.contains(&"--no-block".into()));
         assert!(args.contains(&"--property=ExitType=cgroup".into()));
         assert!(args.contains(&"--working-directory=/tmp/example".into()));
+        assert!(args.contains(&"--property=StartupCPUWeight=10000".into()));
+        assert!(args.contains(&"--property=StartupIOWeight=10000".into()));
         assert_eq!(args.iter().filter(|arg| arg.as_str() == "--").count(), 1);
         assert_eq!(
             &args[args.len() - 3..],
@@ -1238,7 +1266,6 @@ mod tests {
         );
     }
 }
-
 
 #[cfg(test)]
 mod launch_spawn_tests {

@@ -3,9 +3,7 @@ import Quickshell.Wayland
 import Quickshell.Hyprland
 import Quickshell.Io
 import QtQuick
-import QtQuick.Layouts
-import "./components" as Components
-import "../AstreaI18n" as AstreaI18n
+import "./ui" as Ui
 
 ShellRoot {
     id: root
@@ -62,188 +60,8 @@ ShellRoot {
                     onClicked: spotlight.close()
                 }
 
-                Rectangle {
-                    id: panel
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.top: parent.top
-                    anchors.topMargin: parent.height * 0.25
-
-                    width: 600
-                    height: searchInput.text.length > 0 ? Math.min(contentCol.implicitHeight + 28, 450) : 58
-                    radius: 24
-
-                    color: '#80343434'
-                    border.color: "#33FFFFFF"
-                    border.width: 1
-                    clip: true
-
-                    scale: spotlight.open ? 1.0 : 0.98
-                    opacity: spotlight.open ? 1.0 : 0.0
-
-                    Behavior on height  { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-                    Behavior on scale   { NumberAnimation { duration: 180; easing.type: Easing.OutBack } }
-                    Behavior on opacity { NumberAnimation { duration: 120 } }
-
-                    ColumnLayout {
-                        id: contentCol
-                        anchors { top: parent.top; left: parent.left; right: parent.right; margins: 14 }
-                        spacing: 0
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 30
-                            spacing: 12
-
-                            Text {
-                                text: "⌕"
-                                font.family: spotlight.fontFamily
-                                font.pixelSize: 24
-                                color: "#99FFFFFF"
-                                Layout.leftMargin: 8
-                                Layout.alignment: Qt.AlignVCenter
-                            }
-
-                            Item {
-                                Layout.fillWidth: true
-                                Layout.alignment: Qt.AlignVCenter
-                                Layout.preferredHeight: 30
-
-                                Text {
-                                    anchors.fill: parent
-                                    text: (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["spotlight.placeholder"]) || "Spotlight Search"
-                                    font.family: spotlight.fontFamily
-                                    font.pixelSize: 22
-                                    font.weight: Font.Light
-                                    color: searchInput.placeholderTextColor
-                                    verticalAlignment: Text.AlignVCenter
-                                    visible: searchInput.text.length === 0
-                                    renderType: Text.NativeRendering
-                                }
-
-                                TextInput {
-                                    id: searchInput
-                                    anchors.fill: parent
-                                    property color placeholderTextColor: "#66FFFFFF"
-
-                                    font.family: spotlight.fontFamily
-                                    font.pixelSize: 22
-                                    font.weight: Font.Light
-                                    color: "white"
-                                    selectionColor: "#407AFF"
-                                    selectedTextColor: "white"
-                                    clip: true
-
-                                    verticalAlignment: TextInput.AlignVCenter
-
-                                    onTextChanged: spotlight.scheduleResults(text)
-
-                                    Keys.onEscapePressed: spotlight.close()
-                                    Keys.onReturnPressed: if (resultList.count > 0) spotlight.launch(resultList.currentIndex)
-                                    Keys.onDownPressed: if (resultList.count > 0) resultList.currentIndex = (resultList.currentIndex + 1) % resultList.count
-                                    Keys.onUpPressed: if (resultList.count > 0) resultList.currentIndex = (resultList.currentIndex - 1 + resultList.count) % resultList.count
-
-                                    Component.onCompleted: forceActiveFocus()
-                                    onVisibleChanged: if (visible) { forceActiveFocus(); text = "" }
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.maximumWidth: 68
-                                Layout.alignment: Qt.AlignVCenter
-                                spacing: 1
-                                visible: spotlight.weatherEnabled
-
-                                Image {
-                                    Layout.preferredWidth: 20
-                                    Layout.preferredHeight: 20
-                                    Layout.alignment: Qt.AlignVCenter
-                                    source: spotlight.weatherIconSource
-                                    sourceSize: Qt.size(40, 40)
-                                    visible: spotlight.weatherReady
-                                    fillMode: Image.PreserveAspectFit
-                                    smooth: true
-                                    mipmap: false
-                                    opacity: 0.78
-                                }
-
-                                Text {
-                                    text: "○"
-                                    visible: !spotlight.weatherReady
-                                    font.pixelSize: 18
-                                    color: searchInput.placeholderTextColor
-                                    Layout.alignment: Qt.AlignVCenter
-                                }
-
-                                Text {
-                                    Layout.maximumWidth: 46
-                                    text: spotlight.weatherReady ? spotlight.weatherTemp + "°" : "--°"
-                                    font.family: spotlight.fontFamily
-                                    font.pixelSize: 18
-                                    font.weight: Font.Medium
-                                    color: searchInput.placeholderTextColor
-                                    elide: Text.ElideRight
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-                            }
-                        }
-
-                        ColumnLayout {
-                            Layout.fillWidth: true
-                            visible: searchInput.text.length > 0 && resultList.count > 0
-                            spacing: 0
-
-                            Rectangle {
-                                Layout.fillWidth: true
-                                height: 1; color: "#15FFFFFF"
-                                Layout.topMargin: 12; Layout.bottomMargin: 8
-                            }
-
-                            ListView {
-                                id: resultList
-                                Layout.fillWidth: true
-                                implicitHeight: Math.min(count, 6) * 50
-                                model: spotlight.results
-                                currentIndex: 0
-                                interactive: false
-
-                                delegate: Rectangle {
-                                    width: resultList.width
-                                    height: 50
-                                    radius: 7
-                                    color: resultList.currentIndex === index ? "#007AFF" : "transparent"
-
-                                    RowLayout {
-                                        anchors { fill: parent; leftMargin: 12; rightMargin: 12 }
-                                        spacing: 15
-
-                                        Components.AppIcon {
-                                            Layout.preferredWidth: 30
-                                            Layout.preferredHeight: 30
-                                            entry: modelData
-                                            fallbackRadius: 6
-                                            fallbackColor: "#22FFFFFF"
-                                        }
-
-                                        Text {
-                                            text: modelData ? modelData.name : ""
-                                            font.family: spotlight.fontFamily
-                                            font.pixelSize: 17
-                                            color: "white"
-                                            Layout.fillWidth: true
-                                            elide: Text.ElideRight
-                                        }
-                                    }
-
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        onEntered: resultList.currentIndex = index
-                                        onClicked: spotlight.launch(index)
-                                    }
-                                }
-                            }
-                        }
-                    }
+                Ui.SpotlightPanel {
+                    controller: spotlight
                 }
             }
         }
@@ -389,12 +207,100 @@ ShellRoot {
             return assetRoot + "clear.png"
         }
 
-        function matchTier(searchableName, searchableExec, query, searchTerms) {
-            if (searchableName.startsWith(query)) return 0
-            if (searchTerms.every(term => searchableName.split(/[\s-]+/).some(part => part.startsWith(term)))) return 1
-            if (searchTerms.every(term => searchableName.includes(term))) return 1
-            if (searchableExec.startsWith(query)) return 2
-            return 3
+        function searchString(value) {
+            if (value === undefined || value === null) return ""
+            if (Array.isArray(value)) return value.join(" ")
+            return String(value)
+        }
+
+        function normalizeSearch(value) {
+            let text = searchString(value).toLowerCase()
+            try {
+                text = text.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+            } catch (e) {}
+            return text
+        }
+
+        function searchTokens(value) {
+            return normalizeSearch(value).split(/[\s._:/\\-]+/).filter(part => part.length > 0)
+        }
+
+        function acronymForTokens(tokens) {
+            return tokens.map(part => part[0]).join("")
+        }
+
+        function aliasesForName(name) {
+            const tokens = searchTokens(name)
+            let aliases = []
+            if (tokens.length === 0) return aliases
+
+            aliases.push(tokens.join(""))
+            aliases.push(acronymForTokens(tokens))
+            if (tokens.length >= 2)
+                aliases.push(tokens.slice(0, -1).map(part => part[0]).join("") + tokens[tokens.length - 1])
+
+            return aliases
+        }
+
+        function isSubsequence(needle, haystack) {
+            if (needle.length === 0) return true
+            let at = 0
+            for (let i = 0; i < haystack.length && at < needle.length; i++) {
+                if (haystack[i] === needle[at]) at++
+            }
+            return at === needle.length
+        }
+
+        function scoreText(value, query, searchTerms, baseScore, allowFuzzy) {
+            const text = normalizeSearch(value)
+            if (!text) return -1
+
+            const parts = text.split(/[\s._:/\\-]+/).filter(part => part.length > 0)
+            if (text === query) return baseScore
+            if (text.startsWith(query)) return baseScore + 2
+            if (parts.some(part => part.startsWith(query))) return baseScore + 5
+            if (parts.some(part => query.startsWith(part) && part.length >= 4 && query.length - part.length <= 2)) return baseScore + 7
+            if (searchTerms.length > 1 && searchTerms.every(term => parts.some(part => part.startsWith(term)))) return baseScore + 8
+            if (searchTerms.every(term => text.includes(term))) return baseScore + 14
+            if (allowFuzzy && query.length >= 3 && isSubsequence(query, text)) return baseScore + 34 + Math.max(0, text.length - query.length)
+            return -1
+        }
+
+        function entrySearchScore(entry, query, searchTerms) {
+            const name = entry.name || ""
+            const aliases = aliasesForName(name)
+            let best = scoreText(name, query, searchTerms, 0, true)
+
+            for (let alias of aliases) {
+                const aliasScore = scoreText(alias, query, searchTerms, 1, false)
+                if (aliasScore >= 0 && (best < 0 || aliasScore < best)) best = aliasScore
+            }
+
+            const metadata = [
+                entry.keywords,
+                entry.keyword,
+                entry.genericName,
+                entry.generic,
+                entry.comment,
+                entry.categories,
+                entry.category
+            ].map(searchString).filter(value => value.length > 0).join(" ")
+            const metadataScore = scoreText(metadata, query, searchTerms, 12, false)
+            if (metadataScore >= 0 && (best < 0 || metadataScore < best)) best = metadataScore
+
+            const identifiers = [
+                entry.desktopId,
+                entry.id,
+                entry.fileName,
+                entry.startupWmClass,
+                entry.wmClass,
+                entry.exec,
+                entry.execString
+            ].map(searchString).filter(value => value.length > 0).join(" ")
+            const identifierScore = scoreText(identifiers, query, searchTerms, 24, false)
+            if (identifierScore >= 0 && (best < 0 || identifierScore < best)) best = identifierScore
+
+            return best
         }
 
         function persistUsage() {
@@ -414,44 +320,42 @@ ShellRoot {
         }
 
         function updateResults(query) {
-            const q = query.trim().toLowerCase()
+            const q = normalizeSearch(query.trim())
             if (q === "") { results = []; return }
 
             let items = []
             if (typeof DesktopEntries !== "undefined") {
                 let apps = DesktopEntries.applications.values
-                let searchTerms = q.split(/[\s-]+/).filter(term => term.length > 0)
+                let searchTerms = searchTokens(q)
                 let seenKeys = new Set()
 
                 for (let entry of apps) {
                     if (!entry || entry.noDisplay) continue
 
-                    let searchableName = (entry.name || "").trim().toLowerCase()
+                    let searchableName = normalizeSearch((entry.name || "").trim())
                     let key = entryKey(entry)
                     if (!searchableName || seenKeys.has(key)) continue
 
-                    let searchableExec = (entry.exec || entry.execString || "").toLowerCase()
-                    let matches = searchTerms.every(term =>
-                        searchableName.includes(term) || searchableExec.includes(term)
-                    )
-
-                    if (!matches) continue
+                    let score = entrySearchScore(entry, q, searchTerms)
+                    if (score < 0) continue
 
                     items.push({
                         entry,
                         name: searchableName,
-                        exec: searchableExec,
-                        tier: matchTier(searchableName, searchableExec, q, searchTerms),
+                        score,
                         usage: usageCountFor(entry)
                     })
                     seenKeys.add(key)
                 }
 
                 items.sort((a, b) => {
-                    if (a.tier !== b.tier) return a.tier - b.tier
+                    if (a.score !== b.score) return a.score - b.score
                     if (a.usage !== b.usage) return b.usage - a.usage
                     return a.name.localeCompare(b.name)
                 })
+
+                if (items.some(item => item.score < 12))
+                    items = items.filter(item => item.score < 12)
             }
             results = items.slice(0, 6).map(item => item.entry)
         }

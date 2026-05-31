@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set +e
+
+export XDG_SESSION_TYPE=wayland
+
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+config_file="$config_home/AstreaOS/gaming/gamescope.json"
+
+read_gamescope_value() {
+    local key="$1"
+    local fallback="$2"
+    python3 - "$config_file" "$key" "$fallback" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+fallback = sys.argv[3]
+try:
+    data = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    data = {}
+value = data.get(key, fallback)
+if isinstance(value, bool):
+    print("1" if value else "0")
+else:
+    print(value)
+PY
+}
+
+width="$(read_gamescope_value width 1920)"
+height="$(read_gamescope_value height 1080)"
+refresh="$(read_gamescope_value refresh 165)"
+fancy_scaling="$(read_gamescope_value fancy_scaling 1)"
+color_managed="$(read_gamescope_value color_managed 1)"
+virtual_white="$(read_gamescope_value virtual_white 1)"
+multiple_xwaylands="$(read_gamescope_value multiple_xwaylands 1)"
+steam_integration="$(read_gamescope_value steam_integration 1)"
+
+export STEAM_GAMESCOPE_FANCY_SCALING_SUPPORT="$fancy_scaling"
+export STEAM_GAMESCOPE_COLOR_MANAGED="$color_managed"
+export STEAM_GAMESCOPE_VIRTUAL_WHITE="$virtual_white"
+export STEAM_MULTIPLE_XWAYLANDS="$multiple_xwaylands"
+export ENABLE_GAMESCOPE_WSI="$steam_integration"
+
+sudo -n /usr/bin/systemctl start plugin_loader.service 2>/dev/null || true
+systemctl --user start steam-nvibrant.service 2>/dev/null || true
+
+cleanup() { sudo -n /usr/bin/systemctl stop plugin_loader.service 2>/dev/null || true; }
+trap cleanup HUP INT TERM
+
+gamescope --backend drm --steam --fullscreen -W "$width" -H "$height" -r "$refresh" --immediate-flips --hide-cursor-delay -1 -- steam -gamepadui -steamos3 -steamdeck
+status=$?
+cleanup
+exit "$status"

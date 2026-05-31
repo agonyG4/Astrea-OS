@@ -64,7 +64,7 @@ class StorageAutoRefreshTest(unittest.TestCase):
             )
 
             with mock.patch.object(storage, "CACHE_DB", cache_db), \
-                    mock.patch.object(storage.subprocess, "run", return_value=completed), \
+                    mock.patch.object(storage.subprocess, "run", return_value=completed) as run, \
                     mock.patch.object(storage, "compsize_stats", return_value={"exact": False}), \
                     mock.patch.object(storage, "refresh_status", return_value={"running": False}), \
                     mock.patch.object(storage, "start_auto_refresh", return_value=True) as start:
@@ -76,6 +76,7 @@ class StorageAutoRefreshTest(unittest.TestCase):
             self.assertTrue(payload["refresh_started"])
             self.assertTrue(payload["cache_stale"])
             self.assertFalse(payload["cache_exists"])
+            self.assertIn("timeout", run.call_args.kwargs)
 
     def test_json_does_not_start_duplicate_refresh_when_already_running(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -240,6 +241,17 @@ prealloc   100%       23M          23M          25M
         self.assertTrue(stats["stale"])
         self.assertEqual(stats["zstd_disk_usage"], 47_300_000_000)
         self.assertEqual(stats["error"], "/root: Permission denied")
+
+    def test_write_json_uses_unique_temp_file_and_preserves_stale_tmp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            stale_tmp = Path(tmp) / "state.json.tmp"
+            stale_tmp.write_text("stale", encoding="utf-8")
+
+            storage.write_json(path, {"ok": True})
+
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"ok": True})
+            self.assertEqual(stale_tmp.read_text(encoding="utf-8"), "stale")
 
 
 if __name__ == "__main__":

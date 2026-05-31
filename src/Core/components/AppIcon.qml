@@ -6,12 +6,16 @@ Rectangle {
     property var appData: null
     property var entry: appData
     property string iconName: resolveIconName(entry)
+    property string fallbackIconName: ""
+    readonly property string resolvedIconName: iconName.length > 0 ? iconName : fallbackIconName
     property string fallbackText: initials(displayName(entry))
     property int iconSize: 52
     property int iconRadius: 14
     property int fallbackRadius: iconRadius
     property int fallbackFontSize: Math.max(11, Math.round(Math.min(width, height) * 0.36))
     property int iconPadding: Math.max(2, Math.round(iconSize * 0.06))
+    property bool showFallbackText: true
+    property int sourcePixelSize: Math.max(64, Math.round(iconSize * 2))
     property color fallbackColor: Qt.rgba(1, 1, 1, 0.08)
     property color fallbackBorderColor: Qt.rgba(1, 1, 1, 0.14)
     property color fallbackTextColor: "#f5f5f7"
@@ -44,15 +48,26 @@ Rectangle {
     function resolveIconName(value) {
         if (!value)
             return ""
+        if (value.iconSource)
+            return value.iconSource
+        if (value.astreaIcon)
+            return value.astreaIcon
+        if (value.astreaIconName)
+            return value.astreaIconName
+
+        const cls = String(value.className || value.class || value.initialClass || "").toLowerCase()
+        const text = String((value.title || value.name || "") + " " + cls).toLowerCase()
+
         if (value.icon_path)
             return value.icon_path
         if (value.iconPath)
             return value.iconPath
-        if (value.icon)
+        if (value.icon) {
+            const explicitIcon = String(value.icon).toLowerCase()
+            if (cls === "steam_app_default" && explicitIcon === "steam")
+                return ""
             return value.icon
-
-        const cls = String(value.className || value.class || value.initialClass || "").toLowerCase()
-        const text = String((value.title || value.name || "") + " " + cls).toLowerCase()
+        }
 
         if (cls === "org.vinegarhq.sober")
             return "org.vinegarhq.Sober"
@@ -66,6 +81,11 @@ Rectangle {
             return "spotify"
         if (cls.indexOf("discord") >= 0)
             return "discord"
+        const steamGame = cls.match(/^steam_app_(\d+)$/)
+        if (steamGame)
+            return "steam_icon_" + steamGame[1]
+        if (cls === "steam_app_default")
+            return ""
         if (cls.indexOf("steam") >= 0)
             return "steam"
         if (cls === "obsidian" || text.indexOf("obsidian") >= 0)
@@ -91,26 +111,26 @@ Rectangle {
     }
 
     function reloadIcon() {
-        const nextSource = root.iconSource(root.iconName)
+        const nextSource = root.iconSource(root.resolvedIconName)
         if (nextSource.length === 0)
             return
 
         iconImage.source = ""
         Qt.callLater(() => {
-            if (root.iconSource(root.iconName) === nextSource)
+            if (root.iconSource(root.resolvedIconName) === nextSource)
                 iconImage.source = nextSource
         })
     }
 
-    onIconNameChanged: reloadIcon()
+    onResolvedIconNameChanged: reloadIcon()
 
     Image {
         id: iconImage
 
         anchors.fill: parent
         anchors.margins: root.iconPadding
-        source: root.iconSource(root.iconName)
-        sourceSize: Qt.size(width, height)
+        source: root.iconSource(root.resolvedIconName)
+        sourceSize: Qt.size(root.sourcePixelSize, root.sourcePixelSize)
         fillMode: Image.PreserveAspectFit
         smooth: true
         mipmap: true
@@ -119,7 +139,7 @@ Rectangle {
         visible: status === Image.Ready
 
         onStatusChanged: {
-            if (status === Image.Error && root.iconName.length > 0)
+            if (status === Image.Error && root.resolvedIconName.length > 0)
                 iconRetryTimer.restart()
         }
     }
@@ -138,6 +158,6 @@ Rectangle {
         font.family: root.fallbackFontFamily
         font.pixelSize: root.fallbackFontSize
         font.weight: Font.DemiBold
-        visible: !root.hasIcon
+        visible: !root.hasIcon && root.showFallbackText
     }
 }

@@ -11,28 +11,45 @@ import shutil
 import struct
 import subprocess
 import sys
+import tarfile
 import tempfile
 import time
 import urllib.parse
+import zipfile
 from pathlib import Path
+
+
+def _path_exists(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def _validate_child_name(name: str, label: str = "name") -> str:
+    value = str(name or "").strip()
+    if not value or value in {".", ".."}:
+        raise ValueError(f"invalid_{label}")
+    if Path(value).is_absolute() or Path(value).name != value:
+        raise ValueError(f"invalid_{label}")
+    return value
 
 
 def create_folder(base_text: str, name: str) -> None:
     base = Path(base_text).expanduser()
-    target = base / name
+    safe_name = _validate_child_name(name, "folder_name")
+    target = base / safe_name
     index = 2
-    while target.exists():
-        target = base / f"{name} {index}"
+    while _path_exists(target):
+        target = base / f"{safe_name} {index}"
         index += 1
     target.mkdir()
 
 
 def rename_path(source_text: str, new_name: str) -> None:
     source = Path(source_text).expanduser()
-    target = source.parent / new_name
+    safe_name = _validate_child_name(new_name, "file_name")
+    target = source.parent / safe_name
     if source == target:
         return
-    if target.exists():
+    if _path_exists(target):
         raise SystemExit(1)
     os.rename(source, target)
 
@@ -399,6 +416,8 @@ def _error_code_from_exception(exc: Exception) -> str:
         return "permission_denied"
     if "no such file" in msg or "not found" in msg:
         return "not_found"
+    if "invalid" in msg:
+        return "invalid_path"
     return "operation_failed"
 
 
@@ -468,8 +487,43 @@ def _run_text(cmd: list[str], timeout: int = 12) -> str:
     return result.stdout
 
 
-def _list_archive_entries(archive_path: Path, password: str | None = None, which_runner=shutil.which) -> list[str]:
+def _list_zip_entries(archive_path: Path) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            for info in archive.infolist():
+                if info.is_dir():
+                    continue
+                entries.append({"name": info.filename, "size": max(0, int(info.file_size or 0))})
+    except Exception:
+        return []
+    return entries
+
+
+def _list_tar_entries(archive_path: Path) -> list[dict[str, object]]:
+    entries: list[dict[str, object]] = []
+    try:
+        with tarfile.open(archive_path) as archive:
+            for member in archive.getmembers():
+                if member.isdir():
+                    continue
+                entries.append({"name": member.name, "size": max(0, int(member.size or 0))})
+    except Exception:
+        return []
+    return entries
+
+
+def _list_archive_entries(archive_path: Path, password: str | None = None, which_runner=shutil.which) -> list[object]:
     lower = archive_path.name.lower()
+    if lower.endswith(".zip"):
+        zip_entries = _list_zip_entries(archive_path)
+        if zip_entries:
+            return zip_entries
+    if lower.endswith((".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz")):
+        tar_entries = _list_tar_entries(archive_path)
+        if tar_entries:
+            return tar_entries
+
     commands: list[list[str]] = []
     if lower.endswith(".zip") and which_runner("unzip"):
         commands.append(["unzip", "-Z1", str(archive_path)])
@@ -487,16 +541,46 @@ def _list_archive_entries(archive_path: Path, password: str | None = None, which
             continue
         entries: list[str] = []
         if cmd[0] == "7z":
+            current: dict[str, object] = {}
             for line in output.splitlines():
-                if not line.startswith("Path = "):
+                if not line.strip():
+                    if current.get("name") and not current.get("is_dir"):
+                        entries.append({"name": str(current.get("name")), "size": int(current.get("size") or 0)})
+                    current = {}
                     continue
-                value = line.split("=", 1)[1].strip()
-                if value and value != str(archive_path):
-                    entries.append(value)
+                if line.startswith("Path = "):
+                    value = line.split("=", 1)[1].strip()
+                    if value and value != str(archive_path):
+                        current["name"] = value
+                elif line.startswith("Size = "):
+                    value = line.split("=", 1)[1].strip()
+                    current["size"] = int(value) if value.isdigit() else 0
+                elif line.startswith("Folder = "):
+                    current["is_dir"] = line.split("=", 1)[1].strip() == "+"
+            if current.get("name") and not current.get("is_dir"):
+                entries.append({"name": str(current.get("name")), "size": int(current.get("size") or 0)})
         else:
             entries = [line.strip() for line in output.splitlines() if line.strip()]
-        return [entry for entry in entries if entry and not entry.endswith("/")]
+        return [
+            entry for entry in entries
+            if _archive_entry_name(entry) and not _archive_entry_name(entry).endswith("/")
+        ]
     return []
+
+
+def _archive_entry_name(entry: object) -> str:
+    if isinstance(entry, dict):
+        return str(entry.get("name") or "")
+    return str(entry or "")
+
+
+def _archive_entry_size(entry: object) -> int:
+    if isinstance(entry, dict):
+        try:
+            return max(0, int(entry.get("size") or 0))
+        except (TypeError, ValueError):
+            return 0
+    return 0
 
 
 def _count_extracted_entries(destination: Path) -> int:
@@ -506,6 +590,20 @@ def _count_extracted_entries(destination: Path) -> int:
     for _root, _dirs, files in os.walk(destination):
         count += len(files)
     return count
+
+
+def _count_extracted_bytes(destination: Path) -> int:
+    if not destination.exists():
+        return 0
+    total = 0
+    for root, _dirs, files in os.walk(destination):
+        base = Path(root)
+        for name in files:
+            try:
+                total += (base / name).stat().st_size
+            except OSError:
+                continue
+    return total
 
 
 def _format_eta(seconds: float | int | None) -> str:
@@ -544,22 +642,41 @@ def validate_archive_entries(entries: list[str]) -> None:
     for entry in entries:
         if _is_unsafe_archive_entry(entry):
             raise ValueError(f"unsafe archive entry: {entry}")
-def _archive_progress_payload(mode: str, done: int, total: int, start_time: float, now) -> dict[str, object]:
+def _archive_progress_payload(
+    mode: str,
+    done: int,
+    total: int,
+    start_time: float,
+    now,
+    bytes_done: int = 0,
+    bytes_total: int = 0,
+) -> dict[str, object]:
     total = max(0, int(total or 0))
     done = max(0, int(done or 0))
-    percent = (done / total * 100) if total > 0 else 0
+    bytes_done = max(0, int(bytes_done or 0))
+    bytes_total = max(0, int(bytes_total or 0))
+    if bytes_total > 0:
+        percent = bytes_done / bytes_total * 100
+        progress_done = min(bytes_done, bytes_total)
+        progress_total = bytes_total
+    else:
+        percent = (done / total * 100) if total > 0 else 0
+        progress_done = done
+        progress_total = total
     eta_seconds = None
-    if total > 0 and 0 < done < total:
+    if progress_total > 0 and 0 < progress_done < progress_total:
         elapsed = max(0.1, now() - start_time)
-        eta_seconds = (elapsed / done) * (total - done)
-    elif total > 0 and done >= total:
+        eta_seconds = (elapsed / progress_done) * (progress_total - progress_done)
+    elif progress_total > 0 and progress_done >= progress_total:
         eta_seconds = 0
     payload: dict[str, object] = {
         "event": "progress",
         "mode": mode,
         "done": done,
         "total": total,
-        "percent": min(99, percent) if done < total else min(100, percent),
+        "percent": min(99, percent) if progress_total > 0 and progress_done < progress_total else min(100, percent),
+        "bytes_done": bytes_done,
+        "bytes_total": bytes_total,
     }
     if eta_seconds is not None:
         payload["eta_seconds"] = int(round(eta_seconds))
@@ -610,12 +727,13 @@ def _remove_path(path: Path) -> None:
 
 
 def _prepare_extract_destination(parent: Path, name: str, conflict_policy: str) -> tuple[Path, Path | None]:
-    target = parent / name
+    safe_name = _validate_child_name(name, "destination_name")
+    target = parent / safe_name
     policy = (conflict_policy or "keep-both").lower()
     if policy not in {"ask", "keep-both", "merge", "overwrite"}:
         raise RuntimeError(f"invalid_conflict_policy: {conflict_policy}")
 
-    if not target.exists() and not target.is_symlink():
+    if not _path_exists(target):
         return target, None
 
     if policy == "ask":
@@ -679,30 +797,58 @@ def extract_archive(
     parent = archive_path.parent
     destination: Path
     backup: Path | None
-    destination, backup = _prepare_extract_destination(parent, folder_name or archive_path.name, conflict_policy)
-    destination_preexisting = destination.exists() or destination.is_symlink()
+    destination = parent / (folder_name or archive_path.name)
+    backup = None
+    destination_preexisting = False
     entry_lister = list_runner or _list_archive_entries
-    entries = entry_lister(archive_path, password, which_runner)
-    total = max(0, len(entries))
+    entries: list[object] = []
+    total = 0
+    total_bytes = 0
     runner = run_cmd or subprocess.run
     start_time = now()
     baseline_count = 0
+    baseline_bytes = 0
     try:
-        validate_archive_entries(entries)
+        destination, backup = _prepare_extract_destination(parent, folder_name or archive_path.name, conflict_policy)
+        destination_preexisting = _path_exists(destination)
+        entries = entry_lister(archive_path, password, which_runner)
+        entry_names = [_archive_entry_name(entry) for entry in entries]
+        total = max(0, len(entry_names))
+        total_bytes = sum(_archive_entry_size(entry) for entry in entries)
+        validate_archive_entries(entry_names)
         destination.mkdir(parents=True, exist_ok=True)
         baseline_count = _count_extracted_entries(destination)
-        _json_event({"event": "start", "mode": "extract", "name": archive_path.name, "destination": str(destination), "total": total})
+        baseline_bytes = _count_extracted_bytes(destination)
+        _json_event({
+            "event": "start",
+            "mode": "extract",
+            "name": archive_path.name,
+            "destination": str(destination),
+            "total": total,
+            "bytes_total": total_bytes,
+        })
         cmd = _pick_extractor(archive_path, which_runner)
         final_cmd = _build_extract_command(cmd, destination, password)
         if run_cmd is None:
             with tempfile.TemporaryFile() as stdout_tmp, tempfile.TemporaryFile() as stderr_tmp:
                 proc = subprocess.Popen(final_cmd, stdout=stdout_tmp, stderr=stderr_tmp)
                 last_done = -1
+                last_bytes_done = -1
                 while proc.poll() is None:
                     done = max(0, _count_extracted_entries(destination) - baseline_count)
-                    if done != last_done:
-                        _json_event(_archive_progress_payload("extract", done, total, start_time, now))
+                    bytes_done = max(0, _count_extracted_bytes(destination) - baseline_bytes)
+                    if done != last_done or bytes_done != last_bytes_done:
+                        _json_event(_archive_progress_payload(
+                            "extract",
+                            done,
+                            total,
+                            start_time,
+                            now,
+                            bytes_done,
+                            total_bytes,
+                        ))
                         last_done = done
+                        last_bytes_done = bytes_done
                     time.sleep(0.35)
                 proc.wait()
                 if proc.returncode != 0:
@@ -717,16 +863,32 @@ def extract_archive(
         else:
             runner(final_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         done = max(0, _count_extracted_entries(destination) - baseline_count)
+        bytes_done = max(0, _count_extracted_bytes(destination) - baseline_bytes)
         if total > 0 and done < total:
             done = total
         if total <= 0:
             total = done
-        _json_event(_archive_progress_payload("extract", done, total, start_time, now))
-        _json_event({"event": "done", "mode": "extract", "destination": str(destination), "done": done, "total": total, "percent": 100, "eta_seconds": 0, "eta_text": _format_eta(0)})
+        if total_bytes > 0 and bytes_done < total_bytes:
+            bytes_done = total_bytes
+        _json_event(_archive_progress_payload("extract", done, total, start_time, now, bytes_done, total_bytes))
+        _json_event({
+            "event": "done",
+            "mode": "extract",
+            "destination": str(destination),
+            "done": done,
+            "total": total,
+            "percent": 100,
+            "eta_seconds": 0,
+            "eta_text": _format_eta(0),
+            "bytes_done": bytes_done,
+            "bytes_total": total_bytes,
+        })
         _finish_extract_backup(backup)
     except RuntimeError as exc:
         _restore_extract_backup(destination, backup, not destination_preexisting)
-        _json_event({"event": "error", "mode": "extract", "code": "missing_tool", "message": str(exc), "destination": str(destination)})
+        msg = str(exc)
+        code = "missing_tool" if "missing_tool" in msg else _error_code_from_exception(exc)
+        _json_event({"event": "error", "mode": "extract", "code": code, "message": msg, "destination": str(destination)})
         raise SystemExit(1)
     except subprocess.CalledProcessError as exc:
         _restore_extract_backup(destination, backup, not destination_preexisting)
@@ -823,7 +985,7 @@ def _conflict_record(source: Path, destination: Path) -> dict[str, object] | Non
             "conflict_kind": "same-path",
             "supported_policies": ["skip"],
         }
-    if not target.exists():
+    if not _path_exists(target):
         return None
 
     destination_type = _path_type(target)
@@ -910,13 +1072,13 @@ def _emit_changed() -> None:
 
 def _unique_target(parent: Path, name: str) -> Path:
     candidate = parent / name
-    if not candidate.exists():
+    if not _path_exists(candidate):
         return candidate
     stem, ext = os.path.splitext(name)
     index = 2
     while True:
         candidate = parent / f"{stem} {index}{ext}"
-        if not candidate.exists():
+        if not _path_exists(candidate):
             return candidate
         index += 1
 
@@ -938,7 +1100,7 @@ def trash_items(trash_files_text: str, trash_info_text: str, paths: list[str]) -
 
     for raw in paths:
         source = Path(raw).expanduser()
-        if not source.exists():
+        if not _path_exists(source):
             continue
         destination = _unique_target(trash_files, source.name)
         shutil.move(str(source), str(destination))
@@ -958,7 +1120,7 @@ def restore_trash_items(trash_info_text: str, fallback_dir_text: str, paths: lis
 
     for raw in paths:
         trashed = Path(raw).expanduser()
-        if not trashed.exists():
+        if not _path_exists(trashed):
             continue
         info_path = trash_info / f"{trashed.name}.trashinfo"
 

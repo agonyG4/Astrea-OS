@@ -4,6 +4,7 @@ import "../../astrea" as Astrea
 import "../../../.."
 import "../popups" as PopupComponents
 import "../../../../../AstreaI18n" as AstreaI18n
+import "TrayIcon.js" as TrayIcon
 
 PopupComponents.TopbarPopup {
     id: control
@@ -12,24 +13,6 @@ PopupComponents.TopbarPopup {
     property var trayMenu: null
     property real pendingAnchorX: screen.width / 2
     readonly property string trayTitle: trayItem ? (trayItem.tooltipTitle || trayItem.title || trayItem.id || "Tray item") : "Tray item"
-
-    function trayIconSource(icon) {
-        if (!icon)
-            return ""
-
-        const marker = "?path="
-        const markerIndex = icon.indexOf(marker)
-        if (markerIndex < 0)
-            return icon
-
-        const name = icon.slice(0, markerIndex).replace(/^image:\/\/icon\//, "")
-        const path = icon.slice(markerIndex + marker.length)
-        if (!name || !path)
-            return icon
-
-        const fileName = name.match(/\.(png|svg|ico|xpm)$/i) ? name : name + ".png"
-        return "file://" + path.replace(/\/$/, "") + "/" + fileName
-    }
 
     function menuEntryText(entry) {
         const text = entry && entry.text ? String(entry.text) : ""
@@ -41,7 +24,7 @@ PopupComponents.TopbarPopup {
     function menuEntryIcon(entry) {
         if (!entry || !entry.icon)
             return ""
-        return trayIconSource(String(entry.icon))
+        return TrayIcon.source(String(entry.icon))
     }
 
     popupWidth: 220
@@ -91,7 +74,7 @@ PopupComponents.TopbarPopup {
             width: 18
             height: 18
             sourceSize: Qt.size(width, height)
-            source: control.trayIconSource(control.trayItem ? (control.trayItem.icon || "") : "")
+            source: TrayIcon.source(control.trayItem ? (control.trayItem.icon || "") : "")
             fillMode: Image.PreserveAspectFit
             smooth: true
         }

@@ -2,30 +2,13 @@ import QtQuick
 import Quickshell
 import Quickshell.Services.SystemTray
 import "../../../.."
+import "TrayIcon.js" as TrayIcon
 
 Row {
     id: root
     spacing: Theme.spacing
     height:  36
     property real anchorOffset: 0
-
-    function trayIconSource(icon) {
-        if (!icon)
-            return ""
-
-        const marker = "?path="
-        const markerIndex = icon.indexOf(marker)
-        if (markerIndex < 0)
-            return icon
-
-        const name = icon.slice(0, markerIndex).replace(/^image:\/\/icon\//, "")
-        const path = icon.slice(markerIndex + marker.length)
-        if (!name || !path)
-            return icon
-
-        const fileName = name.match(/\.(png|svg|ico|xpm)$/i) ? name : name + ".png"
-        return "file://" + path.replace(/\/$/, "") + "/" + fileName
-    }
 
     TrayContextMenu {
         id: contextMenu
@@ -49,7 +32,7 @@ Row {
                 anchors.centerIn: parent
                 width: 16; height: 16
                 sourceSize: Qt.size(width, height)
-                source:   root.trayIconSource(modelData.icon || "")
+                source:   TrayIcon.source(modelData.icon || "")
                 fillMode: Image.PreserveAspectFit
                 smooth: true
             }

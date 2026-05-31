@@ -19,59 +19,204 @@ ScrollPage {
     readonly property color errorColor: Theme.errorColor
     readonly property color successColor: Theme.successColor
 
-    readonly property string stateJsonScript: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + "/Core/bridge/state_json.py"
-    readonly property string configPath: (Quickshell.env("HOME") || "") + "/.config/AstreaOS/system/settings.json"
-    readonly property string defaultConfigJson: JSON.stringify({ "language": "en_US" }, null, 4)
+    readonly property string astreaRoot: Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")
+    readonly property string regionScript: astreaRoot + "/Core/bridge/system/region.py"
     property var languageValues: ["en_US", "pt_BR"]
     property var languageOptions: []
+    property var countryData: [
+        { code: "BR", name: "Brazil" },
+        { code: "US", name: "United States" },
+        { code: "PT", name: "Portugal" },
+        { code: "GB", name: "United Kingdom" },
+        { code: "FR", name: "France" },
+        { code: "ES", name: "Spain" },
+        { code: "DE", name: "Germany" },
+        { code: "IT", name: "Italy" },
+        { code: "CA", name: "Canada" },
+        { code: "JP", name: "Japan" },
+        { code: "AR", name: "Argentina" },
+        { code: "CL", name: "Chile" },
+        { code: "UY", name: "Uruguay" }
+    ]
+    property var countryValues: countryData.map(item => item.code)
+    property var countryOptions: []
+    property var timeFormatValues: ["system", "24h", "12h"]
+    property var timeFormatOptions: []
 
     property bool loading: true
     property string errorMessage: ""
     property string saveMessage: ""
     property string _configBuf: ""
     property int selectedLanguage: 0
-    property var settingsConfig: ({ language: "en_US" })
+    property int selectedCountry: 0
+    property int selectedTimeFormat: 0
+    property string resolvedTimeFormat: "24h"
+    property bool automaticLocation: true
+    property string geolocationServiceState: ""
+    property var settingsConfig: ({
+        language: "en_US",
+        region: {
+            country_code: "BR",
+            time_format: "system",
+            automatic_location: true
+        }
+    })
 
     function t(key, fallback, params) { return AstreaI18n.I18n.tr(key, fallback, params) }
+
     function languageLabel(code) {
         var key = "settings.language.option." + code.toLowerCase()
         return t(key, code)
     }
+
+    function countryLabel(code, fallback) {
+        return t("settings.language.country." + String(code || "").toLowerCase(), fallback || code)
+    }
+
+    function countryDefaultTimeFormat(index) {
+        var item = countryData[index >= 0 ? index : selectedCountry] || ({})
+        return item.time_format === "12h" ? "12h" : "24h"
+    }
+
+    function resolvedTimeFormatLabel() {
+        var value = root.countryDefaultTimeFormat(root.selectedCountry)
+        return value === "12h"
+            ? root.t("settings.language.time_format.12h", "12-hour")
+            : root.t("settings.language.time_format.24h", "24-hour")
+    }
+
+    function timeFormatLabel(value) {
+        if (value === "12h")
+            return root.t("settings.language.time_format.12h", "12-hour")
+        if (value === "24h")
+            return root.t("settings.language.time_format.24h", "24-hour")
+        return root.t("settings.language.time_format.system_with_value", "System default ({format})", {
+            format: root.resolvedTimeFormatLabel()
+        })
+    }
+
     function rebuildLanguageOptions() {
         languageOptions = languageValues.map(languageLabel)
     }
 
+    function rebuildCountryOptions() {
+        countryOptions = countryData.map(item => root.countryLabel(item.code, item.name || item.code))
+    }
+
+    function rebuildTimeFormatOptions() {
+        timeFormatOptions = timeFormatValues.map(timeFormatLabel)
+    }
+
+    function indexFor(values, value, fallback) {
+        var idx = values.indexOf(value)
+        return idx >= 0 ? idx : fallback
+    }
+
     function indexForLanguage(value) {
-        var normalized = (value || "en_US").replace("-", "_")
-        var idx = root.languageValues.indexOf(normalized)
-        return idx >= 0 ? idx : 0
+        return indexFor(root.languageValues, (value || "en_US").replace("-", "_"), 0)
+    }
+
+    function indexForCountry(value) {
+        return indexFor(root.countryValues, (value || "BR").toUpperCase(), 0)
+    }
+
+    function indexForTimeFormat(value) {
+        return indexFor(root.timeFormatValues, (value || "system").toLowerCase(), 0)
+    }
+
+    function normalizeConfig(cfg) {
+        var next = Object.assign({}, root.settingsConfig, cfg || {})
+        next.region = Object.assign({}, root.settingsConfig.region || {}, (cfg || {}).region || {})
+        return next
+    }
+
+    function applyPayload(payload) {
+        if (!payload)
+            return
+        if (payload.countries && payload.countries.length > 0) {
+            root.countryData = payload.countries
+            root.countryValues = payload.countries.map(item => item.code)
+            root.rebuildCountryOptions()
+        }
+        if (payload.time_formats && payload.time_formats.length > 0) {
+            var ordered = ["system", "24h", "12h"]
+            root.timeFormatValues = ordered.filter(value => payload.time_formats.indexOf(value) >= 0)
+        }
+        root.settingsConfig = normalizeConfig(payload.config || {})
+        root.selectedLanguage = root.indexForLanguage(root.settingsConfig.language || AstreaI18n.I18n.language)
+        root.selectedCountry = root.indexForCountry((root.settingsConfig.region || {}).country_code)
+        root.selectedTimeFormat = root.indexForTimeFormat((root.settingsConfig.region || {}).time_format)
+        root.resolvedTimeFormat = payload.effective_time_format || root.countryDefaultTimeFormat(root.selectedCountry)
+        root.automaticLocation = (root.settingsConfig.region || {}).automatic_location !== false
+        if (payload.geolocation_service)
+            root.geolocationServiceState = payload.geolocation_service.state || ""
+        root.rebuildTimeFormatOptions()
+    }
+
+    function runSave(args) {
+        if (saveConfigProc.running)
+            return
+        saveConfigProc.buffer = ""
+        saveConfigProc.command = ["python3", root.regionScript, "set"].concat(args)
+        saveConfigProc.running = true
     }
 
     function setLanguage(index) {
         if (index < 0 || index >= root.languageValues.length)
             return
         root.selectedLanguage = index
-        var next = JSON.parse(JSON.stringify(root.settingsConfig || {}))
-        next.language = root.languageValues[index]
-        root.settingsConfig = next
-        saveConfigProc.command = ["python3", root.stateJsonScript, "write", root.configPath, JSON.stringify(next, null, 4)]
-        saveConfigProc.running = false
-        saveConfigProc.running = true
+        runSave(["--language", root.languageValues[index]])
     }
 
-    Component.onCompleted: { listLanguagesProc.running = true; loadConfigProc.running = true }
+    function setCountry(index) {
+        if (index < 0 || index >= root.countryValues.length)
+            return
+        root.selectedCountry = index
+        root.resolvedTimeFormat = root.countryDefaultTimeFormat(index)
+        root.rebuildTimeFormatOptions()
+        runSave(["--country-code", root.countryValues[index]])
+    }
 
+    function setTimeFormat(index) {
+        if (index < 0 || index >= root.timeFormatValues.length)
+            return
+        root.selectedTimeFormat = index
+        runSave(["--time-format", root.timeFormatValues[index]])
+    }
+
+    function setAutomaticLocation(enabled) {
+        root.automaticLocation = enabled
+        runSave(["--automatic-location", enabled ? "true" : "false"])
+    }
+
+    Component.onCompleted: {
+        root.rebuildLanguageOptions()
+        root.rebuildCountryOptions()
+        root.rebuildTimeFormatOptions()
+        listLanguagesProc.running = true
+        loadConfigProc.running = true
+    }
+
+    Connections {
+        target: AstreaI18n.I18n
+        function onMessagesChanged() {
+            root.rebuildLanguageOptions()
+            root.rebuildCountryOptions()
+            root.rebuildTimeFormatOptions()
+        }
+    }
 
     Process {
         id: listLanguagesProc
-        command: ["python3", (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + "/System/i18n/i18n.py", "list-languages"]
+        command: ["python3", root.astreaRoot + "/System/i18n/i18n.py", "list-languages"]
         property string buffer: ""
         stdout: SplitParser { onRead: data => listLanguagesProc.buffer += data }
         onExited: code => {
             if (code === 0) {
                 try {
                     var langs = JSON.parse(buffer || "[]")
-                    if (langs.length > 0) root.languageValues = langs
+                    if (langs.length > 0)
+                        root.languageValues = langs
                 } catch (e) {}
             }
             buffer = ""
@@ -82,18 +227,16 @@ ScrollPage {
 
     Process {
         id: loadConfigProc
-        command: ["python3", root.stateJsonScript, "read-or-init", root.configPath, root.defaultConfigJson]
+        command: ["python3", root.regionScript, "get"]
         stdout: SplitParser {
             onRead: line => root._configBuf += line
         }
         onExited: code => {
             if (code !== 0) {
-                root.errorMessage = root.t("settings.language.error.load", "Could not read language settings.")
+                root.errorMessage = root.t("settings.language.error.load", "Could not read language and region settings.")
             } else {
                 try {
-                    var cfg = JSON.parse(root._configBuf || "{}")
-                    root.settingsConfig = Object.assign({}, root.settingsConfig, cfg)
-                    root.selectedLanguage = root.indexForLanguage(root.settingsConfig.language || AstreaI18n.I18n.language)
+                    root.applyPayload(JSON.parse(root._configBuf || "{}"))
                 } catch (e) {
                     root.errorMessage = root.t("settings.language.error.parse", "Could not parse language settings: ") + e
                 }
@@ -106,14 +249,29 @@ ScrollPage {
     Process {
         id: saveConfigProc
         command: []
+        property string buffer: ""
+        stdout: SplitParser { onRead: data => saveConfigProc.buffer += data }
         onExited: code => {
             if (code === 0) {
-                root.saveMessage = root.t("settings.language.saved", "Language updated.")
+                try {
+                    var payload = JSON.parse(saveConfigProc.buffer || "{}")
+                    root.applyPayload(payload)
+                    var service = payload.geolocation_service || {}
+                    if (service.action === "disable" && service.ok === false) {
+                        root.errorMessage = root.t("settings.language.error.geolocation_disable", "Region saved, but GeoClue could not be disabled: ") + (service.detail || "")
+                    } else {
+                        root.errorMessage = ""
+                        root.saveMessage = root.t("settings.language.saved", "Language and region updated.")
+                        saveMessageTimer.restart()
+                    }
+                } catch (e) {
+                    root.errorMessage = root.t("settings.language.error.parse", "Could not parse language settings: ") + e
+                }
                 AstreaI18n.I18n.reload()
-                saveMessageTimer.restart()
             } else {
-                root.errorMessage = root.t("settings.language.error.save", "Could not save language settings.")
+                root.errorMessage = root.t("settings.language.error.save", "Could not save language and region settings.")
             }
+            saveConfigProc.buffer = ""
         }
     }
 
@@ -142,7 +300,7 @@ ScrollPage {
         visible: !root.loading
 
         SectionHeader {
-            text: root.t("settings.language.header", "LANGUAGE")
+            text: root.t("settings.language.header", "LANGUAGE & REGION")
             textSecondary: root.textSecondary
             Layout.bottomMargin: 12
         }
@@ -184,14 +342,13 @@ ScrollPage {
                 SettingRow {
                     label: root.t("settings.language.row.language", "Language")
                     sublabel: root.t("settings.language.row.language.description", "Choose the language used by AstreaOS apps and shell.")
-                    isLast: true
                     textPrimary: root.textPrimary
                     textSecondary: root.textSecondary
                     cardBorder: root.cardBorder
 
                     SelectButton {
                         implicitWidth: 190
-                        label: root.languageOptions[root.selectedLanguage]
+                        label: root.languageOptions[root.selectedLanguage] || ""
                         options: root.languageOptions
                         selectedIndex: root.selectedLanguage
                         accent: root.accent
@@ -199,6 +356,62 @@ ScrollPage {
                         textSecondary: root.textSecondary
                         popupBg: root.popupBg
                         onSelected: index => root.setLanguage(index)
+                    }
+                }
+
+                SettingRow {
+                    label: root.t("settings.language.row.country", "Country or region")
+                    sublabel: root.t("settings.language.row.country.description", "Used for weather providers, regional defaults and date/time formatting.")
+                    textPrimary: root.textPrimary
+                    textSecondary: root.textSecondary
+                    cardBorder: root.cardBorder
+
+                    SelectButton {
+                        implicitWidth: 210
+                        label: root.countryOptions[root.selectedCountry] || ""
+                        options: root.countryOptions
+                        selectedIndex: root.selectedCountry
+                        accent: root.accent
+                        textPrimary: root.textPrimary
+                        textSecondary: root.textSecondary
+                        popupBg: root.popupBg
+                        onSelected: index => root.setCountry(index)
+                    }
+                }
+
+                SettingRow {
+                    label: root.t("settings.language.row.time_format", "Time format")
+                    sublabel: root.t("settings.language.row.time_format.description", "Controls 24-hour or AM/PM time in apps and the top bar clock.")
+                    textPrimary: root.textPrimary
+                    textSecondary: root.textSecondary
+                    cardBorder: root.cardBorder
+
+                    SelectButton {
+                        implicitWidth: 190
+                        label: root.timeFormatOptions[root.selectedTimeFormat] || ""
+                        options: root.timeFormatOptions
+                        selectedIndex: root.selectedTimeFormat
+                        accent: root.accent
+                        textPrimary: root.textPrimary
+                        textSecondary: root.textSecondary
+                        popupBg: root.popupBg
+                        onSelected: index => root.setTimeFormat(index)
+                    }
+                }
+
+                SettingRow {
+                    label: root.t("settings.language.row.automatic_location", "Automatic location")
+                    sublabel: root.automaticLocation
+                        ? root.t("settings.language.row.automatic_location.enabled", "Weather can use system location before falling back to IP.")
+                        : root.t("settings.language.row.automatic_location.disabled", "System geolocation is disabled; Weather needs a city or cached data.")
+                    isLast: true
+                    textPrimary: root.textPrimary
+                    textSecondary: root.textSecondary
+                    cardBorder: root.cardBorder
+
+                    ToggleSwitch {
+                        checked: root.automaticLocation
+                        onToggled: target => root.setAutomaticLocation(target)
                     }
                 }
             }

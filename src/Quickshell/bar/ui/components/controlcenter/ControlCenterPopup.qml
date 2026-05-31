@@ -5,6 +5,7 @@ import "../system/popups" as SystemComponents
 import "../../.."
 import "."
 import "modules"
+import "../../../../AstreaI18n" as AstreaI18n
 import "ControlCenterRegistry.js" as ModuleRegistry
 
 SystemComponents.TopbarPopup {
@@ -41,27 +42,27 @@ SystemComponents.TopbarPopup {
     readonly property bool btPowerPending: btProcess ? btProcess.powerPending : false
     readonly property string btPowerError: btProcess ? btProcess.powerError : ""
     readonly property string wifiTitle: netType === "wifi" && ssid !== "" ? ssid : "Wi-Fi"
-    readonly property string wifiSubtitle: !netConnected ? "Desconectado" : (netType === "wifi" ? "Conectado" : "Ethernet ativo")
+    readonly property string wifiSubtitle: !netConnected
+        ? tr("quickshell.bar.ui.components.controlcenter.status.disconnected", "Disconnected")
+        : (netType === "wifi"
+            ? tr("quickshell.bar.ui.components.controlcenter.status.connected", "Connected")
+            : tr("quickshell.bar.ui.components.controlcenter.status.ethernet_active", "Ethernet active"))
     readonly property string bluetoothSubtitle: btPowerError !== "" ? btPowerError
-        : btPowerPending ? "Alterando..."
-        : !btOn ? "Desligado"
-        : btScanning && connectedBtCount === 0 ? "Buscando..."
-        : connectedBtCount > 0 ? connectedBtCount + " conectado" : "Ligado"
-    readonly property string statusSummary: [
-        netConnected ? (netType === "wifi" && ssid !== "" ? ssid : "Ethernet") : "Sem rede",
-        btOn ? (connectedBtCount > 0 ? connectedBtCount + " BT" : "BT ligado") : "BT off",
-        masterMuted ? "Mudo" : masterVol + "%"
-    ].join("  /  ")
+        : btPowerPending ? tr("quickshell.bar.ui.components.controlcenter.status.changing", "Changing...")
+        : !btOn ? tr("quickshell.bar.ui.components.controlcenter.status.off", "Off")
+        : btScanning && connectedBtCount === 0 ? tr("quickshell.bar.ui.components.controlcenter.status.searching", "Searching...")
+        : connectedBtCount > 0 ? tr("quickshell.bar.ui.components.controlcenter.status.connected_count", "{count} connected", { count: connectedBtCount })
+        : tr("quickshell.bar.ui.components.controlcenter.status.on", "On")
     readonly property bool hasMusic: musicState && musicState.musicTitleText !== ""
-    readonly property string musicTitle: hasMusic ? musicState.musicTitleText : "Nada tocando"
-    readonly property string musicArtist: hasMusic ? musicState.musicArtistText : "Spotify"
+    readonly property string musicTitle: hasMusic ? musicState.musicTitleText : tr("quickshell.bar.ui.components.controlcenter.media.nothing_playing", "Nothing playing")
+    readonly property string musicArtist: hasMusic ? musicState.musicArtistText : tr("quickshell.bar.ui.components.controlcenter.media.no_app", "Media")
     readonly property string musicArt: hasMusic ? musicState.artSource : ""
     readonly property bool musicPlaying: musicState ? musicState.isPlaying : false
 
     readonly property color popupGlass: Theme.background
     readonly property color popupWash: "transparent"
     readonly property color popupBorder: Theme.border
-    readonly property int fixedContentHeight: 420
+    readonly property int fixedContentHeight: 416
 
     signal volumeChangeHandled(int v)
     signal muteChangeHandled(bool muted)
@@ -107,7 +108,9 @@ SystemComponents.TopbarPopup {
 
                 Text {
                     anchors.verticalCenter: parent.verticalCenter
-                    text: control.customizeMode ? "OK" : "Editar controles"
+                    text: control.customizeMode
+                        ? control.tr("quickshell.bar.ui.components.controlcenter.action.done", "Done")
+                        : control.tr("quickshell.bar.ui.components.controlcenter.action.edit_controls", "Edit controls")
                     color: Theme.shellTextActive
                     font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption; weight: Font.DemiBold }
                 }
@@ -125,6 +128,10 @@ SystemComponents.TopbarPopup {
                 }
             }
         }
+    }
+
+    function tr(key, fallback, params) {
+        return AstreaI18n.I18n.tr(key, fallback, params)
     }
 
     function volumePercentFromX(x, width) {
@@ -503,12 +510,14 @@ SystemComponents.TopbarPopup {
         id: blockViewport
 
         width: parent.width
-        height: control.customizeMode ? control.fixedContentHeight : blockStack.height
+        height: Math.min(blockStack.height, control.fixedContentHeight)
         clip: true
         boundsBehavior: Flickable.StopAtBounds
         contentWidth: width
         contentHeight: blockStack.height
         interactive: contentHeight > height
+
+        Behavior on height { NumberAnimation { duration: Theme.animationFast; easing.type: Easing.OutCubic } }
 
         ReorderableStack {
             id: blockStack

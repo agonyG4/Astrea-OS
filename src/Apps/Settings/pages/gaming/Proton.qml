@@ -21,23 +21,120 @@ ScrollPage {
     readonly property string astreaRoot: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + ""
     readonly property string helperPath: astreaRoot + "/System/scripts/astrea-gaming-settings"
     readonly property var fsrOptions: ["0", "1", "2", "3", "4", "5"]
+    readonly property var presetOptions: ["Recommended", "NVIDIA features", "HDR display", "Diagnostics", "Custom"]
+    readonly property var presetValues: ["recommended", "nvidia", "hdr", "diagnostic", "custom"]
+    readonly property var syncModeOptions: ["Proton default", "Disable Esync", "Disable Fsync", "Disable both"]
+    readonly property var syncModeValues: ["default", "disable-esync", "disable-fsync", "disable-both"]
 
     property bool loading: true
     property string message: ""
     property bool messageIsError: false
     property string buffer: ""
     property var proton: ({})
-    property var status: ({ proton_command: "astrea-gaming %command%", proton_wrapper: "", proton_preview: "astrea-gaming %command%" })
+    property var status: ({ proton_command: "astrea-gaming %command%", proton_wrapper: "", proton_preview: "astrea-gaming %command%", proton_env: ({}), proton_prefix: [], proton_preset: "recommended" })
 
     function t(key, fallback, params) {
         return AstreaI18n.I18n.tr(key, fallback, params)
     }
 
-    function updateConfig(key, value, showMessage) {
+    function presetIndexFor(value) {
+        const idx = root.presetValues.indexOf(value || "recommended")
+        return idx >= 0 ? idx : root.presetValues.length - 1
+    }
+
+    function syncModeIndexFor(value) {
+        const idx = root.syncModeValues.indexOf(value || "default")
+        return idx >= 0 ? idx : 0
+    }
+
+    function presetDescription(value) {
+        if (value === "nvidia")
+            return "Enables NVAPI for games that need NVIDIA-specific features. Leave off unless the game needs it."
+        if (value === "hdr")
+            return "Enables the HDR path for games and displays configured for HDR."
+        if (value === "diagnostic")
+            return "Enables MangoHud and keeps Proton defaults so you can inspect FPS/frame time without changing compatibility."
+        if (value === "custom")
+            return "Manual compatibility profile. Use this when a specific game needs a workaround."
+        return "Keeps Proton defaults and only adds the Astrea launch wrapper. Best starting point for most games."
+    }
+
+    function envSummary() {
+        const env = root.status.proton_env || ({})
+        const keys = Object.keys(env)
+        if (!keys.length)
+            return "No forced Proton flags"
+        return keys.join(", ")
+    }
+
+    function prefixSummary() {
+        const prefix = root.status.proton_prefix || []
+        if (!prefix.length)
+            return "No command prefix"
+        return prefix.join(" ")
+    }
+
+    function makeCustom(next, keepPreset) {
+        if (!keepPreset && next.preset !== "custom")
+            next.preset = "custom"
+    }
+
+    function updateConfig(key, value, showMessage, keepPreset) {
         var next = Object.assign({}, root.proton)
         next[key] = value
+        root.makeCustom(next, keepPreset || key === "preset")
         root.proton = next
         root.save(showMessage)
+    }
+
+    function applyIntField(key, text, fallback) {
+        const parsed = parseInt(String(text).trim())
+        root.updateConfig(key, isNaN(parsed) ? fallback : parsed, true)
+    }
+
+    function applyPreset(index) {
+        const preset = root.presetValues[Math.max(0, Math.min(index, root.presetValues.length - 1))]
+        var next = Object.assign({}, root.proton)
+        next.preset = preset
+        if (preset !== "custom") {
+            next.custom_env = ""
+            next.custom_prefix = ""
+        }
+        if (preset === "recommended") {
+            next.gamemode = true
+            next.mangohud = false
+            next.gamescope = false
+            next.enable_nvapi = false
+            next.hide_nvidia_gpu = false
+            next.sync_mode = "default"
+            next.dxvk_async = false
+            next.dxvk_hdr = false
+            next.vkd3d_dxr = false
+            next.use_wined3d = false
+            next.fsr = false
+        } else if (preset === "nvidia") {
+            next.gamemode = true
+            next.gamescope = false
+            next.enable_nvapi = true
+            next.hide_nvidia_gpu = false
+            next.sync_mode = "default"
+            next.vkd3d_dxr = false
+            next.use_wined3d = false
+        } else if (preset === "hdr") {
+            next.gamemode = true
+            next.gamescope = false
+            next.dxvk_hdr = true
+            next.sync_mode = "default"
+            next.use_wined3d = false
+        } else if (preset === "diagnostic") {
+            next.gamemode = true
+            next.mangohud = true
+            next.gamescope = false
+            next.sync_mode = "default"
+            next.use_wined3d = false
+        }
+        root.proton = next
+        root.save(true)
     }
 
     function save(showMessage) {
@@ -92,10 +189,17 @@ ScrollPage {
             }
             try {
                 const payload = JSON.parse(saveProc.saveBuffer || "{}")
+                if (payload.proton)
+                    root.proton = payload.proton
                 if (payload.status) {
-                    root.status.proton_wrapper = payload.status.wrapper || root.status.proton_wrapper
-                    root.status.proton_command = payload.status.command || root.status.proton_command
-                    root.status.proton_preview = payload.status.preview || root.status.proton_preview
+                    root.status = Object.assign({}, root.status, payload.status, {
+                        proton_wrapper: payload.status.proton_wrapper || payload.status.wrapper || root.status.proton_wrapper,
+                        proton_command: payload.status.proton_command || payload.status.command || root.status.proton_command,
+                        proton_preview: payload.status.proton_preview || payload.status.preview || root.status.proton_preview,
+                        proton_env: payload.status.proton_env || payload.status.env || root.status.proton_env,
+                        proton_prefix: payload.status.proton_prefix || payload.status.prefix || root.status.proton_prefix,
+                        proton_preset: payload.status.proton_preset || payload.status.preset || root.status.proton_preset
+                    })
                 }
             } catch (e) {}
             saveProc.saveBuffer = ""
@@ -187,26 +291,93 @@ ScrollPage {
             Layout.bottomMargin: 18
         }
 
+        SectionHeader {
+            text: "SETUP"
+            textSecondary: root.textSecondary
+            Layout.bottomMargin: 12
+        }
+
         FormCard {
             Layout.bottomMargin: 24
             SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.steam_launch_option", "Steam launch option")
+                label: "Steam launch option"
                 sublabel: root.status.proton_command || "astrea-gaming %command%"
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
                 ActionButton {
-                    label: root.t("apps.settings.pages.gaming.proton.label.save", "Save")
+                    label: "Save"
                     onClicked: root.save(true)
                 }
             }
             SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.wrapper", "Wrapper")
+                label: "Active flags"
+                sublabel: root.envSummary()
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+            }
+            SettingRow {
+                label: "Command prefix"
+                sublabel: root.prefixSummary()
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+            }
+            SettingRow {
+                label: "Wrapper"
                 sublabel: root.status.proton_wrapper || "~/.local/bin/astrea-gaming"
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
                 isLast: true
+            }
+        }
+
+        SectionHeader {
+            text: "PROFILE"
+            textSecondary: root.textSecondary
+            Layout.bottomMargin: 12
+        }
+
+        FormCard {
+            Layout.bottomMargin: 24
+            SettingRow {
+                label: "Proton preset"
+                sublabel: root.presetDescription(root.proton.preset || "recommended")
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                SelectButton {
+                    implicitWidth: 190
+                    label: root.presetOptions[root.presetIndexFor(root.proton.preset)]
+                    options: root.presetOptions
+                    selectedIndex: root.presetIndexFor(root.proton.preset)
+                    accent: root.accent
+                    textPrimary: root.textPrimary
+                    textSecondary: root.textSecondary
+                    popupBg: root.popupBg
+                    onSelected: index => root.applyPreset(index)
+                }
+            }
+            SettingRow {
+                label: "Sync behavior"
+                sublabel: "Keep Proton defaults unless a specific game needs Esync/Fsync disabled."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                isLast: true
+                SelectButton {
+                    implicitWidth: 170
+                    label: root.syncModeOptions[root.syncModeIndexFor(root.proton.sync_mode)]
+                    options: root.syncModeOptions
+                    selectedIndex: root.syncModeIndexFor(root.proton.sync_mode)
+                    accent: root.accent
+                    textPrimary: root.textPrimary
+                    textSecondary: root.textSecondary
+                    popupBg: root.popupBg
+                    onSelected: index => root.updateConfig("sync_mode", root.syncModeValues[index], true)
+                }
             }
         }
 
@@ -219,26 +390,34 @@ ScrollPage {
         FormCard {
             Layout.bottomMargin: 24
             SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.gamemode", "GameMode")
-                sublabel: root.t("apps.settings.pages.gaming.proton.sublabel.gamemode", "Prepends gamemoderun when it is installed")
+                label: "GameMode"
+                sublabel: "Recommended. Adds gamemoderun when it is installed so the game can request performance hints."
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
                 ToggleSwitch { checked: !!root.proton.gamemode; onToggled: root.updateConfig("gamemode", !root.proton.gamemode, true) }
             }
             SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.mangohud", "MangoHud")
-                sublabel: root.t("apps.settings.pages.gaming.proton.sublabel.mangohud", "Prepends mangohud when it is installed")
+                label: "MangoHud"
+                sublabel: "Overlay for FPS, frame time and GPU/CPU telemetry. Useful for testing, noisy for daily play."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                ToggleSwitch { checked: !!root.proton.mangohud; onToggled: root.updateConfig("mangohud", !root.proton.mangohud, true) }
+            }
+            SettingRow {
+                label: "Gamescope"
+                sublabel: "Wraps the game with the Gamescope profile below. MangoHud uses --mangoapp in this mode."
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
                 isLast: true
-                ToggleSwitch { checked: !!root.proton.mangohud; onToggled: root.updateConfig("mangohud", !root.proton.mangohud, true) }
+                ToggleSwitch { checked: !!root.proton.gamescope; onToggled: root.updateConfig("gamescope", !root.proton.gamescope, true) }
             }
         }
 
         SectionHeader {
-            text: root.t("apps.settings.pages.gaming.proton.text.compatibility_flags", "COMPATIBILITY FLAGS")
+            text: "GAMESCOPE"
             textSecondary: root.textSecondary
             Layout.bottomMargin: 12
         }
@@ -246,75 +425,153 @@ ScrollPage {
         FormCard {
             Layout.bottomMargin: 24
             SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.nvidia_nvapi", "NVIDIA NVAPI")
-                sublabel: root.t("apps.settings.pages.gaming.proton.sublabel.nvidia_nvapi", "Sets PROTON_ENABLE_NVAPI=1")
+                label: "Use SteamOS profile"
+                sublabel: "Reuses the resolution, refresh and launch flags from the SteamOS Gamescope page."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                ToggleSwitch {
+                    checked: root.proton.use_gamescope_profile === undefined ? true : !!root.proton.use_gamescope_profile
+                    onToggled: root.updateConfig("use_gamescope_profile", !(root.proton.use_gamescope_profile === undefined ? true : root.proton.use_gamescope_profile), true)
+                }
+            }
+            SettingRow {
+                label: "Width"
+                sublabel: "Manual nested Gamescope output width."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                enabled: !(root.proton.use_gamescope_profile === undefined ? true : root.proton.use_gamescope_profile)
+                opacity: enabled ? 1 : 0.45
+                CompactField { fieldWidth: 92; text: String(root.proton.gamescope_width || 1920); onEditingFinished: root.applyIntField("gamescope_width", text, 1920) }
+            }
+            SettingRow {
+                label: "Height"
+                sublabel: "Manual nested Gamescope output height."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                enabled: !(root.proton.use_gamescope_profile === undefined ? true : root.proton.use_gamescope_profile)
+                opacity: enabled ? 1 : 0.45
+                CompactField { fieldWidth: 92; text: String(root.proton.gamescope_height || 1080); onEditingFinished: root.applyIntField("gamescope_height", text, 1080) }
+            }
+            SettingRow {
+                label: "Refresh rate"
+                sublabel: "Manual nested Gamescope refresh limit."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                enabled: !(root.proton.use_gamescope_profile === undefined ? true : root.proton.use_gamescope_profile)
+                opacity: enabled ? 1 : 0.45
+                CompactField { fieldWidth: 92; text: String(root.proton.gamescope_refresh || 60); onEditingFinished: root.applyIntField("gamescope_refresh", text, 60) }
+            }
+            SettingRow {
+                label: "Fullscreen"
+                sublabel: "Adds -f for a fullscreen nested Gamescope session."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                enabled: !(root.proton.use_gamescope_profile === undefined ? true : root.proton.use_gamescope_profile)
+                opacity: enabled ? 1 : 0.45
+                ToggleSwitch { checked: root.proton.gamescope_fullscreen === undefined ? true : !!root.proton.gamescope_fullscreen; onToggled: root.updateConfig("gamescope_fullscreen", !(root.proton.gamescope_fullscreen === undefined ? true : root.proton.gamescope_fullscreen), true) }
+            }
+            SettingRow {
+                label: "Immediate flips"
+                sublabel: "Adds --immediate-flips for lower latency when the driver path supports it."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                enabled: !(root.proton.use_gamescope_profile === undefined ? true : root.proton.use_gamescope_profile)
+                opacity: enabled ? 1 : 0.45
+                ToggleSwitch { checked: !!root.proton.gamescope_immediate_flips; onToggled: root.updateConfig("gamescope_immediate_flips", !root.proton.gamescope_immediate_flips, true) }
+            }
+            SettingRow {
+                label: "Hide cursor"
+                sublabel: "Adds --hide-cursor-delay -1 for controller-first games."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                enabled: !(root.proton.use_gamescope_profile === undefined ? true : root.proton.use_gamescope_profile)
+                opacity: enabled ? 1 : 0.45
+                ToggleSwitch { checked: !!root.proton.gamescope_hide_cursor; onToggled: root.updateConfig("gamescope_hide_cursor", !root.proton.gamescope_hide_cursor, true) }
+            }
+            SettingRow {
+                label: "Force cursor grab"
+                sublabel: "Adds --force-grab-cursor for games that lose relative mouse input."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                enabled: !(root.proton.use_gamescope_profile === undefined ? true : root.proton.use_gamescope_profile)
+                opacity: enabled ? 1 : 0.45
+                ToggleSwitch { checked: !!root.proton.gamescope_force_grab_cursor; onToggled: root.updateConfig("gamescope_force_grab_cursor", !root.proton.gamescope_force_grab_cursor, true) }
+            }
+            SettingRow {
+                label: "Adaptive sync"
+                sublabel: "Adds --adaptive-sync when the display path supports VRR."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                enabled: !(root.proton.use_gamescope_profile === undefined ? true : root.proton.use_gamescope_profile)
+                opacity: enabled ? 1 : 0.45
+                ToggleSwitch { checked: !!root.proton.gamescope_adaptive_sync; onToggled: root.updateConfig("gamescope_adaptive_sync", !root.proton.gamescope_adaptive_sync, true) }
+            }
+            SettingRow {
+                label: "Extra arguments"
+                sublabel: "Additional Gamescope flags used after the generated resolution and refresh arguments."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                enabled: !(root.proton.use_gamescope_profile === undefined ? true : root.proton.use_gamescope_profile)
+                opacity: enabled ? 1 : 0.45
+                isLast: true
+                CompactField {
+                    text: root.proton.gamescope_extra_args || ""
+                    placeholderText: "--sharpness 10"
+                    placeholderTextColor: root.textSecondary
+                    onEditingFinished: root.updateConfig("gamescope_extra_args", text, true)
+                }
+            }
+        }
+
+        SectionHeader {
+            text: "GRAPHICS FEATURES"
+            textSecondary: root.textSecondary
+            Layout.bottomMargin: 12
+        }
+
+        FormCard {
+            Layout.bottomMargin: 24
+            SettingRow {
+                label: "NVIDIA NVAPI"
+                sublabel: "Forces DXVK-NVAPI for games that need NVIDIA-specific features such as DLSS path detection."
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
                 ToggleSwitch { checked: !!root.proton.enable_nvapi; onToggled: root.updateConfig("enable_nvapi", !root.proton.enable_nvapi, true) }
             }
             SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.hide_nvidia_gpu", "Hide NVIDIA GPU")
-                sublabel: root.t("apps.settings.pages.gaming.proton.sublabel.hide_nvidia_gpu", "Sets PROTON_HIDE_NVIDIA_GPU=1 for games that misdetect NVIDIA")
-                textPrimary: root.textPrimary
-                textSecondary: root.textSecondary
-                cardBorder: root.cardBorder
-                ToggleSwitch { checked: !!root.proton.hide_nvidia_gpu; onToggled: root.updateConfig("hide_nvidia_gpu", !root.proton.hide_nvidia_gpu, true) }
-            }
-            SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.esync", "Esync")
-                sublabel: root.t("apps.settings.pages.gaming.proton.sublabel.esync", "When disabled, sets PROTON_NO_ESYNC=1")
-                textPrimary: root.textPrimary
-                textSecondary: root.textSecondary
-                cardBorder: root.cardBorder
-                ToggleSwitch { checked: !!root.proton.enable_esync; onToggled: root.updateConfig("enable_esync", !root.proton.enable_esync, true) }
-            }
-            SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.fsync", "Fsync")
-                sublabel: root.t("apps.settings.pages.gaming.proton.sublabel.fsync", "When disabled, sets PROTON_NO_FSYNC=1")
-                textPrimary: root.textPrimary
-                textSecondary: root.textSecondary
-                cardBorder: root.cardBorder
-                ToggleSwitch { checked: !!root.proton.enable_fsync; onToggled: root.updateConfig("enable_fsync", !root.proton.enable_fsync, true) }
-            }
-            SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.dxvk_async", "DXVK Async")
-                sublabel: root.t("apps.settings.pages.gaming.proton.sublabel.dxvk_async", "Sets DXVK_ASYNC=1")
-                textPrimary: root.textPrimary
-                textSecondary: root.textSecondary
-                cardBorder: root.cardBorder
-                ToggleSwitch { checked: !!root.proton.dxvk_async; onToggled: root.updateConfig("dxvk_async", !root.proton.dxvk_async, true) }
-            }
-            SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.dxvk_hdr", "DXVK HDR")
-                sublabel: root.t("apps.settings.pages.gaming.proton.sublabel.dxvk_hdr", "Sets DXVK_HDR=1")
+                label: "HDR path"
+                sublabel: "Enables DXVK HDR. Use with an HDR-ready compositor/display setup."
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
                 ToggleSwitch { checked: !!root.proton.dxvk_hdr; onToggled: root.updateConfig("dxvk_hdr", !root.proton.dxvk_hdr, true) }
             }
             SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.vkd3d_dxr", "VKD3D DXR")
-                sublabel: root.t("apps.settings.pages.gaming.proton.sublabel.vkd3d_dxr", "Sets VKD3D_CONFIG=dxr,dxr11")
-                textPrimary: root.textPrimary
-                textSecondary: root.textSecondary
-                cardBorder: root.cardBorder
-                ToggleSwitch { checked: !!root.proton.vkd3d_dxr; onToggled: root.updateConfig("vkd3d_dxr", !root.proton.vkd3d_dxr, true) }
-            }
-            SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.fullscreen_fsr", "Fullscreen FSR")
-                sublabel: root.t("apps.settings.pages.gaming.proton.sublabel.fullscreen_fsr", "Sets WINE_FULLSCREEN_FSR=1")
+                label: "Fullscreen FSR"
+                sublabel: "Upscaling fallback for games that run below native resolution."
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
                 ToggleSwitch { checked: !!root.proton.fsr; onToggled: root.updateConfig("fsr", !root.proton.fsr, true) }
             }
             SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.fsr_sharpness", "FSR sharpness")
-                sublabel: root.t("apps.settings.pages.gaming.proton.sublabel.fsr_sharpness", "Lower is sharper; saved as WINE_FULLSCREEN_FSR_STRENGTH")
+                label: "FSR sharpness"
+                sublabel: "Lower values are sharper. Only applies when Fullscreen FSR is enabled."
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
+                isLast: true
                 SelectButton {
                     implicitWidth: 96
                     label: String(root.proton.fsr_strength === undefined ? 2 : root.proton.fsr_strength)
@@ -327,22 +584,64 @@ ScrollPage {
                     onSelected: index => root.updateConfig("fsr_strength", index, true)
                 }
             }
+        }
+
+        SectionHeader {
+            text: "ADVANCED COMPATIBILITY"
+            textSecondary: root.textSecondary
+            Layout.bottomMargin: 12
+        }
+
+        FormCard {
+            Layout.bottomMargin: 24
             SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.custom_environment", "Custom environment")
-                sublabel: root.t("apps.settings.pages.gaming.proton.sublabel.custom_environment", "Space-separated KEY=VALUE pairs")
+                label: "Hide NVIDIA GPU"
+                sublabel: "Compatibility workaround for games that pick the wrong GPU path when NVIDIA is visible."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                ToggleSwitch { checked: !!root.proton.hide_nvidia_gpu; onToggled: root.updateConfig("hide_nvidia_gpu", !root.proton.hide_nvidia_gpu, true) }
+            }
+            SettingRow {
+                label: "WineD3D fallback"
+                sublabel: "Replaces DXVK with WineD3D. Slower, but useful when a DirectX game fails before rendering."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                ToggleSwitch { checked: !!root.proton.use_wined3d; onToggled: root.updateConfig("use_wined3d", !root.proton.use_wined3d, true) }
+            }
+            SettingRow {
+                label: "Force VKD3D DXR"
+                sublabel: "Advanced ray-tracing fallback. Leave off unless the game specifically needs DXR forced."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                ToggleSwitch { checked: !!root.proton.vkd3d_dxr; onToggled: root.updateConfig("vkd3d_dxr", !root.proton.vkd3d_dxr, true) }
+            }
+            SettingRow {
+                label: "Legacy DXVK Async"
+                sublabel: "Non-default compatibility flag for old async-patched DXVK builds. Leave off for normal Proton."
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                ToggleSwitch { checked: !!root.proton.dxvk_async; onToggled: root.updateConfig("dxvk_async", !root.proton.dxvk_async, true) }
+            }
+            SettingRow {
+                label: "Custom environment"
+                sublabel: "Space-separated KEY=VALUE pairs for one-off game fixes."
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
                 CompactField {
                     text: root.proton.custom_env || ""
-                    placeholderText: "RADV_PERFTEST=gpl"
+                    placeholderText: "PROTON_LOG=1"
                     placeholderTextColor: root.textSecondary
                     onEditingFinished: root.updateConfig("custom_env", text, true)
                 }
             }
             SettingRow {
-                label: root.t("apps.settings.pages.gaming.proton.label.custom_prefix", "Custom prefix")
-                sublabel: root.t("apps.settings.pages.gaming.proton.sublabel.custom_prefix", "Optional command inserted before the game command")
+                label: "Custom prefix"
+                sublabel: "Optional command inserted before the game command."
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder

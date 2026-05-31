@@ -72,9 +72,10 @@ def write_text(path: Path, value: str) -> None:
 
 def relink(target: Path, source: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists() or target.is_symlink():
-        target.unlink()
-    target.symlink_to(source)
+    tmp = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    tmp.unlink(missing_ok=True)
+    tmp.symlink_to(source)
+    os.replace(tmp, target)
 
 
 def ensure_thumb(src: Path, dest: Path) -> None:
@@ -117,6 +118,27 @@ def copy_wallpaper_folder(source_dir: Path, target_dir: Path) -> None:
         ensure_thumb(wallpaper, thumb)
 
 
+def staging_dir_for(target_dir: Path) -> Path:
+    return target_dir.with_name(f".{target_dir.name}.{os.getpid()}.tmp")
+
+
+def publish_wallpaper_folder(target_dir: Path, source: Path, name: str, source_path_text: str) -> None:
+    staging = staging_dir_for(target_dir)
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True, exist_ok=False)
+    try:
+        wallpaper = staging / "wallpaper.jpg"
+        shutil.copy2(source, wallpaper)
+        write_text(staging / "name.txt", name)
+        write_text(staging / "source_path.txt", source_path_text)
+        ensure_thumb(wallpaper, staging / "thumb.jpg")
+        os.replace(staging, target_dir)
+    except Exception:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+
+
 def migrate_legacy_user_wallpapers() -> None:
     if LEGACY_MIGRATION_MARKER.exists():
         return
@@ -154,14 +176,13 @@ def import_external_wallpaper(source: Path, name: str) -> Path:
     USER_WALLPAPER_DIR.mkdir(parents=True, exist_ok=True)
     slug = unique_slug(sanitize_slug(name or source.stem), USER_WALLPAPER_DIR)
     target_dir = USER_WALLPAPER_DIR / slug
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    wallpaper = target_dir / "wallpaper.jpg"
-    shutil.copy2(source, wallpaper)
-    write_text(target_dir / "name.txt", name or source.stem or "Wallpaper")
-    write_text(target_dir / "source_path.txt", str(source.resolve()))
-    ensure_thumb(wallpaper, target_dir / "thumb.jpg")
-    return wallpaper
+    publish_wallpaper_folder(
+        target_dir,
+        source,
+        name or source.stem or "Wallpaper",
+        str(source.resolve()),
+    )
+    return target_dir / "wallpaper.jpg"
 
 
 def managed_source_for_apply(source: Path, name: str) -> Path:
@@ -537,13 +558,7 @@ def add_user_wallpaper(src: str, name: str) -> None:
     USER_WALLPAPER_DIR.mkdir(parents=True, exist_ok=True)
     slug = unique_slug(sanitize_slug(name), USER_WALLPAPER_DIR)
     target_dir = USER_WALLPAPER_DIR / slug
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    wallpaper = target_dir / "wallpaper.jpg"
-    shutil.copy2(source, wallpaper)
-    write_text(target_dir / "name.txt", name)
-    write_text(target_dir / "source_path.txt", str(source))
-    ensure_thumb(wallpaper, target_dir / "thumb.jpg")
+    publish_wallpaper_folder(target_dir, source, name, str(source))
 
     emit_json({"slug": slug, "item": library_item(target_dir)})
 

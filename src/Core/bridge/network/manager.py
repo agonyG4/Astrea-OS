@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 import sys
 import json
+import os
+import shutil
 import subprocess
 import re
 import traceback
+import ipaddress
+
+WARP_SERVICE = "warp-svc.service"
+WARP_TRAY_SERVICE = "warp-taskbar.service"
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
@@ -25,10 +31,11 @@ def _err(msg: str, trace: bool = False):
 
 
 def _is_valid_ip(ip: str) -> bool:
-    pattern = r"^(\d{1,3}\.){3}\d{1,3}$"
-    if not re.match(pattern, ip):
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
         return False
-    return all(0 <= int(p) <= 255 for p in ip.split("."))
 
 
 def _validate_dns_servers(dns_str: str) -> tuple[bool, str]:
@@ -171,6 +178,188 @@ def _wifi_payload() -> dict:
         "state": device["state"],
         "connected_ssid": active["ssid"] if active else "",
         "networks": networks,
+    }
+
+
+# ─── Cloudflare WARP helpers ────────────────────────────────────────────────
+
+def _command_exists(command: str) -> bool:
+    return shutil.which(command) is not None
+
+
+def _run_process(args: list[str], timeout: int = 5) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def _first_line(value: str) -> str:
+    return next((line.strip() for line in value.splitlines() if line.strip()), "")
+
+
+def _systemctl_state(*args: str, user: bool = False, timeout: int = 3) -> str:
+    if not _command_exists("systemctl"):
+        return "unavailable"
+
+    cmd = ["systemctl"]
+    if user:
+        cmd.append("--user")
+    cmd.extend(args)
+
+    try:
+        proc = _run_process(cmd, timeout=timeout)
+    except Exception:
+        return "unknown"
+
+    value = _first_line(proc.stdout) or _first_line(proc.stderr)
+    return value or "unknown"
+
+
+def _systemctl_action(*args: str, timeout: int = 30) -> tuple[bool, str]:
+    if not _command_exists("systemctl"):
+        return False, "systemctl not found"
+
+    cmd = ["systemctl", *args]
+    try:
+        proc = _run_process(cmd, timeout=timeout)
+        if proc.returncode == 0:
+            return True, ""
+        error = _first_line(proc.stderr) or _first_line(proc.stdout)
+    except Exception as exc:
+        error = str(exc)
+
+    if os.geteuid() == 0:
+        return False, error
+
+    for privileged_cmd in (["pkexec", *cmd], ["sudo", "-n", *cmd]):
+        if not _command_exists(privileged_cmd[0]):
+            continue
+        try:
+            proc = _run_process(privileged_cmd, timeout=timeout)
+        except Exception as exc:
+            error = str(exc)
+            continue
+        if proc.returncode == 0:
+            return True, ""
+        error = _first_line(proc.stderr) or _first_line(proc.stdout) or error
+
+    return False, error
+
+
+def _run_warp_cli(*args: str, json_output: bool = False, timeout: int = 8) -> subprocess.CompletedProcess[str]:
+    cmd = ["warp-cli", "--accept-tos", "--no-ansi", "--no-paginate"]
+    if json_output:
+        cmd.append("--json")
+    cmd.extend(args)
+    return _run_process(cmd, timeout=timeout)
+
+
+def _humanize_warp_reason(reason: str) -> str:
+    if not reason:
+        return ""
+    spaced = re.sub(r"(?<!^)(?=[A-Z])", " ", reason).strip()
+    return spaced[:1].upper() + spaced[1:] if spaced else reason
+
+
+def _parse_warp_cli_status(raw: str) -> dict:
+    text = (raw or "").strip()
+    parsed = {
+        "connected": False,
+        "status": "Unknown",
+        "reason": "",
+        "network": "",
+        "detail": "",
+    }
+
+    if not text:
+        parsed["status"] = "Unavailable"
+        return parsed
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        data = None
+
+    if isinstance(data, dict):
+        if data.get("error"):
+            parsed["status"] = "Unavailable"
+            parsed["detail"] = str(data.get("error") or "")
+            parsed["reason"] = str(data.get("code") or "")
+            return parsed
+
+        status = str(
+            data.get("status")
+            or data.get("state")
+            or data.get("connection_status")
+            or data.get("status_update")
+            or ""
+        ).strip()
+        reason = str(data.get("reason") or "").strip()
+        parsed["status"] = status or "Unknown"
+        parsed["reason"] = reason
+        parsed["network"] = "healthy" if reason == "NetworkHealthy" else _humanize_warp_reason(reason)
+        parsed["connected"] = parsed["status"].lower() == "connected"
+        return parsed
+
+    for line in text.splitlines():
+        line = line.strip()
+        lower = line.lower()
+        if lower.startswith("status update:"):
+            parsed["status"] = line.split(":", 1)[1].strip() or "Unknown"
+        elif lower.startswith("network:"):
+            parsed["network"] = line.split(":", 1)[1].strip()
+        elif not parsed["detail"]:
+            parsed["detail"] = line
+
+    parsed["connected"] = parsed["status"].lower() == "connected"
+    return parsed
+
+
+def _warp_payload() -> dict:
+    if not _command_exists("warp-cli"):
+        return {
+            "success": True,
+            "installed": False,
+            "connected": False,
+            "status": "Not installed",
+            "reason": "",
+            "network": "",
+            "detail": "warp-cli was not found",
+            "service_state": "unavailable",
+            "service_enabled": "unknown",
+            "service_active": False,
+            "tray_state": "unknown",
+        }
+
+    service_state = _systemctl_state("is-active", WARP_SERVICE)
+    service_enabled = _systemctl_state("is-enabled", WARP_SERVICE)
+    tray_state = _systemctl_state("is-enabled", WARP_TRAY_SERVICE, user=True)
+
+    try:
+        proc = _run_warp_cli("status", json_output=True, timeout=8)
+        status_text = proc.stdout if proc.stdout.strip() else proc.stderr
+    except Exception as exc:
+        status_text = json.dumps({"error": str(exc)})
+
+    parsed = _parse_warp_cli_status(status_text)
+    service_active = service_state == "active"
+
+    return {
+        "success": True,
+        "installed": True,
+        "connected": bool(parsed["connected"]),
+        "status": parsed["status"],
+        "reason": parsed["reason"],
+        "network": parsed["network"],
+        "detail": parsed["detail"],
+        "service_state": service_state,
+        "service_enabled": service_enabled,
+        "service_active": service_active,
+        "tray_state": tray_state,
     }
 
 
@@ -350,6 +539,70 @@ def cmd_wifi_set_enabled(enabled: str):
         _out({"success": False, "error": str(e), "trace": traceback.format_exc()})
 
 
+def cmd_warp_status():
+    _out(_warp_payload())
+
+
+def cmd_warp_set_enabled(enabled: str):
+    target = enabled.strip().lower()
+    if target not in ("on", "off", "true", "false", "1", "0", "yes", "no"):
+        payload = _warp_payload()
+        payload["success"] = False
+        payload["error"] = "Expected on or off"
+        _out(payload)
+        return
+
+    turn_on = target in ("on", "true", "1", "yes")
+    success = True
+    error = ""
+
+    if turn_on:
+        ok, error = _systemctl_action("start", WARP_SERVICE, timeout=45)
+        success = success and ok
+        if ok:
+            try:
+                proc = _run_warp_cli("connect", timeout=15)
+                if proc.returncode != 0:
+                    success = False
+                    error = _first_line(proc.stderr) or _first_line(proc.stdout) or error
+            except Exception as exc:
+                success = False
+                error = str(exc)
+    else:
+        try:
+            _run_warp_cli("disconnect", timeout=10)
+        except Exception:
+            pass
+        ok, error = _systemctl_action("stop", WARP_SERVICE, timeout=45)
+        success = success and ok
+
+    payload = _warp_payload()
+    payload["success"] = success
+    if error:
+        payload["error"] = error
+    _out(payload)
+
+
+def cmd_warp_restart():
+    ok, error = _systemctl_action("restart", WARP_SERVICE, timeout=45)
+    success = ok
+    if ok:
+        try:
+            proc = _run_warp_cli("connect", timeout=15)
+            if proc.returncode != 0:
+                success = False
+                error = _first_line(proc.stderr) or _first_line(proc.stdout) or error
+        except Exception as exc:
+            success = False
+            error = str(exc)
+
+    payload = _warp_payload()
+    payload["success"] = success
+    if error:
+        payload["error"] = error
+    _out(payload)
+
+
 # ─── entry point ─────────────────────────────────────────────────────────────
 
 COMMANDS = {
@@ -357,10 +610,20 @@ COMMANDS = {
     "dns_info": (cmd_dns_info, 0),
     "set_dns":  (cmd_set_dns,  2),
     "wifi_status":     (cmd_wifi_status,     0),
-    "wifi_connect":    (cmd_wifi_connect,    2),
+    "wifi_connect":    (cmd_wifi_connect,    1, 2),
     "wifi_disconnect": (cmd_wifi_disconnect, 0),
     "wifi_set_enabled": (cmd_wifi_set_enabled, 1),
+    "warp_status": (cmd_warp_status, 0),
+    "warp_set_enabled": (cmd_warp_set_enabled, 1),
+    "warp_restart": (cmd_warp_restart, 0),
 }
+
+def command_arg_bounds(cmd: str) -> tuple[int, int]:
+    entry = COMMANDS[cmd]
+    required = int(entry[1])
+    maximum = int(entry[2]) if len(entry) > 2 else required
+    return required, maximum
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -372,9 +635,15 @@ if __name__ == "__main__":
         _err(f"Unknown command '{cmd}'. Available: " + ", ".join(COMMANDS))
         sys.exit(1)
 
-    fn, n_args = COMMANDS[cmd]
-    if len(sys.argv) - 2 < n_args:
-        _err(f"'{cmd}' requires {n_args} argument(s), got {len(sys.argv) - 2}")
+    entry = COMMANDS[cmd]
+    fn = entry[0]
+    min_args, max_args = command_arg_bounds(cmd)
+    got_args = len(sys.argv) - 2
+    if got_args < min_args or got_args > max_args:
+        if min_args == max_args:
+            _err(f"'{cmd}' requires {min_args} argument(s), got {got_args}")
+        else:
+            _err(f"'{cmd}' requires {min_args}-{max_args} argument(s), got {got_args}")
         sys.exit(1)
 
-    fn(*sys.argv[2:2 + n_args])
+    fn(*sys.argv[2:2 + max_args])

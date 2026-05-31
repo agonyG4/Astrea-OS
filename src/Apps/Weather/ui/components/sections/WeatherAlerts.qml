@@ -9,6 +9,7 @@ Item {
     property var colors
     readonly property var alerts: weatherData && weatherData.alerts ? weatherData.alerts : []
     readonly property var mainAlert: alerts.length > 0 ? alerts[0] : null
+    readonly property string sourceLabel: mainAlert ? (mainAlert.source || "Weather") : ""
     signal alertSelected(var alert)
 
     Layout.fillWidth: true
@@ -39,7 +40,7 @@ Item {
                 spacing: 3
 
                 UI.TextLabel {
-                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.components.sections.weather_alerts.text.inmet"]) || "INMET")
+                    text: sourceLabel
                     font.pixelSize: 10
                     font.weight: 600
                     textColor: mainAlert ? (mainAlert.color || "#F96602") : "#F96602"

@@ -8,7 +8,7 @@ import "./ui" as Ui
 Scope {
     id: root
 
-    property string statePath: Qt.resolvedUrl("state.json").toString().replace("file://", "")
+    property string statePath: (Quickshell.env("XDG_STATE_HOME") || (Quickshell.env("HOME") + "/.local/state")) + "/Astrea/notifications/state.json"
 
     Core.NotificationStore {
         id: notificationStore

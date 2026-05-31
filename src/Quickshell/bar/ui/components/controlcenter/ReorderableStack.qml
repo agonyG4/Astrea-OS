@@ -378,11 +378,11 @@ Item {
             opacity: root.dragPreviewIndex === index ? 0.98 : 0.68
             color: root.dragPreviewIndex === index
                 ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.16)
-                : Qt.rgba(1, 1, 1, 0.035)
+                : Theme.surface
             border.width: 1
             border.color: root.dragPreviewIndex === index
                 ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.42)
-                : Qt.rgba(1, 1, 1, 0.14)
+                : Theme.border
 
             Behavior on opacity { NumberAnimation { duration: Theme.animationQuick } }
             Behavior on color { ColorAnimation { duration: Theme.animationHover } }
@@ -394,7 +394,7 @@ Item {
                 radius: height / 2
                 color: "transparent"
                 border.width: 1
-                border.color: Qt.rgba(1, 1, 1, root.dragPreviewIndex === index ? 0.20 : 0.075)
+                border.color: root.dragPreviewIndex === index ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.20) : Theme.separator
             }
         }
     }
@@ -534,14 +534,17 @@ Item {
                 radius: height / 2
                 z: 40
                 visible: root.editMode
-                color: removeArea.containsMouse ? Theme.shellIconActive : Qt.rgba(1, 1, 1, 0.82)
+                color: removeArea.containsMouse ? Theme.errorColor : Theme.surface
                 border.width: 1
-                border.color: Qt.rgba(0, 0, 0, 0.16)
+                border.color: removeArea.containsMouse ? Qt.rgba(Theme.errorColor.r, Theme.errorColor.g, Theme.errorColor.b, 0.44) : Theme.border
+
+                Behavior on color { ColorAnimation { duration: Theme.animationHover } }
+                Behavior on border.color { ColorAnimation { duration: Theme.animationHover } }
 
                 Text {
                     anchors.centerIn: parent
                     text: "−"
-                    color: "#2c2c2e"
+                    color: removeArea.containsMouse ? "#ffffff" : Theme.shellTextActive
                     font { family: Theme.fontFamily; pixelSize: 17; weight: Font.DemiBold }
                 }
 

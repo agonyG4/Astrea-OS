@@ -56,7 +56,8 @@ ApplicationWindow {
         "pages/connectivity/Audio.qml",
         "pages/display/Island.qml",
         "pages/system/Storage.qml",
-        "pages/system/Components.qml"
+        "pages/system/Components.qml",
+        "pages/gaming/Compatibility.qml"
     ]
 
     readonly property var sectionPages: ({
@@ -96,6 +97,7 @@ ApplicationWindow {
                     items: [
                         { label: "Language", sublabel: "Language, region and locale preferences", pageIndex: 2,  sym: "\uf1ab", iconKey: "" },
                         { label: "Apps",     sublabel: "Installed applications and defaults",      pageIndex: 4,  sym: "",       iconKey: "apps" },
+                        { label: "Compatibilidade", sublabel: "Windows executables, Wine/Proton runner and wrappers", pageIndex: 16, sym: "\uf17a", iconKey: "" },
                         { label: "Storage",    sublabel: "Disk usage and cleanup options",           pageIndex: 14, sym: "\uf1c0", iconKey: "" },
                         { label: "Components", sublabel: "Desktop, topbar and shell component toggles", pageIndex: 15, sym: "\uf0e8", iconKey: "" }
                     ]

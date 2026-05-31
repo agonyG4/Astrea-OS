@@ -22,7 +22,7 @@ Item {
 
     readonly property string _script:
         (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/system/audio.py"
-    readonly property string defaultSpatialSinkName: "effect_input.virtual-surround-7.1-astrea"
+    readonly property string spatialSinkName: "effect_input.virtual-surround-7.1-astrea"
 
     // ── State ─────────────────────────────────────────────────────────────
     property bool   loading:      true
@@ -31,7 +31,7 @@ Item {
     property var    sinks:        []
     property var    outputsState: ({ all: [], visible: [], hidden: [], hidden_names: [] })
     property var    apps:         []
-    property var    spatial:      ({ available: false, enabled: false, sink: defaultSpatialSinkName, target_sink: "" })
+    property var    spatial:      ({ available: false, enabled: false, sink: spatialSinkName, target_sink: "" })
     property var    wp:           ({ sample_rate: 48000, buffer_size: 1024 })
     property var    mutedMap:     ({})
     property var    volumeMap:    ({})
@@ -72,14 +72,6 @@ Item {
     property string _buf: ""
     property bool _fetchAgain: false
 
-    function tr(key, fallback) {
-        return (AstreaI18n.I18n.messages && AstreaI18n.I18n.messages[key]) || fallback
-    }
-
-    function currentSpatialSinkName() {
-        return (root.spatial && root.spatial.sink) ? root.spatial.sink : root.defaultSpatialSinkName
-    }
-
     function appsSignature(items) {
         let parts = []
         for (let item of items || []) {
@@ -98,20 +90,6 @@ Item {
         if (app && app.indexes && app.indexes.length > 0)
             return app.indexes
         return app && app.index !== undefined ? [app.index] : []
-    }
-
-    function appIconSource(app) {
-        const icon = (app && app.icon) ? String(app.icon) : ""
-        const iconName = (app && app.icon_name) ? String(app.icon_name) : ""
-        if (icon.indexOf("://") >= 0)
-            return icon
-        if (icon.indexOf("/") === 0)
-            return "file://" + icon
-        if (icon.length > 0)
-            return "image://icon/" + icon
-        if (iconName.length > 0)
-            return "image://icon/" + iconName
-        return ""
     }
 
     function applyAppsSnapshot(items) {
@@ -154,7 +132,7 @@ Item {
                     const d = JSON.parse(root._buf)
                     root.sinks = d.sinks ?? []
                     root.outputsState = d.outputs_state ?? { all: d.outputs ?? [], visible: d.outputs ?? [], hidden: d.hidden_output_items ?? [], hidden_names: d.hidden_outputs ?? [] }
-                    root.spatial = d.spatial ?? { available: false, enabled: false, sink: root.currentSpatialSinkName(), target_sink: "" }
+                    root.spatial = d.spatial ?? { available: false, enabled: false, sink: root.spatialSinkName, target_sink: "" }
                     root.wp = d.wp ?? { sample_rate: 48000, buffer_size: 1024 }
                     root.editRate = root.wp.sample_rate
                     root.editBuffer = root.wp.buffer_size
@@ -264,7 +242,7 @@ Item {
                 root.spatialPending = true
                 root._setSpatialOptimistic(true, target)
                 if (target === currentTarget) {
-                    applyProc.command = ["pactl", "set-default-sink", root.currentSpatialSinkName()]
+                    applyProc.command = ["pactl", "set-default-sink", root.spatialSinkName]
                     applyProc.running = false
                     applyProc.running = true
                 } else {
@@ -361,7 +339,7 @@ Item {
     Text {
         anchors.centerIn: parent
         visible: root.showLoading
-        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.text.loading_audio_info"]) || "Loading audio info…")
+        text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.text.loading_audio_infoa"]) || "Loading audio info…")
         color: root.textSecondary; font.pixelSize: Theme.fontSizeNormal
     }
     Text {
@@ -403,10 +381,8 @@ Item {
                     SettingRow {
                         label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.label.astrea_spatial_audio"]) || "Astrea Spatial Audio")
                         sublabel: root.spatialActive
-                            ? root.tr("apps.settings.pages.connectivity.audio.sublabel.spatial_enabled", "Spatial processing is enabled")
-                            : (root.spatialAvailable
-                                ? root.tr("apps.settings.pages.connectivity.audio.sublabel.spatial_disabled", "Spatial processing is disabled")
-                                : root.tr("apps.settings.pages.connectivity.audio.sublabel.spatial_unavailable", "Spatial output is not loaded"))
+                            ? "Spatial processing is enabled"
+                            : (root.spatialAvailable ? "Spatial processing is disabled" : "Spatial output is not loaded")
                         isLast: true
                         clickable: root.spatialAvailable && (!root.spatialActive || root.spatialCanDisable)
                         onClicked: root.toggleSpatialAudio()
@@ -446,7 +422,7 @@ Item {
                             readonly property bool isSpatialTarget: modelData.spatial_target === true
                             readonly property bool isDefaultOutput: modelData.default === true
                             readonly property bool isEffectiveDefault: modelData.effective_default === true
-                            sublabel: isSpatialTarget ? root.tr("apps.settings.pages.connectivity.audio.sublabel.spatial_audio_on", "Spatial Audio: On") : (isDefaultOutput ? root.tr("apps.settings.pages.connectivity.audio.sublabel.default", "Default") : "")
+                            sublabel: isSpatialTarget ? "Spatial Audio: On" : (isDefaultOutput ? "Default" : "")
                             isLast:   index === root.outputSinks.length - 1 && root.hiddenOutputSinks.length === 0
                             clickable: true
                             controlBlocksRowClick: false
@@ -475,15 +451,15 @@ Item {
                         visible: root.hiddenOutputSinks.length > 0
                         label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.audio.label.hidden_output_devices"]) || "Hidden output devices")
                         sublabel: root.hiddenOutputSinks.length === 1
-                            ? root.tr("apps.settings.pages.connectivity.audio.sublabel.one_device_hidden", "1 device hidden")
-                            : root.tr("apps.settings.pages.connectivity.audio.sublabel.devices_hidden", "%1 devices hidden").replace("%1", root.hiddenOutputSinks.length)
+                            ? "1 device hidden"
+                            : root.hiddenOutputSinks.length + " devices hidden"
                         isLast: !root.hiddenOutputsExpanded
                         clickable: true
                         controlBlocksRowClick: false
                         onClicked: root.hiddenOutputsExpanded = !root.hiddenOutputsExpanded
 
                         Text {
-                            text: root.hiddenOutputsExpanded ? root.tr("apps.settings.pages.connectivity.audio.text.hide_list", "Hide list") : root.tr("apps.settings.pages.connectivity.audio.text.show_list", "Show list")
+                            text: root.hiddenOutputsExpanded ? "Hide list" : "Show list"
                             color: root.accent
                             font.pixelSize: Theme.fontSizeNormal
                             font.weight: Font.Medium
@@ -565,25 +541,18 @@ Item {
                                     Behavior on color       { ColorAnimation { duration: 150 } }
                                     Behavior on border.color { ColorAnimation { duration: 150 } }
 
-                                    Image {
+                                    AppIcon {
                                         id: appIcon
                                         anchors.centerIn: parent
-                                        width: 18; height: 18
-                                        source: root.appIconSource(modelData)
-                                        sourceSize: Qt.size(width, height)
-                                        visible: status === Image.Ready
-                                        fillMode: Image.PreserveAspectFit
-                                        smooth: true; mipmap: true
-                                        opacity: iconRect.isMuted ? 0.35 : 1.0
-                                        Behavior on opacity { NumberAnimation { duration: 150 } }
-                                    }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        visible: !appIcon.visible
-                                        text: "\ufa7d"
-                                        font.family: Theme.iconFontFamily || Theme.symbolFontFamily; font.pixelSize: Theme.fontSizeSmall
-                                        color: root.textSecondary
+                                        appData: modelData
+                                        iconSize: 18
+                                        iconPadding: 0
+                                        fallbackRadius: 4
+                                        fallbackColor: "transparent"
+                                        fallbackBorderColor: "transparent"
+                                        fallbackTextColor: root.textSecondary
+                                        fallbackFontFamily: "Inter"
+                                        fallbackFontSize: Theme.fontSizeSmall
                                         opacity: iconRect.isMuted ? 0.35 : 1.0
                                         Behavior on opacity { NumberAnimation { duration: 150 } }
                                     }

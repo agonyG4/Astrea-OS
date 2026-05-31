@@ -32,19 +32,80 @@ DEFAULT_GAMESCOPE = {
 }
 
 DEFAULT_PROTON = {
+    "config_version": 2,
+    "preset": "recommended",
     "gamemode": True,
     "mangohud": False,
-    "enable_nvapi": True,
+    "gamescope": False,
+    "use_gamescope_profile": True,
+    "gamescope_width": 1920,
+    "gamescope_height": 1080,
+    "gamescope_refresh": 60,
+    "gamescope_fullscreen": True,
+    "gamescope_immediate_flips": False,
+    "gamescope_hide_cursor": False,
+    "gamescope_force_grab_cursor": False,
+    "gamescope_adaptive_sync": False,
+    "gamescope_extra_args": "",
+    "enable_nvapi": False,
     "hide_nvidia_gpu": False,
+    "sync_mode": "default",
     "enable_esync": True,
     "enable_fsync": True,
     "dxvk_async": False,
     "dxvk_hdr": False,
     "vkd3d_dxr": False,
+    "use_wined3d": False,
     "fsr": False,
     "fsr_strength": 2,
     "custom_env": "",
     "custom_prefix": "",
+}
+
+DEFAULT_COMPATIBILITY = {
+    "config_version": 1,
+    "runner": "proton",
+    "use_proton_profile": True,
+    "gamemode": True,
+    "mangohud": False,
+    "gamescope": False,
+    "extra_env": "",
+    "extra_prefix": "",
+}
+
+PROTON_PRESETS = {
+    "recommended": {
+        "preset": "recommended",
+        "gamemode": True,
+        "mangohud": False,
+        "enable_nvapi": False,
+        "hide_nvidia_gpu": False,
+        "sync_mode": "default",
+        "dxvk_hdr": False,
+        "vkd3d_dxr": False,
+        "use_wined3d": False,
+        "fsr": False,
+    },
+    "nvidia": {
+        "preset": "nvidia",
+        "gamemode": True,
+        "enable_nvapi": True,
+        "hide_nvidia_gpu": False,
+        "sync_mode": "default",
+        "vkd3d_dxr": False,
+    },
+    "hdr": {
+        "preset": "hdr",
+        "gamemode": True,
+        "dxvk_hdr": True,
+        "sync_mode": "default",
+    },
+    "diagnostic": {
+        "preset": "diagnostic",
+        "gamemode": True,
+        "mangohud": True,
+        "sync_mode": "default",
+    },
 }
 
 
@@ -62,6 +123,10 @@ def gamescope_path() -> Path:
 
 def proton_path() -> Path:
     return config_home() / "AstreaOS/gaming/proton.json"
+
+
+def compatibility_path() -> Path:
+    return config_home() / "AstreaOS/gaming/compatibility.json"
 
 
 def env_path() -> Path:
@@ -124,24 +189,83 @@ def normalize_gamescope(data: dict) -> dict:
 
 
 def normalize_proton(data: dict) -> dict:
-    cfg = {**DEFAULT_PROTON, **(data or {})}
+    raw = data or {}
+    cfg = {**DEFAULT_PROTON, **raw}
+    legacy_config = int(raw.get("config_version") or 1) < 2
+
+    if legacy_config:
+        cfg["preset"] = "recommended"
+        cfg["enable_nvapi"] = False
+        if raw.get("enable_esync") is False and raw.get("enable_fsync") is False:
+            cfg["sync_mode"] = "disable-both"
+        elif raw.get("enable_esync") is False:
+            cfg["sync_mode"] = "disable-esync"
+        elif raw.get("enable_fsync") is False:
+            cfg["sync_mode"] = "disable-fsync"
+        else:
+            cfg["sync_mode"] = "default"
+
     for key in (
         "gamemode",
         "mangohud",
+        "gamescope",
+        "use_gamescope_profile",
+        "gamescope_fullscreen",
+        "gamescope_immediate_flips",
+        "gamescope_hide_cursor",
+        "gamescope_force_grab_cursor",
+        "gamescope_adaptive_sync",
         "enable_nvapi",
         "hide_nvidia_gpu",
-        "enable_esync",
-        "enable_fsync",
         "dxvk_async",
         "dxvk_hdr",
         "vkd3d_dxr",
+        "use_wined3d",
         "fsr",
     ):
         cfg[key] = normalize_bool(cfg.get(key))
+    if cfg.get("preset") not in {"recommended", "nvidia", "hdr", "diagnostic", "custom"}:
+        cfg["preset"] = "custom"
+    if cfg.get("sync_mode") not in {"default", "disable-esync", "disable-fsync", "disable-both"}:
+        cfg["sync_mode"] = "default"
+    cfg["enable_esync"] = cfg["sync_mode"] not in {"disable-esync", "disable-both"}
+    cfg["enable_fsync"] = cfg["sync_mode"] not in {"disable-fsync", "disable-both"}
+    cfg["config_version"] = 2
     cfg["fsr_strength"] = normalize_int(cfg.get("fsr_strength"), DEFAULT_PROTON["fsr_strength"], 0, 5)
+    cfg["gamescope_width"] = normalize_int(cfg.get("gamescope_width"), DEFAULT_PROTON["gamescope_width"], 640, 10000)
+    cfg["gamescope_height"] = normalize_int(cfg.get("gamescope_height"), DEFAULT_PROTON["gamescope_height"], 360, 10000)
+    cfg["gamescope_refresh"] = normalize_int(cfg.get("gamescope_refresh"), DEFAULT_PROTON["gamescope_refresh"], 30, 1000)
+    cfg["gamescope_extra_args"] = str(cfg.get("gamescope_extra_args") or "").strip()
     cfg["custom_env"] = str(cfg.get("custom_env") or "").strip()
     cfg["custom_prefix"] = str(cfg.get("custom_prefix") or "").strip()
     return cfg
+
+
+def normalize_compatibility(data: dict) -> dict:
+    raw = data or {}
+    cfg = {key: raw.get(key, value) for key, value in DEFAULT_COMPATIBILITY.items()}
+    if cfg.get("runner") not in {"proton", "wine", "auto"}:
+        cfg["runner"] = DEFAULT_COMPATIBILITY["runner"]
+    for key in (
+        "use_proton_profile",
+        "gamemode",
+        "mangohud",
+        "gamescope",
+    ):
+        cfg[key] = normalize_bool(cfg.get(key))
+    cfg["extra_env"] = str(cfg.get("extra_env") or "").strip()
+    cfg["extra_prefix"] = str(cfg.get("extra_prefix") or "").strip()
+    cfg["config_version"] = 1
+    return cfg
+
+
+def proton_preset(name: str, base: dict | None = None) -> dict:
+    cfg = normalize_proton(base or {})
+    preset = PROTON_PRESETS.get(name, PROTON_PRESETS["recommended"])
+    cfg.update(preset)
+    cfg["custom_env"] = ""
+    cfg["custom_prefix"] = ""
+    return normalize_proton(cfg)
 
 
 def load_json(path: Path, default: dict, normalizer) -> dict:
@@ -236,6 +360,50 @@ def gamescope_command(cfg: dict) -> list[str]:
     return command
 
 
+def gamescope_game_args(cfg: dict, mangoapp: bool = False) -> list[str]:
+    cfg = normalize_gamescope(cfg)
+    dims = gamescope_dimensions(cfg)
+    command = ["gamescope"]
+    if cfg.get("fullscreen"):
+        command.append("-f")
+    command += ["-W", str(dims["width"]), "-H", str(dims["height"]), "-r", str(dims["refresh"])]
+    if cfg.get("immediate_flips"):
+        command.append("--immediate-flips")
+    if cfg.get("hide_cursor"):
+        command += ["--hide-cursor-delay", "-1"]
+    if mangoapp:
+        command.append("--mangoapp")
+    if cfg.get("extra_args"):
+        command += shlex.split(cfg["extra_args"])
+    command.append("--")
+    return command
+
+
+def proton_gamescope_config(proton_cfg: dict, shared_cfg: dict | None = None) -> dict:
+    cfg = normalize_proton(proton_cfg)
+    if cfg.get("use_gamescope_profile"):
+        return normalize_gamescope(shared_cfg or load_json(gamescope_path(), DEFAULT_GAMESCOPE, normalize_gamescope))
+
+    extra_args = []
+    if cfg.get("gamescope_force_grab_cursor"):
+        extra_args.append("--force-grab-cursor")
+    if cfg.get("gamescope_adaptive_sync"):
+        extra_args.append("--adaptive-sync")
+    if cfg.get("gamescope_extra_args"):
+        extra_args.extend(shlex.split(cfg["gamescope_extra_args"]))
+
+    return normalize_gamescope({
+        "follow_monitor": False,
+        "width": cfg.get("gamescope_width"),
+        "height": cfg.get("gamescope_height"),
+        "refresh": cfg.get("gamescope_refresh"),
+        "fullscreen": cfg.get("gamescope_fullscreen"),
+        "immediate_flips": cfg.get("gamescope_immediate_flips"),
+        "hide_cursor": cfg.get("gamescope_hide_cursor"),
+        "extra_args": shlex.join(extra_args),
+    })
+
+
 def write_steam_console_launcher() -> Path:
     path = local_bin() / "steam-console-launcher"
     atomic_write_text(path, "#!/bin/bash\nexec steam -gamepadui -steamos3 -steamdeck \"$@\"\n", 0o755)
@@ -294,28 +462,35 @@ def write_gamescope_files(cfg: dict) -> dict:
     return {"command": command_text, "launcher": str(launcher), "environment": str(env_path()), "dimensions": dims}
 
 
-def proton_env_and_prefix(cfg: dict) -> tuple[dict[str, str], list[str]]:
+def proton_env_and_prefix(cfg: dict, gamescope_cfg: dict | None = None) -> tuple[dict[str, str], list[str]]:
     cfg = normalize_proton(cfg)
     env: dict[str, str] = {}
     prefix: list[str] = []
+    mangohud_enabled = cfg.get("mangohud")
     if cfg.get("gamemode") and shutil.which("gamemoderun"):
         prefix.append("gamemoderun")
-    if cfg.get("mangohud") and shutil.which("mangohud"):
+    if cfg.get("gamescope") and shutil.which("gamescope"):
+        prefix += gamescope_game_args(proton_gamescope_config(cfg, gamescope_cfg), bool(mangohud_enabled))
+        mangohud_enabled = False
+    if mangohud_enabled and shutil.which("mangohud"):
         prefix.append("mangohud")
     if cfg.get("enable_nvapi"):
-        env["PROTON_ENABLE_NVAPI"] = "1"
-    if cfg.get("hide_nvidia_gpu"):
+        env["PROTON_FORCE_NVAPI"] = "1"
+        env["PROTON_HIDE_NVIDIA_GPU"] = "0"
+    elif cfg.get("hide_nvidia_gpu"):
         env["PROTON_HIDE_NVIDIA_GPU"] = "1"
-    if not cfg.get("enable_esync"):
+    if cfg.get("sync_mode") in {"disable-esync", "disable-both"}:
         env["PROTON_NO_ESYNC"] = "1"
-    if not cfg.get("enable_fsync"):
+    if cfg.get("sync_mode") in {"disable-fsync", "disable-both"}:
         env["PROTON_NO_FSYNC"] = "1"
+    if cfg.get("use_wined3d"):
+        env["PROTON_USE_WINED3D"] = "1"
     if cfg.get("dxvk_async"):
         env["DXVK_ASYNC"] = "1"
     if cfg.get("dxvk_hdr"):
         env["DXVK_HDR"] = "1"
     if cfg.get("vkd3d_dxr"):
-        env["VKD3D_CONFIG"] = "dxr,dxr11"
+        env["VKD3D_CONFIG"] = "dxr"
     if cfg.get("fsr"):
         env["WINE_FULLSCREEN_FSR"] = "1"
         env["WINE_FULLSCREEN_FSR_STRENGTH"] = str(cfg.get("fsr_strength", 2))
@@ -333,6 +508,7 @@ def proton_env_and_prefix(cfg: dict) -> tuple[dict[str, str], list[str]]:
 def write_astrea_gaming_wrapper() -> Path:
     path = local_bin() / "astrea-gaming"
     config = proton_path()
+    gamescope_config = gamescope_path()
     script = f"""#!/usr/bin/env python3
 import json
 import os
@@ -341,17 +517,71 @@ import shutil
 import sys
 
 CONFIG = {str(config)!r}
+GAMESCOPE_CONFIG = {str(gamescope_config)!r}
 DEFAULT = {repr(DEFAULT_PROTON)}
+DEFAULT_GAMESCOPE = {repr(DEFAULT_GAMESCOPE)}
 
-def load_config():
+def load_json_config(path, default):
     try:
-        with open(CONFIG, "r", encoding="utf-8") as handle:
+        with open(path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
     except Exception:
         data = {{}}
-    cfg = DEFAULT.copy()
+    cfg = default.copy()
     cfg.update(data or {{}})
     return cfg
+
+def load_config():
+    return load_json_config(CONFIG, DEFAULT)
+
+def load_gamescope_config():
+    return load_json_config(GAMESCOPE_CONFIG, DEFAULT_GAMESCOPE)
+
+def int_value(value, fallback, minimum, maximum):
+    try:
+        return max(minimum, min(maximum, int(str(value).strip())))
+    except Exception:
+        return fallback
+
+def gamescope_args(cfg, mangoapp):
+    width = int_value(cfg.get("width"), DEFAULT_GAMESCOPE["width"], 640, 10000)
+    height = int_value(cfg.get("height"), DEFAULT_GAMESCOPE["height"], 360, 10000)
+    refresh = int_value(cfg.get("refresh"), DEFAULT_GAMESCOPE["refresh"], 30, 1000)
+    args = ["gamescope"]
+    if cfg.get("fullscreen"):
+        args.append("-f")
+    args += ["-W", str(width), "-H", str(height), "-r", str(refresh)]
+    if cfg.get("immediate_flips"):
+        args.append("--immediate-flips")
+    if cfg.get("hide_cursor"):
+        args += ["--hide-cursor-delay", "-1"]
+    if mangoapp:
+        args.append("--mangoapp")
+    if cfg.get("extra_args"):
+        args += shlex.split(str(cfg.get("extra_args") or ""))
+    args.append("--")
+    return args
+
+def proton_gamescope_config(cfg, shared_cfg):
+    if cfg.get("use_gamescope_profile", True):
+        return shared_cfg
+    extra_args = []
+    if cfg.get("gamescope_force_grab_cursor"):
+        extra_args.append("--force-grab-cursor")
+    if cfg.get("gamescope_adaptive_sync"):
+        extra_args.append("--adaptive-sync")
+    if cfg.get("gamescope_extra_args"):
+        extra_args += shlex.split(str(cfg.get("gamescope_extra_args") or ""))
+    return {{
+        "follow_monitor": False,
+        "width": int_value(cfg.get("gamescope_width"), DEFAULT["gamescope_width"], 640, 10000),
+        "height": int_value(cfg.get("gamescope_height"), DEFAULT["gamescope_height"], 360, 10000),
+        "refresh": int_value(cfg.get("gamescope_refresh"), DEFAULT["gamescope_refresh"], 30, 1000),
+        "fullscreen": bool(cfg.get("gamescope_fullscreen")),
+        "immediate_flips": bool(cfg.get("gamescope_immediate_flips")),
+        "hide_cursor": bool(cfg.get("gamescope_hide_cursor")),
+        "extra_args": shlex.join(extra_args),
+    }}
 
 def main():
     command = sys.argv[1:]
@@ -359,26 +589,34 @@ def main():
         print("Usage: astrea-gaming %command%", file=sys.stderr)
         return 2
     cfg = load_config()
+    gamescope_cfg = proton_gamescope_config(cfg, load_gamescope_config())
     env = os.environ.copy()
     prefix = []
+    mangohud_enabled = cfg.get("mangohud")
     if cfg.get("gamemode") and shutil.which("gamemoderun"):
         prefix.append("gamemoderun")
-    if cfg.get("mangohud") and shutil.which("mangohud"):
+    if cfg.get("gamescope") and shutil.which("gamescope"):
+        prefix += gamescope_args(gamescope_cfg, bool(mangohud_enabled))
+        mangohud_enabled = False
+    if mangohud_enabled and shutil.which("mangohud"):
         prefix.append("mangohud")
     if cfg.get("enable_nvapi"):
-        env["PROTON_ENABLE_NVAPI"] = "1"
-    if cfg.get("hide_nvidia_gpu"):
+        env["PROTON_FORCE_NVAPI"] = "1"
+        env["PROTON_HIDE_NVIDIA_GPU"] = "0"
+    elif cfg.get("hide_nvidia_gpu"):
         env["PROTON_HIDE_NVIDIA_GPU"] = "1"
-    if not cfg.get("enable_esync"):
+    if cfg.get("sync_mode") in ("disable-esync", "disable-both"):
         env["PROTON_NO_ESYNC"] = "1"
-    if not cfg.get("enable_fsync"):
+    if cfg.get("sync_mode") in ("disable-fsync", "disable-both"):
         env["PROTON_NO_FSYNC"] = "1"
+    if cfg.get("use_wined3d"):
+        env["PROTON_USE_WINED3D"] = "1"
     if cfg.get("dxvk_async"):
         env["DXVK_ASYNC"] = "1"
     if cfg.get("dxvk_hdr"):
         env["DXVK_HDR"] = "1"
     if cfg.get("vkd3d_dxr"):
-        env["VKD3D_CONFIG"] = "dxr,dxr11"
+        env["VKD3D_CONFIG"] = "dxr"
     if cfg.get("fsr"):
         env["WINE_FULLSCREEN_FSR"] = "1"
         env["WINE_FULLSCREEN_FSR_STRENGTH"] = str(cfg.get("fsr_strength", 2))
@@ -402,22 +640,35 @@ def command_preview(proton_cfg: dict) -> str:
     return "astrea-gaming %command%"
 
 
+def proton_status(proton: dict, wrapper: Path, gamescope: dict | None = None) -> dict:
+    env, prefix = proton_env_and_prefix(proton, gamescope)
+    return {
+        "proton_command": "astrea-gaming %command%",
+        "proton_preview": command_preview(proton),
+        "proton_wrapper": str(wrapper),
+        "proton_env": env,
+        "proton_prefix": prefix,
+        "proton_preset": proton.get("preset", "recommended"),
+    }
+
+
 def payload() -> dict:
     gamescope = load_json(gamescope_path(), DEFAULT_GAMESCOPE, normalize_gamescope)
     proton = load_json(proton_path(), DEFAULT_PROTON, normalize_proton)
+    compatibility = load_json(compatibility_path(), DEFAULT_COMPATIBILITY, normalize_compatibility)
     gamescope_files = write_gamescope_files(gamescope)
     wrapper = write_astrea_gaming_wrapper()
+    proton_state = proton_status(proton, wrapper, gamescope)
     return {
         "gamescope": gamescope,
         "proton": proton,
+        "compatibility": compatibility,
         "status": {
             "monitors": monitors(),
             "gamescope_command": gamescope_files["command"],
             "gamescope_launcher": gamescope_files["launcher"],
             "environment_file": gamescope_files["environment"],
-            "proton_command": "astrea-gaming %command%",
-            "proton_preview": command_preview(proton),
-            "proton_wrapper": str(wrapper),
+            **proton_state,
         },
     }
 
@@ -437,12 +688,24 @@ def save_proton(json_data: str, apply_files: bool = True) -> dict:
     result = {"ok": True, "proton": cfg}
     if apply_files:
         wrapper = write_astrea_gaming_wrapper()
+        gamescope = load_json(gamescope_path(), DEFAULT_GAMESCOPE, normalize_gamescope)
+        proton_state = proton_status(cfg, wrapper, gamescope)
         result["status"] = {
-            "wrapper": str(wrapper),
-            "command": "astrea-gaming %command%",
-            "preview": command_preview(cfg),
+            "wrapper": proton_state["proton_wrapper"],
+            "command": proton_state["proton_command"],
+            "preview": proton_state["proton_preview"],
+            "env": proton_state["proton_env"],
+            "prefix": proton_state["proton_prefix"],
+            "preset": proton_state["proton_preset"],
+            **proton_state,
         }
     return result
+
+
+def save_compatibility(json_data: str) -> dict:
+    cfg = normalize_compatibility(json.loads(json_data or "{}"))
+    atomic_write_json(compatibility_path(), cfg)
+    return {"ok": True, "compatibility": cfg}
 
 
 def main() -> int:
@@ -453,6 +716,8 @@ def main() -> int:
     save_g.add_argument("json_data")
     save_p = sub.add_parser("save-proton")
     save_p.add_argument("json_data")
+    save_c = sub.add_parser("save-compatibility")
+    save_c.add_argument("json_data")
     sub.add_parser("apply")
     args = parser.parse_args()
 
@@ -464,6 +729,9 @@ def main() -> int:
         return 0
     if args.command == "save-proton":
         print(json.dumps(save_proton(args.json_data), ensure_ascii=False))
+        return 0
+    if args.command == "save-compatibility":
+        print(json.dumps(save_compatibility(args.json_data), ensure_ascii=False))
         return 0
     if args.command == "apply":
         gamescope = load_json(gamescope_path(), DEFAULT_GAMESCOPE, normalize_gamescope)

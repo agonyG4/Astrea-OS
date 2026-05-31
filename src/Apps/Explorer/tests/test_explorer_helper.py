@@ -73,6 +73,45 @@ class ScanConflictsTests(unittest.TestCase):
             self.assertEqual(rec["conflict_kind"], "directory-into-self")
             self.assertEqual(rec["supported_policies"], ["skip"])
 
+    def test_broken_destination_symlink_is_reported_as_conflict(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            src = root / "src"; dst = root / "dst"
+            src.mkdir(); dst.mkdir()
+            (src / "a.txt").write_text("a")
+            (dst / "a.txt").symlink_to(root / "missing.txt")
+
+            rec = helper._conflict_record(src / "a.txt", dst)
+
+            self.assertIsNotNone(rec)
+            self.assertEqual(rec["destination_type"], "symlink")
+            self.assertEqual(rec["conflict_kind"], "name-collision")
+
+
+class NameSafetyTests(unittest.TestCase):
+    def test_create_folder_rejects_path_traversal(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            outside = root.parent / f"{root.name}-outside"
+
+            with self.assertRaises(ValueError):
+                helper.create_folder(str(root), f"../{outside.name}")
+
+            self.assertFalse(outside.exists())
+
+    def test_rename_rejects_path_traversal(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = root / "old.txt"
+            source.write_text("x")
+            outside = root.parent / f"{root.name}-outside.txt"
+
+            with self.assertRaises(ValueError):
+                helper.rename_path(str(source), f"../{outside.name}")
+
+            self.assertTrue(source.exists())
+            self.assertFalse(outside.exists())
+
 class TrashOpsTests(unittest.TestCase):
     def test_trash_and_restore_with_collision_and_unicode(self):
         with tempfile.TemporaryDirectory() as td:
@@ -129,6 +168,21 @@ class TrashOpsTests(unittest.TestCase):
             helper.empty_trash(str(trash_files), str(trash_info))
             self.assertEqual(list(trash_files.iterdir()), [])
             self.assertEqual(list(trash_info.iterdir()), [])
+
+    def test_trash_moves_broken_symlink_itself(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            trash_files = root / "trash/files"
+            trash_info = root / "trash/info"
+            source = root / "broken-link"
+            source.symlink_to(root / "missing")
+
+            helper.trash_items(str(trash_files), str(trash_info), [str(source)])
+
+            self.assertFalse(source.is_symlink())
+            trashed = list(trash_files.iterdir())
+            self.assertEqual(len(trashed), 1)
+            self.assertTrue(trashed[0].is_symlink())
 
 class PasteImageTests(unittest.TestCase):
     def test_copy_uri_list_percent_encodes_paths(self):
@@ -403,6 +457,16 @@ class ArchiveHelperTests(unittest.TestCase):
 
             self.assertEqual(helper._count_extracted_entries(dest), 2)
 
+    def test_count_extracted_bytes_ignores_directories(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            dest = root / "dest"
+            (dest / "nested").mkdir(parents=True)
+            (dest / "nested" / "one.bin").write_bytes(b"123")
+            (dest / "two.bin").write_bytes(b"45")
+
+            self.assertEqual(helper._count_extracted_bytes(dest), 5)
+
     def test_archive_password_args_are_passed_to_tools(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
@@ -481,6 +545,24 @@ class ArchiveHelperTests(unittest.TestCase):
             self.assertEqual(progress[-1]["done"], 4)
             self.assertEqual(progress[-1]["total"], 4)
             self.assertIn("eta_seconds", progress[-1])
+            self.assertIn("bytes_done", progress[-1])
+            self.assertIn("bytes_total", progress[-1])
+
+    def test_archive_progress_uses_entry_bytes_for_single_large_file(self):
+        payload = helper._archive_progress_payload(
+            "extract",
+            done=0,
+            total=1,
+            start_time=100.0,
+            now=lambda: 105.0,
+            bytes_done=50,
+            bytes_total=200,
+        )
+
+        self.assertEqual(payload["percent"], 25)
+        self.assertEqual(payload["bytes_done"], 50)
+        self.assertEqual(payload["bytes_total"], 200)
+        self.assertIn("eta_seconds", payload)
 
     def test_extract_archive_ask_policy_reports_existing_destination(self):
         with tempfile.TemporaryDirectory() as td:
@@ -591,6 +673,7 @@ class ArchiveHelperTests(unittest.TestCase):
             archive.write_bytes(b"x")
             (root / "out").mkdir()
             (root / "out 2").mkdir()
+            (root / "out 3").symlink_to(root / "missing")
 
             calls = []
             buf = io.StringIO()
@@ -601,13 +684,35 @@ class ArchiveHelperTests(unittest.TestCase):
                     run_cmd=lambda cmd, **kwargs: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, b"", b""),
                     password_probe=lambda path: False,
                     which_runner=lambda name: "/usr/bin/" + name if name in ("unzip", "tar", "bsdtar") else None,
-                )
+            )
             lines = [json.loads(line) for line in buf.getvalue().splitlines() if line.strip()]
             self.assertEqual(lines[0]["event"], "start")
             self.assertEqual(lines[-1]["event"], "done")
-            self.assertTrue(lines[0]["destination"].endswith("out 3"))
+            self.assertTrue(lines[0]["destination"].endswith("out 4"))
             self.assertEqual(lines[-1]["percent"], 100)
             self.assertTrue(calls)
+
+    def test_extract_archive_rejects_unsafe_destination_name(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            archive = root / "archive.zip"
+            archive.write_bytes(b"x")
+            buf = io.StringIO()
+
+            with self.assertRaises(SystemExit):
+                with redirect_stdout(buf):
+                    helper.extract_archive(
+                        str(archive),
+                        "../escape",
+                        run_cmd=lambda *a, **k: subprocess.CompletedProcess([], 0, b"", b""),
+                        list_runner=lambda *a, **k: ["one.txt"],
+                        password_probe=lambda path: False,
+                        which_runner=lambda name: "/usr/bin/unzip" if name == "unzip" else None,
+                    )
+
+            self.assertFalse((root.parent / "escape").exists())
+            events = [json.loads(line) for line in buf.getvalue().splitlines() if line.strip()]
+            self.assertEqual(events[0]["event"], "error")
 
 
     def test_extract_archive_rejects_absolute_entry(self):

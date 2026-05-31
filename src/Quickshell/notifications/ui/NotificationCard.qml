@@ -17,6 +17,7 @@ Rectangle {
     property real slideOffset: 0
     property bool dismissing: false
     property bool held: false
+    property bool autoDismissEnabled: true
 
     signal closeRequested(int notificationId)
 
@@ -45,6 +46,8 @@ Rectangle {
     }
 
     function resetAutoDismiss() {
+        if (!autoDismissEnabled)
+            return
         autoDismissTimer.stop()
         autoDismissTimer.start()
     }
@@ -87,7 +90,7 @@ Rectangle {
     Timer {
         id: autoDismissTimer
         interval: 5000
-        running: true
+        running: card.autoDismissEnabled
         repeat: false
         onTriggered: card.dismiss()
     }

@@ -1,6 +1,7 @@
 import Quickshell
 import Quickshell.Io
 import QtQuick
+import ".." as Modules
 
 QtObject {
     id: root
@@ -14,22 +15,7 @@ QtObject {
     property bool performancePaused: false
 
     function refresh() {
-        if (performancePaused) {
-            statusFile.reload()
-            return
-        }
-        statusRefreshProc.running = false
-        statusRefreshProc.running = true
-    }
-
-    onPerformancePausedChanged: {
-        if (performancePaused) {
-            statusRefreshProc.running = false
-            statusStartProc.running = false
-            statusFile.reload()
-        } else {
-            refresh()
-        }
+        statusBridge.refresh()
     }
 
     function applyStatus(text) {
@@ -44,34 +30,9 @@ QtObject {
         }
     }
 
-    property var statusFile: FileView {
-        path: root.statusPath
-        preload: true
-        blockLoading: true
-        watchChanges: true
-        printErrors: false
-        onFileChanged: reload()
-        onLoaded: root.applyStatus(text())
+    property var statusBridge: Modules.StatusFile {
+        statusPath: root.statusPath
+        performancePaused: root.performancePaused
+        onLoaded: text => root.applyStatus(text)
     }
-
-    property var statusRefreshProc: Process {
-        command: ["systemctl", "--user", "kill", "-s", "SIGUSR1", "astrea-status.service"]
-        running: false
-        onExited: exitCode => {
-            if (exitCode === 0)
-                statusFile.reload()
-            else if (!root.performancePaused) {
-                statusStartProc.running = false
-                statusStartProc.running = true
-            }
-        }
-    }
-
-    property var statusStartProc: Process {
-        command: ["systemctl", "--user", "start", "astrea-status.service"]
-        running: false
-        onExited: statusFile.reload()
-    }
-
-    Component.onCompleted: root.refresh()
 }

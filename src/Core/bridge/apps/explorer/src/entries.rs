@@ -198,13 +198,14 @@ fn icmp(a: &str, b: &str) -> Ordering {
 }
 
 fn entry_to_json(e: &Entry) -> String {
+    let file_url = json::file_url(Path::new(&e.path));
     format!(
-        "{{\"fileName\":\"{}\",\"filePath\":\"{}\",\"fileUrl\":\"file://{}\",\
+        "{{\"fileName\":\"{}\",\"filePath\":\"{}\",\"fileUrl\":\"{}\",\
          \"fileIsDir\":{},\"fileExecutable\":{},\"fileHidden\":{},\"fileSize\":{},\"fileModified\":{},\
          \"fileKind\":\"{}\",\"filePreviewUrl\":\"{}\"}}",
         json::escape(&e.name),
         json::escape(&e.path),
-        json::escape(&e.path),
+        json::escape(&file_url),
         e.is_dir,
         e.executable,
         e.is_hidden,
@@ -236,5 +237,37 @@ fn file_kind(path: &Path, is_dir: bool) -> String {
     match path.extension().and_then(|e| e.to_str()) {
         Some(e) if !e.is_empty() => e.to_uppercase(),
         _ => "Arquivo".into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn entry_json_uses_encoded_file_url() {
+        let root = std::env::temp_dir().join(format!(
+            "astrea-entry-url-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("a # b 😀.txt");
+        fs::write(&path, "x").unwrap();
+        let meta = fs::metadata(&path).unwrap();
+        let entry = entry_from_parts(
+            "a # b 😀.txt".to_string(),
+            &path,
+            meta,
+            false,
+            false,
+        );
+        let body = entry_to_json(&entry);
+        let raw_file_url = format!("\"fileUrl\":\"file://{}\"", path.to_string_lossy());
+
+        assert!(body.contains("%20%23%20b%20%F0%9F%98%80.txt"));
+        assert!(!body.contains(&raw_file_url));
+        let _ = fs::remove_dir_all(root);
     }
 }

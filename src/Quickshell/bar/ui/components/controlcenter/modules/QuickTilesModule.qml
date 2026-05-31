@@ -16,7 +16,9 @@ Item {
             height: (parent.height - parent.spacing * 2) / 3
             icon: "󰘶"
             title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.controlcenter.modules.quick_tiles_module.title.foco"]) || "Focus")
-            subtitle: module.control && module.control.focusOn ? "Ativo" : "Desativado"
+            subtitle: module.control && module.control.focusOn
+                ? AstreaI18n.I18n.tr("quickshell.bar.ui.components.controlcenter.status.active", "Active")
+                : AstreaI18n.I18n.tr("quickshell.bar.ui.components.controlcenter.status.inactive", "Inactive")
             active: module.control ? module.control.focusOn : false
             onClicked: if (module.control) module.control.focusOn = !module.control.focusOn
         }
@@ -35,7 +37,9 @@ Item {
             height: (parent.height - parent.spacing * 2) / 3
             icon: module.control ? module.control.volumeIcon() : "󰕾"
             title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["quickshell.bar.ui.components.controlcenter.modules.quick_tiles_module.title.som"]) || "Sound")
-            subtitle: module.control && module.control.masterMuted ? "Mudo" : (module.control ? module.control.masterVol + "%" : "0%")
+            subtitle: module.control && module.control.masterMuted
+                ? AstreaI18n.I18n.tr("quickshell.bar.ui.components.controlcenter.status.muted", "Muted")
+                : (module.control ? module.control.masterVol + "%" : "0%")
             active: module.control ? !module.control.masterMuted && module.control.masterVol > 0 : false
             onClicked: if (module.control) module.control.toggleMute()
         }

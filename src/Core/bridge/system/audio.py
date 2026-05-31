@@ -14,6 +14,8 @@ import re
 import os
 from pathlib import Path
 
+import app_icons
+
 BRIDGE_DIR = Path(__file__).resolve().parents[1]
 
 
@@ -44,7 +46,7 @@ SPATIAL_SINKS = (SPATIAL_SINK, LEGACY_SPATIAL_SINK)
 SPATIAL_OUTPUT_STREAMS = (SPATIAL_OUTPUT_STREAM, LEGACY_SPATIAL_OUTPUT_STREAM)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def run(cmd: list) -> str:
+def run(cmd: list, timeout: float = 4.0) -> str:
     try:
         return subprocess.check_output(
             cmd,
@@ -52,6 +54,7 @@ def run(cmd: list) -> str:
             text=True,
             encoding="utf-8",
             errors="replace",
+            timeout=timeout,
         )
     except Exception:
         return ""
@@ -91,28 +94,6 @@ def atomic_write_json(path: Path, payload, *, indent: int | None = 2, sort_keys:
 def atomic_write_text(path: Path, text: str) -> None:
     ASTREA_SHARED.atomic_write_text(path, text)
 
-
-def application_dirs() -> list[Path]:
-    dirs = [Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")).expanduser() / "applications"]
-    for entry in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":"):
-        if entry:
-            dirs.append(Path(entry).expanduser() / "applications")
-    deduped = []
-    seen = set()
-    for path in dirs:
-        key = str(path)
-        if key not in seen:
-            seen.add(key)
-            deduped.append(path)
-    return deduped
-
-
-def parse_desktop_file(path: Path, *, source: str = "", require_exec: bool = False):
-    return ASTREA_SHARED.parse_desktop_file(path, source=source, require_exec=require_exec)
-
-
-def resolve_icon_path(icon_name: str) -> str:
-    return ASTREA_SHARED.resolve_icon_path(icon_name)
 
 def get_aliases():
     data = read_json(ALIASES_CONF, {})
@@ -456,6 +437,10 @@ def _parse_steam_manifest(path: Path) -> dict[str, str]:
     return fields
 
 
+def _compact_match_key(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").casefold())
+
+
 def _process_environ(pid: str) -> dict[str, str]:
     try:
         raw = Path(f"/proc/{int(pid)}/environ").read_bytes()
@@ -471,6 +456,98 @@ def _process_environ(pid: str) -> dict[str, str]:
         except UnicodeDecodeError:
             continue
     return result
+
+
+def _process_parent_pid(pid: str) -> str:
+    try:
+        text = Path(f"/proc/{int(pid)}/stat").read_text(encoding="utf-8", errors="ignore")
+    except (OSError, ValueError):
+        return ""
+    end = text.rfind(")")
+    if end < 0:
+        return ""
+    fields = text[end + 2:].split()
+    return fields[1] if len(fields) > 1 else ""
+
+
+def _process_cmdline(pid: str) -> str:
+    try:
+        raw = Path(f"/proc/{int(pid)}/cmdline").read_bytes()
+    except (OSError, ValueError):
+        return ""
+    args = [arg.decode("utf-8", errors="ignore") for arg in raw.split(b"\0") if arg]
+    return "\n".join(args)
+
+
+def _process_cwd(pid: str) -> str:
+    try:
+        return os.readlink(f"/proc/{int(pid)}/cwd")
+    except (OSError, ValueError):
+        return ""
+
+
+def _process_ancestor_pids(pid: str, limit: int = 8) -> list[str]:
+    current = str(pid or "").strip()
+    result = []
+    seen = set()
+    while current and current not in seen and len(result) < limit:
+        seen.add(current)
+        result.append(current)
+        parent = _process_parent_pid(current)
+        if not parent or parent == current or parent == "1":
+            break
+        current = parent
+    return result
+
+
+def _process_contexts(props: dict, limit: int = 8) -> list[dict]:
+    pid = str(props.get("application.process.id", "")).strip()
+    if not pid:
+        return []
+    contexts = []
+    for current in _process_ancestor_pids(pid, limit=limit):
+        contexts.append({
+            "pid": current,
+            "env": _process_environ(current),
+            "cmdline": _process_cmdline(current),
+            "cwd": _process_cwd(current),
+        })
+    return contexts
+
+
+def _steam_library_dirs() -> list[Path]:
+    dirs = []
+    for root in _steam_roots():
+        dirs.append(root / "steamapps")
+        libraryfolders = root / "steamapps/libraryfolders.vdf"
+        try:
+            text = libraryfolders.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            text = ""
+        for match in re.finditer(r'"path"\s+"([^"]+)"', text):
+            library = Path(match.group(1).replace("\\\\", "/")).expanduser() / "steamapps"
+            dirs.append(library)
+    deduped = []
+    seen = set()
+    for path in dirs:
+        try:
+            key = str(path.resolve())
+        except OSError:
+            key = str(path)
+        if key not in seen and path.exists():
+            seen.add(key)
+            deduped.append(path)
+    return deduped
+
+
+def _steam_manifest_paths() -> list[Path]:
+    manifests = []
+    for steamapps in _steam_library_dirs():
+        try:
+            manifests.extend(sorted(steamapps.glob("appmanifest_*.acf")))
+        except OSError:
+            continue
+    return manifests
 
 
 def _steam_icon_for_appid(appid: str) -> str:
@@ -492,16 +569,103 @@ def _steam_icon_for_appid(appid: str) -> str:
     return ""
 
 
-def _steam_appid_for_process(props: dict) -> str:
-    pid = str(props.get("application.process.id", "")).strip()
-    if not pid:
+def _steam_appid_from_text(text: str) -> str:
+    if not text:
         return ""
-    env = _process_environ(pid)
-    return (env.get("SteamAppId")
-            or env.get("SteamGameId")
-            or env.get("STEAM_COMPAT_APP_ID")
-            or env.get("SteamOverlayGameId")
-            or "")
+    patterns = (
+        r"(?:SteamAppId|SteamGameId|STEAM_COMPAT_APP_ID|SteamOverlayGameId)\D+(\d+)",
+        r"steam://rungameid/(\d+)",
+        r"steamapps[/\\]compatdata[/\\](\d+)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, str(text))
+        if match:
+            return match.group(1)
+    return ""
+
+
+def _steam_appid_for_process(props: dict) -> str:
+    env_keys = ("SteamAppId", "SteamGameId", "STEAM_COMPAT_APP_ID", "SteamOverlayGameId")
+    for key in env_keys:
+        value = str(props.get(key, "")).strip()
+        if value.isdigit():
+            return value
+
+    for context in _process_contexts(props):
+        env = context.get("env", {})
+        for key in env_keys:
+            value = str(env.get(key, "")).strip()
+            if value.isdigit():
+                return value
+        for key, value in env.items():
+            if any(token in key for token in ("Steam", "STEAM", "PROTON", "COMPAT")):
+                appid = _steam_appid_from_text(value)
+                if appid:
+                    return appid
+        for value in (context.get("cmdline", ""), context.get("cwd", "")):
+            appid = _steam_appid_from_text(value)
+            if appid:
+                return appid
+    return ""
+
+
+def _stream_text_hints(name: str, props: dict) -> str:
+    parts = [str(name or "")]
+    for key in (
+        "application.name",
+        "application.process.binary",
+        "application.id",
+        "media.name",
+        "node.name",
+        "module-stream-restore.id",
+    ):
+        parts.append(str(props.get(key, "")))
+    for context in _process_contexts(props, limit=4):
+        parts.append(str(context.get("cmdline", "")))
+        parts.append(str(context.get("cwd", "")))
+    return "\n".join(part for part in parts if part)
+
+
+def _exe_stems_for_stream(name: str, props: dict) -> list[str]:
+    values = [
+        name,
+        props.get("application.name", ""),
+        props.get("media.name", ""),
+        props.get("node.name", ""),
+        props.get("module-stream-restore.id", ""),
+    ]
+    result = []
+    seen = set()
+    for value in values:
+        for match in re.finditer(r"([^/\\:]+?)\.exe\b", str(value or ""), flags=re.IGNORECASE):
+            key = _compact_match_key(match.group(1))
+            if key and key not in seen:
+                seen.add(key)
+                result.append(key)
+    return result
+
+
+def _steam_manifest_match_score(fields: dict[str, str], stems: list[str], text_hints: str) -> int:
+    name_key = _compact_match_key(fields.get("name", ""))
+    install_key = _compact_match_key(fields.get("installdir", ""))
+    hints_key = _compact_match_key(text_hints)
+    score = 0
+
+    if install_key and install_key in hints_key:
+        score = max(score, 90)
+    if name_key and name_key in hints_key:
+        score = max(score, 80)
+
+    for stem in stems:
+        if not stem:
+            continue
+        if stem in {name_key, install_key}:
+            score = max(score, 75)
+        elif len(stem) >= 4 and name_key and stem in name_key:
+            score = max(score, 55)
+        elif len(stem) >= 4 and install_key and stem in install_key:
+            score = max(score, 55)
+    return score
 
 
 def _steam_icon_for_app(name: str, props: dict) -> str:
@@ -509,19 +673,256 @@ def _steam_icon_for_app(name: str, props: dict) -> str:
     if icon:
         return icon
     app_name = str(name or props.get("application.name", "")).strip().casefold()
-    if not app_name:
+    stems = _exe_stems_for_stream(name, props)
+    text_hints = _stream_text_hints(name, props)
+    if not app_name and not stems:
         return ""
-    for root in _steam_roots():
-        for manifest in (root / "steamapps").glob("appmanifest_*.acf"):
-            fields = _parse_steam_manifest(manifest)
-            if fields.get("name", "").casefold() != app_name:
+    best_score = 0
+    best_icon = ""
+    for manifest in _steam_manifest_paths():
+        fields = _parse_steam_manifest(manifest)
+        if not fields.get("appid"):
+            continue
+        score = 100 if fields.get("name", "").casefold() == app_name else 0
+        score = max(score, _steam_manifest_match_score(fields, stems, text_hints))
+        if score <= best_score:
+            continue
+        icon = _steam_icon_for_appid(fields.get("appid", ""))
+        if icon:
+            best_score = score
+            best_icon = icon
+    if best_icon:
+        return best_icon
+    return ""
+
+
+def _is_wine_or_proton_stream(name: str, props: dict) -> bool:
+    text = " ".join(str(props.get(key, "")) for key in (
+        "application.name",
+        "application.process.binary",
+        "application.id",
+        "media.name",
+        "node.name",
+        "module-stream-restore.id",
+    ))
+    text = f"{name} {text}".casefold()
+    return (
+        ".exe" in text
+        or "wine" in text
+        or "proton" in text
+        or "pressure-vessel" in text
+    )
+
+
+def _wine_prefixes_from_contexts(contexts: list[dict]) -> list[Path]:
+    prefixes = []
+    for context in contexts:
+        env = context.get("env", {})
+        wineprefix = str(env.get("WINEPREFIX", "")).strip()
+        if wineprefix:
+            prefixes.append(Path(wineprefix).expanduser())
+        compat = str(env.get("STEAM_COMPAT_DATA_PATH", "")).strip()
+        if compat:
+            prefixes.append(Path(compat).expanduser() / "pfx")
+    prefixes.append(Path.home() / ".wine")
+
+    deduped = []
+    seen = set()
+    for prefix in prefixes:
+        key = str(prefix)
+        if key not in seen:
+            seen.add(key)
+            deduped.append(prefix)
+    return deduped
+
+
+def _windows_exe_paths_from_text(text: str) -> list[str]:
+    if not text:
+        return []
+    patterns = (
+        r"([A-Za-z]:\\[^\"'\0\r\n]*?\.exe)",
+        r"(/[^\0\r\n\"']*?\.exe)",
+    )
+    result = []
+    seen = set()
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+            value = match.group(1).strip()
+            if value and value not in seen:
+                seen.add(value)
+                result.append(value)
+    return result
+
+
+def _wine_path_to_unix_path(value: str, prefixes: list[Path]) -> Path | None:
+    value = str(value or "").strip().strip("\"'")
+    if not value:
+        return None
+    if value.startswith("/"):
+        path = Path(value)
+        return path if path.exists() else None
+
+    match = re.match(r"^([A-Za-z]):[\\/](.*)$", value)
+    if not match:
+        return None
+    drive = match.group(1).casefold()
+    rest = match.group(2).replace("\\", "/").lstrip("/")
+    candidates = []
+
+    if drive == "z":
+        candidates.append(Path("/") / rest)
+    for prefix in prefixes:
+        drive_link = prefix / "dosdevices" / f"{drive}:"
+        if drive_link.exists():
+            try:
+                candidates.append(drive_link.resolve() / rest)
+            except OSError:
+                pass
+        if drive == "c":
+            candidates.append(prefix / "drive_c" / rest)
+    candidates.extend((Path.home() / rest, Path("/") / rest))
+
+    seen = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _wine_executable_paths(name: str, props: dict) -> list[Path]:
+    contexts = _process_contexts(props)
+    prefixes = _wine_prefixes_from_contexts(contexts)
+    values = [
+        str(name or ""),
+        str(props.get("application.name", "")),
+        str(props.get("node.name", "")),
+    ]
+    for context in contexts:
+        values.append(str(context.get("cmdline", "")))
+        values.append(str(context.get("cwd", "")))
+
+    paths = []
+    seen = set()
+    exe_names = [
+        f"{stem}.exe"
+        for stem in _exe_stems_for_stream(name, props)
+        if stem
+    ]
+    for value in values:
+        for raw_path in _windows_exe_paths_from_text(value):
+            path = _wine_path_to_unix_path(raw_path, prefixes)
+            if path and str(path) not in seen:
+                seen.add(str(path))
+                paths.append(path)
+
+    for context in contexts:
+        cwd = str(context.get("cwd", ""))
+        if not cwd:
+            continue
+        for exe_name in exe_names:
+            candidate = Path(cwd) / exe_name
+            if candidate.exists() and str(candidate) not in seen:
+                seen.add(str(candidate))
+                paths.append(candidate)
+    return paths
+
+
+def _convert_ico_to_png(path: Path) -> str:
+    tool = shutil.which("magick") or shutil.which("convert")
+    if not tool:
+        return ""
+    try:
+        stat = path.stat()
+        APP_ICON_CACHE.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return ""
+    fingerprint = hashlib.sha256(
+        f"{path}:{stat.st_mtime_ns}:{stat.st_size}".encode("utf-8", errors="ignore")
+    ).hexdigest()[:24]
+    stem = _compact_match_key(path.stem) or "icon"
+    output = APP_ICON_CACHE / f"{stem}-{fingerprint}.png"
+    if output.exists():
+        return str(output)
+    tmp = output.with_suffix(".tmp.png")
+    try:
+        subprocess.run(
+            [tool, f"{path}[0]", "-thumbnail", "128x128", str(tmp)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=3,
+            check=True,
+        )
+        tmp.replace(output)
+        return str(output)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return ""
+
+
+def _prepare_local_icon_file(path: Path) -> str:
+    if path.suffix.casefold() == ".ico":
+        return _convert_ico_to_png(path) or str(path)
+    return str(path)
+
+
+def _local_icon_for_executable(executable: Path) -> str:
+    try:
+        executable = executable.resolve()
+    except OSError:
+        return ""
+    if not executable.exists():
+        return ""
+
+    image_exts = {".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico"}
+    stem_key = _compact_match_key(executable.stem)
+    generic_names = {"icon", "logo", "game", "app", "windowicon", "launcher"}
+    dirs = [executable.parent]
+    try:
+        for child in executable.parent.iterdir():
+            if child.is_dir():
+                dirs.append(child)
+    except OSError:
+        pass
+
+    best_path = None
+    best_score = 0
+    for directory in dirs:
+        try:
+            entries = list(directory.iterdir())
+        except OSError:
+            continue
+        if len(entries) > 700:
+            continue
+        for entry in entries:
+            if not entry.is_file() or entry.suffix.casefold() not in image_exts:
                 continue
-            appid = fields.get("appid", "")
-            if not appid:
-                continue
-            icon = _steam_icon_for_appid(appid)
-            if icon:
-                return icon
+            entry_key = _compact_match_key(entry.stem)
+            score = 0
+            if entry_key == stem_key:
+                score = 100
+            elif entry_key in generic_names:
+                score = 80
+            elif stem_key and len(stem_key) >= 4 and stem_key in entry_key:
+                score = 60
+            if score > best_score:
+                best_score = score
+                best_path = entry
+
+    return _prepare_local_icon_file(best_path) if best_path else ""
+
+
+def _wine_icon_for_app(name: str, props: dict) -> str:
+    for executable in _wine_executable_paths(name, props):
+        icon = _local_icon_for_executable(executable)
+        if icon:
+            return icon
     return ""
 
 
@@ -596,34 +997,7 @@ def _app_group_key(name: str, props: dict, inp: dict) -> str:
 
 
 def _resolve_app_icon(name: str, props: dict) -> tuple[str, str]:
-    explicit_icon = str(props.get("application.icon-name")
-                        or props.get("application.icon_name")
-                        or props.get("media.icon-name")
-                        or "").strip()
-    if explicit_icon:
-        icon_path = resolve_icon_path(explicit_icon)
-        if icon_path:
-            return explicit_icon, icon_path
-
-    guessed_icon = _guess_icon(name)
-    if guessed_icon != "audio-x-generic":
-        icon_path = resolve_icon_path(guessed_icon)
-        if icon_path:
-            return guessed_icon, icon_path
-
-    icon_path = _steam_icon_for_app(name, props)
-    if icon_path:
-        return explicit_icon or guessed_icon, icon_path
-
-    desktop_icon = _desktop_icon_for_app(name, props)
-    if desktop_icon:
-        icon_path = resolve_icon_path(desktop_icon)
-        if icon_path:
-            return desktop_icon, icon_path
-
-    icon_name = explicit_icon or guessed_icon or "audio-x-generic"
-    icon_path = resolve_icon_path(icon_name) if icon_name else ""
-    return icon_name, icon_path
+    return app_icons.resolve_app_icon(name, props)
 
 
 def get_apps() -> list:

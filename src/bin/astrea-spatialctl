@@ -1,0 +1,502 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+CONFIG = Path.home() / ".config/astrea/spatial-live.json"
+PIPEWIRE_CONF = Path.home() / ".config/pipewire/pipewire.conf.d/sink-virtual-surround-7.1-hesuvi-surroundeq.conf"
+DEFAULT_HRIR = Path.home() / ".config/pipewire/hrir_hesuvi/hrir.wav"
+DEFAULT_NODE_NAME = "effect_input.surroundeq"
+
+DEFAULT: Dict[str, float | bool | str] = {
+    "enabled": True,
+    "node_name": DEFAULT_NODE_NAME,
+    "hrir": str(DEFAULT_HRIR),
+
+    "front": 0.98,
+    "center": 1.05,
+    "side": 0.58,
+    "rear": 0.58,
+    "lfe": 0.50,
+
+    "bass": -1.0,
+    "mud": 0.0,
+    "box": -2.0,
+    "presence": 1.5,
+    "harsh": -2.0,
+    "air": -1.0,
+
+    "wet": 1.0,
+    "dry_front": 0.0,
+    "dry_center": 0.0,
+}
+
+def run(cmd: List[str], *, check: bool = True) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=check)
+
+def load() -> Dict[str, Any]:
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    if not CONFIG.exists():
+        save(dict(DEFAULT))
+    try:
+        with CONFIG.open() as f:
+            data = json.load(f)
+    except Exception:
+        data = {}
+    merged = dict(DEFAULT)
+    merged.update(data)
+    if merged.get("node_name") == "effect_input.astrea-spatial":
+        merged["node_name"] = DEFAULT_NODE_NAME
+    return merged
+
+def save(data: Dict[str, Any]) -> None:
+    CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    with CONFIG.open("w") as f:
+        json.dump(data, f, indent=2)
+
+def find_node_id(node_name: str) -> Optional[int]:
+    try:
+        cp = run(["pw-dump", node_name], check=True)
+        graph = json.loads(cp.stdout)
+        if graph:
+            return int(graph[0]["id"])
+    except Exception:
+        pass
+
+    try:
+        cp = run(["pw-dump"], check=True)
+        graph = json.loads(cp.stdout)
+    except Exception as e:
+        print(f"failed to read pw-dump: {e}", file=sys.stderr)
+        return None
+
+    for obj in graph:
+        props = obj.get("info", {}).get("props", {})
+        if props.get("node.name") == node_name:
+            try:
+                return int(obj["id"])
+            except Exception:
+                return None
+    return None
+
+def get_control_params(node_id: int) -> Dict[str, float]:
+    try:
+        cp = run(["pw-dump", str(node_id)], check=True)
+        data = json.loads(cp.stdout)
+    except Exception:
+        return {}
+
+    params_list = []
+    for obj in data:
+        props_entries = obj.get("info", {}).get("params", {}).get("Props", [])
+        for entry in props_entries:
+            arr = entry.get("params")
+            if isinstance(arr, list):
+                params_list.extend(arr)
+
+    out: Dict[str, float] = {}
+    i = 0
+    while i < len(params_list) - 1:
+        key = params_list[i]
+        val = params_list[i + 1]
+        if isinstance(key, str) and isinstance(val, (int, float)):
+            out[key] = float(val)
+        i += 2
+    return out
+
+def set_params_live(node_id: int, pairs: Dict[str, float]) -> None:
+    payload: List[Any] = []
+    for key, value in pairs.items():
+        payload.extend([key, float(value)])
+
+    param_json = json.dumps({"params": payload})
+    cp = run(["pw-cli", "s", str(node_id), "Props", param_json], check=False)
+    if cp.returncode != 0:
+        raise RuntimeError(cp.stderr.strip() or cp.stdout.strip() or "pw-cli set-param failed")
+
+def controls_for_key(key: str, value: float) -> Dict[str, float]:
+    # Mixer inputs:
+    # 1 FL, 2 SL, 3 RL, 4 FC, 5 FR, 6 SR, 7 RR, 8 LFE
+    if key == "front":
+        return {
+            "mixL:Gain 1": value, "mixR:Gain 1": value,
+            "mixL:Gain 5": value, "mixR:Gain 5": value,
+        }
+    if key == "center":
+        return {"mixL:Gain 4": value, "mixR:Gain 4": value}
+    if key == "side":
+        return {
+            "mixL:Gain 2": value, "mixR:Gain 2": value,
+            "mixL:Gain 6": value, "mixR:Gain 6": value,
+        }
+    if key == "rear":
+        return {
+            "mixL:Gain 3": value, "mixR:Gain 3": value,
+            "mixL:Gain 7": value, "mixR:Gain 7": value,
+        }
+    if key == "lfe":
+        return {"mixL:Gain 8": value, "mixR:Gain 8": value}
+
+    if key == "bass":
+        return {"eq_bass_L:Gain": value, "eq_bass_R:Gain": value}
+    if key == "mud" or key == "warmth":
+        return {"eq_mud_L:Gain": value, "eq_mud_R:Gain": value}
+    if key == "box" or key == "mids_1k":
+        return {"eq_box_L:Gain": value, "eq_box_R:Gain": value}
+    if key == "presence" or key == "presence_2k":
+        return {"eq_presence_L:Gain": value, "eq_presence_R:Gain": value}
+    if key == "harsh" or key == "treble_7k":
+        return {"eq_harsh_L:Gain": value, "eq_harsh_R:Gain": value}
+    if key == "air" or key == "air_10k":
+        return {"eq_air_L:Gain": value, "eq_air_R:Gain": value}
+
+    if key == "wet":
+        return {"finalL:Gain 1": value, "finalR:Gain 1": value}
+    if key == "dry_front":
+        return {"finalL:Gain 2": value, "finalR:Gain 2": value}
+    if key == "dry_center":
+        return {"finalL:Gain 3": value, "finalR:Gain 3": value}
+
+    raise KeyError(key)
+
+def all_live_pairs(data: Dict[str, Any]) -> Dict[str, float]:
+    keys = [
+        "front", "center", "side", "rear", "lfe",
+        "bass", "mud", "box", "presence", "harsh", "air",
+        "wet", "dry_front", "dry_center",
+    ]
+    pairs: Dict[str, float] = {}
+    for key in keys:
+        pairs.update(controls_for_key(key, float(data[key])))
+    return pairs
+
+def generate_filter_chain(data: Dict[str, Any]) -> str:
+    hrir = str(data["hrir"])
+    node_name = str(data["node_name"])
+    return f'''
+# Astrea Spatial Audio Live
+# Generated by astrea-spatialctl install.
+# After this is loaded, controls are changed live with pw-cli set-param.
+
+context.modules = [
+  {{ name = libpipewire-module-filter-chain
+    flags = [ nofail ]
+    args = {{
+      node.description = "Astrea Spatial Audio Live"
+      media.name       = "Astrea Spatial Audio Live"
+
+      filter.graph = {{
+        nodes = [
+          {{ type = builtin label = copy name = copyFL }}
+          {{ type = builtin label = copy name = copyFR }}
+          {{ type = builtin label = copy name = copyFC }}
+          {{ type = builtin label = copy name = copyLFE }}
+          {{ type = builtin label = copy name = copyRL }}
+          {{ type = builtin label = copy name = copyRR }}
+          {{ type = builtin label = copy name = copySL }}
+          {{ type = builtin label = copy name = copySR }}
+
+          {{ type = builtin label = convolver name = convFL_L config = {{ filename = "{hrir}" channel = 0 }} }}
+          {{ type = builtin label = convolver name = convFL_R config = {{ filename = "{hrir}" channel = 1 }} }}
+          {{ type = builtin label = convolver name = convSL_L config = {{ filename = "{hrir}" channel = 2 }} }}
+          {{ type = builtin label = convolver name = convSL_R config = {{ filename = "{hrir}" channel = 3 }} }}
+          {{ type = builtin label = convolver name = convRL_L config = {{ filename = "{hrir}" channel = 4 }} }}
+          {{ type = builtin label = convolver name = convRL_R config = {{ filename = "{hrir}" channel = 5 }} }}
+          {{ type = builtin label = convolver name = convFC_L config = {{ filename = "{hrir}" channel = 6 }} }}
+          {{ type = builtin label = convolver name = convFR_R config = {{ filename = "{hrir}" channel = 7 }} }}
+          {{ type = builtin label = convolver name = convFR_L config = {{ filename = "{hrir}" channel = 8 }} }}
+          {{ type = builtin label = convolver name = convSR_R config = {{ filename = "{hrir}" channel = 9 }} }}
+          {{ type = builtin label = convolver name = convSR_L config = {{ filename = "{hrir}" channel = 10 }} }}
+          {{ type = builtin label = convolver name = convRR_R config = {{ filename = "{hrir}" channel = 11 }} }}
+          {{ type = builtin label = convolver name = convRR_L config = {{ filename = "{hrir}" channel = 12 }} }}
+          {{ type = builtin label = convolver name = convFC_R config = {{ filename = "{hrir}" channel = 13 }} }}
+
+          {{
+            type = builtin
+            label = mixer
+            name = mixL
+            control = {{
+              "Gain 1" = {float(data["front"])}
+              "Gain 2" = {float(data["side"])}
+              "Gain 3" = {float(data["rear"])}
+              "Gain 4" = {float(data["center"])}
+              "Gain 5" = {float(data["front"])}
+              "Gain 6" = {float(data["side"])}
+              "Gain 7" = {float(data["rear"])}
+              "Gain 8" = {float(data["lfe"])}
+            }}
+          }}
+          {{
+            type = builtin
+            label = mixer
+            name = mixR
+            control = {{
+              "Gain 1" = {float(data["front"])}
+              "Gain 2" = {float(data["side"])}
+              "Gain 3" = {float(data["rear"])}
+              "Gain 4" = {float(data["center"])}
+              "Gain 5" = {float(data["front"])}
+              "Gain 6" = {float(data["side"])}
+              "Gain 7" = {float(data["rear"])}
+              "Gain 8" = {float(data["lfe"])}
+            }}
+          }}
+
+          {{ type = builtin label = bq_peaking   name = warmth_L control = {{ "Freq" = 180.0   "Q" = 0.90 "Gain" = {float(data["warmth"])} }} }}
+          {{ type = builtin label = bq_peaking   name = eq1k_L    control = {{ "Freq" = 1000.0  "Q" = 0.90 "Gain" = {float(data["mids_1k"])} }} }}
+          {{ type = builtin label = bq_peaking   name = eq2k_L    control = {{ "Freq" = 2200.0  "Q" = 1.00 "Gain" = {float(data["presence_2k"])} }} }}
+          {{ type = builtin label = bq_peaking   name = eq7k_L    control = {{ "Freq" = 7000.0  "Q" = 1.40 "Gain" = {float(data["treble_7k"])} }} }}
+          {{ type = builtin label = bq_highshelf name = air_L     control = {{ "Freq" = 10000.0 "Q" = 0.70 "Gain" = {float(data["air_10k"])} }} }}
+
+          {{ type = builtin label = bq_peaking   name = warmth_R control = {{ "Freq" = 180.0   "Q" = 0.90 "Gain" = {float(data["warmth"])} }} }}
+          {{ type = builtin label = bq_peaking   name = eq1k_R    control = {{ "Freq" = 1000.0  "Q" = 0.90 "Gain" = {float(data["mids_1k"])} }} }}
+          {{ type = builtin label = bq_peaking   name = eq2k_R    control = {{ "Freq" = 2200.0  "Q" = 1.00 "Gain" = {float(data["presence_2k"])} }} }}
+          {{ type = builtin label = bq_peaking   name = eq7k_R    control = {{ "Freq" = 7000.0  "Q" = 1.40 "Gain" = {float(data["treble_7k"])} }} }}
+          {{ type = builtin label = bq_highshelf name = air_R     control = {{ "Freq" = 10000.0 "Q" = 0.70 "Gain" = {float(data["air_10k"])} }} }}
+
+          {{
+            type = builtin
+            label = mixer
+            name = finalL
+            control = {{
+              "Gain 1" = {float(data["wet"])}
+              "Gain 2" = {float(data["dry_front"])}
+              "Gain 3" = {float(data["dry_center"])}
+            }}
+          }}
+          {{
+            type = builtin
+            label = mixer
+            name = finalR
+            control = {{
+              "Gain 1" = {float(data["wet"])}
+              "Gain 2" = {float(data["dry_front"])}
+              "Gain 3" = {float(data["dry_center"])}
+            }}
+          }}
+        ]
+
+        links = [
+          {{ output = "copyFL:Out" input = "convFL_L:In" }}
+          {{ output = "copyFL:Out" input = "convFL_R:In" }}
+          {{ output = "copySL:Out" input = "convSL_L:In" }}
+          {{ output = "copySL:Out" input = "convSL_R:In" }}
+          {{ output = "copyRL:Out" input = "convRL_L:In" }}
+          {{ output = "copyRL:Out" input = "convRL_R:In" }}
+          {{ output = "copyFC:Out" input = "convFC_L:In" }}
+          {{ output = "copyFR:Out" input = "convFR_R:In" }}
+          {{ output = "copyFR:Out" input = "convFR_L:In" }}
+          {{ output = "copySR:Out" input = "convSR_R:In" }}
+          {{ output = "copySR:Out" input = "convSR_L:In" }}
+          {{ output = "copyRR:Out" input = "convRR_R:In" }}
+          {{ output = "copyRR:Out" input = "convRR_L:In" }}
+          {{ output = "copyFC:Out" input = "convFC_R:In" }}
+
+          {{ output = "convFL_L:Out" input = "mixL:In 1" }}
+          {{ output = "convSL_L:Out" input = "mixL:In 2" }}
+          {{ output = "convRL_L:Out" input = "mixL:In 3" }}
+          {{ output = "convFC_L:Out" input = "mixL:In 4" }}
+          {{ output = "convFR_L:Out" input = "mixL:In 5" }}
+          {{ output = "convSR_L:Out" input = "mixL:In 6" }}
+          {{ output = "convRR_L:Out" input = "mixL:In 7" }}
+          {{ output = "convFC_L:Out" input = "mixL:In 8" }}
+
+          {{ output = "convFL_R:Out" input = "mixR:In 1" }}
+          {{ output = "convSL_R:Out" input = "mixR:In 2" }}
+          {{ output = "convRL_R:Out" input = "mixR:In 3" }}
+          {{ output = "convFC_R:Out" input = "mixR:In 4" }}
+          {{ output = "convFR_R:Out" input = "mixR:In 5" }}
+          {{ output = "convSR_R:Out" input = "mixR:In 6" }}
+          {{ output = "convRR_R:Out" input = "mixR:In 7" }}
+          {{ output = "convFC_R:Out" input = "mixR:In 8" }}
+
+          {{ output = "mixL:Out" input = "warmth_L:In" }}
+          {{ output = "warmth_L:Out" input = "eq1k_L:In" }}
+          {{ output = "eq1k_L:Out" input = "eq2k_L:In" }}
+          {{ output = "eq2k_L:Out" input = "eq7k_L:In" }}
+          {{ output = "eq7k_L:Out" input = "air_L:In" }}
+          {{ output = "air_L:Out" input = "finalL:In 1" }}
+          {{ output = "copyFL:Out" input = "finalL:In 2" }}
+          {{ output = "copyFC:Out" input = "finalL:In 3" }}
+
+          {{ output = "mixR:Out" input = "warmth_R:In" }}
+          {{ output = "warmth_R:Out" input = "eq1k_R:In" }}
+          {{ output = "eq1k_R:Out" input = "eq2k_R:In" }}
+          {{ output = "eq2k_R:Out" input = "eq7k_R:In" }}
+          {{ output = "eq7k_R:Out" input = "air_R:In" }}
+          {{ output = "air_R:Out" input = "finalR:In 1" }}
+          {{ output = "copyFR:Out" input = "finalR:In 2" }}
+          {{ output = "copyFC:Out" input = "finalR:In 3" }}
+        ]
+
+        inputs = [ "copyFL:In" "copyFR:In" "copyFC:In" "copyLFE:In" "copyRL:In" "copyRR:In" "copySL:In" "copySR:In" ]
+        outputs = [ "finalL:Out" "finalR:Out" ]
+      }}
+
+      capture.props = {{
+        node.name = "{node_name}"
+        media.class = Audio/Sink
+        audio.channels = 8
+        audio.position = [ FL FR FC LFE RL RR SL SR ]
+      }}
+
+      playback.props = {{
+        node.name = "effect_output.astrea-spatial"
+        node.passive = true
+        audio.channels = 2
+        audio.position = [ FL FR ]
+      }}
+    }}
+  }}
+]
+'''
+
+def install_config(restart_pipewire: bool = True) -> None:
+    data = load()
+    PIPEWIRE_CONF.parent.mkdir(parents=True, exist_ok=True)
+    PIPEWIRE_CONF.write_text(generate_filter_chain(data))
+
+    if restart_pipewire:
+        cp = subprocess.run(["systemctl", "--user", "restart", "pipewire", "pipewire-pulse", "wireplumber"])
+        if cp.returncode != 0:
+            print("warning: failed to restart PipeWire services", file=sys.stderr)
+
+def set_key_live(key: str, value: float, *, no_save: bool = False) -> None:
+    data = load()
+    if key not in DEFAULT:
+        raise SystemExit(f"unknown key: {key}")
+
+    data[key] = value
+    if not no_save:
+        save(data)
+
+    node_id = find_node_id(str(data["node_name"]))
+    if node_id is None:
+        raise SystemExit(f"node not found: {data['node_name']}. Run: astrea-spatialctl install")
+
+    pairs = controls_for_key(key, value)
+    set_params_live(node_id, pairs)
+
+def sync_live() -> None:
+    data = load()
+    node_id = find_node_id(str(data["node_name"]))
+    if node_id is None:
+        raise SystemExit(f"node not found: {data['node_name']}. Run: astrea-spatialctl install")
+    set_params_live(node_id, all_live_pairs(data))
+
+def main() -> None:
+    p = argparse.ArgumentParser()
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("get")
+    sub.add_parser("status")
+    sub.add_parser("install")
+    sub.add_parser("sync")
+    sub.add_parser("controls")
+
+    sp = sub.add_parser("set")
+    sp.add_argument("key")
+    sp.add_argument("value", type=float)
+    sp.add_argument("--no-save", action="store_true")
+
+    sp = sub.add_parser("set-hrir")
+    sp.add_argument("path")
+
+    sp = sub.add_parser("preset")
+    sp.add_argument("name", choices=["pure", "daily", "close", "extreme", "reset"])
+
+    args = p.parse_args()
+
+    if args.cmd == "get":
+        print(json.dumps(load(), indent=2))
+        return
+
+    if args.cmd == "status":
+        data = load()
+        node_id = find_node_id(str(data["node_name"]))
+        print(json.dumps({
+            "node_name": data["node_name"],
+            "node_id": node_id,
+            "config": str(CONFIG),
+            "pipewire_conf": str(PIPEWIRE_CONF),
+            "hrir": data["hrir"],
+            "live": node_id is not None
+        }, indent=2))
+        return
+
+    if args.cmd == "install":
+        if not PIPEWIRE_CONF.exists():
+            install_config(restart_pipewire=True)
+            print("installed. this restarts PipeWire once. slider changes after this are live.")
+            return
+        print(f"using existing PipeWire filter-chain: {PIPEWIRE_CONF}")
+        return
+
+    if args.cmd == "sync":
+        sync_live()
+        print("synced live")
+        return
+
+    if args.cmd == "controls":
+        data = load()
+        node_id = find_node_id(str(data["node_name"]))
+        if node_id is None:
+            raise SystemExit("node not found")
+        controls = get_control_params(node_id)
+        for k in sorted(controls):
+            print(f"{k} = {controls[k]}")
+        return
+
+    if args.cmd == "set":
+        set_key_live(args.key, args.value, no_save=args.no_save)
+        print(f"{args.key}={args.value}")
+        return
+
+    if args.cmd == "set-hrir":
+        data = load()
+        data["hrir"] = str(Path(args.path).expanduser())
+        save(data)
+        install_config(restart_pipewire=True)
+        print("HRIR changed. PipeWire restarted once because convolver filename cannot be hot-swapped reliably.")
+        return
+
+    if args.cmd == "preset":
+        data = load()
+        if args.name == "reset":
+            data = dict(DEFAULT)
+        elif args.name == "pure":
+            data.update({
+                "front": 0.98, "center": 1.05, "side": 0.58, "rear": 0.58, "lfe": 0.50,
+                "bass": -1.0, "mud": 0.0, "box": -2.0, "presence": 1.5, "harsh": -2.0, "air": -1.0,
+                "wet": 1.0, "dry_front": 0.0, "dry_center": 0.0,
+            })
+        elif args.name == "daily":
+            data.update({
+                "front": 1.0, "center": 1.02, "side": 0.65, "rear": 0.65, "lfe": 0.40,
+                "bass": -0.5, "mud": 0.0, "box": -1.8, "presence": 1.2, "harsh": -2.2, "air": -0.8,
+                "wet": 1.0, "dry_front": 0.0, "dry_center": 0.0,
+            })
+        elif args.name == "close":
+            data.update({
+                "front": 1.0, "center": 1.05, "side": 0.50, "rear": 0.50, "lfe": 0.35,
+                "bass": -0.5, "mud": 0.0, "box": -2.2, "presence": 0.8, "harsh": -2.6, "air": -1.0,
+                "wet": 0.94, "dry_front": 0.02, "dry_center": 0.04,
+            })
+        elif args.name == "extreme":
+            data.update({
+                "front": 1.18, "center": 1.30, "side": 1.35, "rear": 1.35, "lfe": 0.85,
+                "bass": 6.0, "mud": -3.0, "box": -6.0, "presence": 5.0, "harsh": -6.0, "air": 4.0,
+                "wet": 1.25, "dry_front": 0.08, "dry_center": 0.10,
+            })
+        save(data)
+        sync_live()
+        print(json.dumps(data, indent=2))
+        return
+
+if __name__ == "__main__":
+    main()

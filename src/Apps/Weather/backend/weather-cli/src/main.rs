@@ -2,8 +2,8 @@ use serde_json::json;
 use std::env;
 use std::process;
 use weather_core::{
-    DEFAULT_CITY, WeatherAlert, WeatherSettings, check_and_notify, fetch_weather_json,
-    load_settings, notify_alert, save_settings, summary_json,
+    WeatherAlert, WeatherSettings, check_and_notify, fetch_weather_json, load_settings,
+    notify_alert, save_settings, summary_json,
 };
 
 fn print_json(value: serde_json::Value) {
@@ -19,7 +19,7 @@ fn usage() -> ! {
          \n\
          get [city] [--force] [--json]\n\
          summary [city] [--force]\n\
-         settings [true|false] [city]\n\
+         settings [true|false] [city] [--city value|--clear-city]\n\
          check-alerts [city] [--force] [--dry-run]\n\
          notify-test"
     );
@@ -37,12 +37,43 @@ fn city_arg(args: &[String]) -> String {
         .unwrap_or_else(|| load_settings().city)
 }
 
+fn flag_value(args: &[String], flag: &str) -> Option<String> {
+    args.iter()
+        .position(|arg| arg == flag)
+        .and_then(|idx| args.get(idx + 1))
+        .cloned()
+}
+
 fn parse_bool(value: &str) -> Option<bool> {
     match value.to_ascii_lowercase().as_str() {
         "1" | "true" | "yes" | "on" | "sim" | "enabled" => Some(true),
         "0" | "false" | "no" | "off" | "nao" | "não" | "disabled" => Some(false),
         _ => None,
     }
+}
+
+fn settings_from_args(mut settings: WeatherSettings, args: &[String]) -> WeatherSettings {
+    if let Some(enabled) = flag_value(args, "--notifications")
+        .or_else(|| flag_value(args, "--notifications-enabled"))
+        .and_then(|value| parse_bool(&value))
+    {
+        settings.notifications_enabled = enabled;
+    } else if let Some(enabled) = args.first().and_then(|value| parse_bool(value)) {
+        settings.notifications_enabled = enabled;
+    }
+
+    if has_flag(args, "--clear-city") {
+        settings.city.clear();
+    } else if let Some(city) = flag_value(args, "--city") {
+        settings.city = city.trim().to_string();
+    } else if let Some(city) = args.get(1) {
+        if !city.trim().is_empty() {
+            settings.city = city.trim().to_string();
+        }
+    }
+
+    settings.schema_version = 1;
+    settings
 }
 
 fn main() {
@@ -71,21 +102,10 @@ fn main() {
             let mut settings = load_settings();
             let should_save = !args.is_empty();
             if should_save {
-                if let Some(enabled) = args.first().and_then(|value| parse_bool(value)) {
-                    settings.notifications_enabled = enabled;
-                }
-                if let Some(city) = args.get(1) {
-                    settings.city = city.clone();
-                } else if settings.city.trim().is_empty() {
-                    settings.city = DEFAULT_CITY.to_string();
-                }
+                settings = settings_from_args(settings, &args);
             }
             if should_save {
-                if let Err(err) = save_settings(&WeatherSettings {
-                    schema_version: 1,
-                    notifications_enabled: settings.notifications_enabled,
-                    city: settings.city.clone(),
-                }) {
+                if let Err(err) = save_settings(&settings) {
                     eprintln!("{err}");
                     process::exit(1);
                 }
@@ -120,5 +140,39 @@ fn main() {
             eprintln!("{err}");
             process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_flags_update_city_without_changing_notifications() {
+        let current = WeatherSettings {
+            schema_version: 1,
+            notifications_enabled: false,
+            city: "Itajaí".to_string(),
+        };
+        let args = vec!["--city".to_string(), "Paris, France".to_string()];
+
+        let updated = settings_from_args(current, &args);
+
+        assert!(!updated.notifications_enabled);
+        assert_eq!(updated.city, "Paris, France");
+    }
+
+    #[test]
+    fn settings_city_flag_can_clear_saved_city() {
+        let current = WeatherSettings {
+            schema_version: 1,
+            notifications_enabled: true,
+            city: "Itajaí".to_string(),
+        };
+        let args = vec!["--city".to_string(), "".to_string()];
+
+        let updated = settings_from_args(current, &args);
+
+        assert_eq!(updated.city, "");
     }
 }

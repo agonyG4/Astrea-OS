@@ -7,6 +7,26 @@ import "../../../AstreaI18n" as AstreaI18n
 ColumnLayout {
     property var weatherData
     property var colors
+    function displayTimeMinutes(value) {
+        var text = (value || "").trim()
+        if (text.length === 0)
+            return -1
+        var upper = text.toUpperCase()
+        var isPm = upper.indexOf("PM") !== -1
+        var isAm = upper.indexOf("AM") !== -1
+        var parts = text.split(" ")[0].split(":")
+        if (parts.length < 2)
+            return -1
+        var hour = parseInt(parts[0])
+        var minute = parseInt(parts[1])
+        if (isNaN(hour) || isNaN(minute))
+            return -1
+        if (isPm && hour < 12)
+            hour += 12
+        if (isAm && hour === 12)
+            hour = 0
+        return hour * 60 + minute
+    }
     readonly property string nextSunEventLabel: sunInfo.isAfterSunset
         ? AstreaI18n.I18n.tr("apps.weather.ui.components.sections.current_summary.text.sunrise", "Sunrise")
         : AstreaI18n.I18n.tr("apps.weather.ui.components.sections.current_summary.text.sunset", "Sunset")
@@ -79,9 +99,8 @@ ColumnLayout {
             if (!weatherData || !weatherData.sunset) return false
             var now = new Date()
             var currentMinutes = now.getHours() * 60 + now.getMinutes()
-            var sunsetParts = weatherData.sunset.split(":")
-            var sunsetMin = parseInt(sunsetParts[0]) * 60 + parseInt(sunsetParts[1])
-            return currentMinutes > sunsetMin
+            var sunsetMin = displayTimeMinutes(weatherData.sunset)
+            return sunsetMin >= 0 && currentMinutes > sunsetMin
         }
 
         RowLayout {

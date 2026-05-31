@@ -11,24 +11,31 @@ use libpulse_binding::{
     sample::{Format, Spec},
 };
 use libpulse_simple_binding::Simple;
-use rustfft::{num_complex::Complex, FftPlanner};
+use rustfft::{FftPlanner, num_complex::Complex};
 use serde::{Deserialize, Serialize};
 use std::{
     path::PathBuf,
+    process::{Command, Output as CommandOutput, Stdio},
     sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
 
 #[cfg(feature = "ipc-socket")]
-use std::{io::Write, os::unix::net::UnixListener, path::Path};
+use std::{
+    fs,
+    io::{self, Write},
+    os::unix::{
+        fs::PermissionsExt,
+        net::{UnixListener, UnixStream},
+    },
+    path::Path,
+};
 
 // ----------------------------------------------------------------
-#[cfg(feature = "ipc-socket")]
-const FALLBACK_SOCKET_PATH: &str = "/tmp/astrea-music-bars.sock";
-const FFT_SIZE:   usize = 1024;
-const HOP_SIZE:   usize = FFT_SIZE / 4;
-const BANDS:      usize = 16;
+const FFT_SIZE: usize = 1024;
+const HOP_SIZE: usize = FFT_SIZE / 4;
+const BANDS: usize = 16;
 const OUTPUT_BANDS: usize = 6;
 const FRAME_INTERVAL_MS: u64 = 33;
 const PLAYER_RECHECK_MS: u64 = 2500;
@@ -43,25 +50,22 @@ const PEAK_RELEASE: f32 = 0.020;
 const PEAK_FALL: f32 = 0.014;
 const SPRING: f32 = 0.165;
 const DAMPING: f32 = 0.72;
-const MIN_FREQ:   f32   = 42.0;
-const MAX_FREQ:   f32   = 14_500.0;
-const SAMPLE_RATE: u32  = 48000;
-const CHANNELS:    u8   = 2;
+const MIN_FREQ: f32 = 42.0;
+const MAX_FREQ: f32 = 14_500.0;
+const SAMPLE_RATE: u32 = 48000;
+const CHANNELS: u8 = 2;
 const BEAT_ATTACK: f32 = 0.58;
 const BEAT_DECAY: f32 = 0.80;
 const SILENCE_GATE: f32 = 0.000_018;
 const BAND_GAINS: [f32; BANDS] = [
-    0.72, 0.78, 0.86, 0.94,
-    1.05, 1.14, 1.18, 1.16,
-    1.12, 1.08, 1.04, 1.00,
-    0.98, 0.96, 0.94, 0.92,
+    0.72, 0.78, 0.86, 0.94, 1.05, 1.14, 1.18, 1.16, 1.12, 1.08, 1.04, 1.00, 0.98, 0.96, 0.94, 0.92,
 ];
 
 // ----------------------------------------------------------------
 #[derive(Serialize, Clone)]
 struct Frame {
-    bands:  Vec<f32>,
-    peaks:  Vec<f32>,
+    bands: Vec<f32>,
+    peaks: Vec<f32>,
     energy: f32,
 }
 
@@ -118,14 +122,26 @@ impl MusicBarsConfig {
         };
 
         let config = Self {
-            input_gain: partial.input_gain.unwrap_or(defaults.input_gain).clamp(0.2, 8.0),
-            sensitivity: partial.sensitivity.unwrap_or(defaults.sensitivity).clamp(0.35, 2.5),
-            idle_floor: partial.idle_floor.unwrap_or(defaults.idle_floor).clamp(0.0, 0.08),
+            input_gain: partial
+                .input_gain
+                .unwrap_or(defaults.input_gain)
+                .clamp(0.2, 8.0),
+            sensitivity: partial
+                .sensitivity
+                .unwrap_or(defaults.sensitivity)
+                .clamp(0.35, 2.5),
+            idle_floor: partial
+                .idle_floor
+                .unwrap_or(defaults.idle_floor)
+                .clamp(0.0, 0.08),
             apple_smoothness: partial
                 .apple_smoothness
                 .unwrap_or(defaults.apple_smoothness)
                 .clamp(0.0, 1.0),
-            beat_strength: partial.beat_strength.unwrap_or(defaults.beat_strength).clamp(0.0, 2.2),
+            beat_strength: partial
+                .beat_strength
+                .unwrap_or(defaults.beat_strength)
+                .clamp(0.0, 2.2),
             visual_style: partial.visual_style.unwrap_or(defaults.visual_style),
         };
         eprintln!(
@@ -153,17 +169,23 @@ fn config_path() -> Option<PathBuf> {
 enum Output {
     #[cfg(feature = "ipc-socket")]
     #[allow(dead_code)]
-    Socket { clients: Arc<Mutex<Vec<std::os::unix::net::UnixStream>>> },
+    Socket {
+        clients: Arc<Mutex<Vec<std::os::unix::net::UnixStream>>>,
+    },
     #[cfg(feature = "ipc-stdout")]
     #[allow(dead_code)]
     Stdout,
     #[cfg(all(feature = "ipc-socket", feature = "ipc-stdout"))]
-    Both { clients: Arc<Mutex<Vec<std::os::unix::net::UnixStream>>> },
+    Both {
+        clients: Arc<Mutex<Vec<std::os::unix::net::UnixStream>>>,
+    },
 }
 
 impl Output {
     fn send(&self, frame: &Frame) {
-        let Ok(json) = serde_json::to_string(frame) else { return };
+        let Ok(json) = serde_json::to_string(frame) else {
+            return;
+        };
         let msg = format!("{}\n", json);
         match self {
             #[cfg(feature = "ipc-socket")]
@@ -193,14 +215,23 @@ fn socket_path() -> PathBuf {
     std::env::var_os("XDG_RUNTIME_DIR")
         .map(PathBuf::from)
         .map(|dir| dir.join("astrea-music-bars.sock"))
-        .unwrap_or_else(|| PathBuf::from(FALLBACK_SOCKET_PATH))
+        .unwrap_or_else(fallback_socket_path)
+}
+
+#[cfg(feature = "ipc-socket")]
+fn fallback_socket_path() -> PathBuf {
+    std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".local/state")))
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("Astrea/runtime/astrea-music-bars.sock")
 }
 
 #[cfg(feature = "ipc-socket")]
 fn start_socket(clients: Arc<Mutex<Vec<std::os::unix::net::UnixStream>>>) {
     let path = socket_path();
     let Ok((listener, bound_path)) = bind_socket(&path).or_else(|first_error| {
-        let fallback = PathBuf::from(FALLBACK_SOCKET_PATH);
+        let fallback = fallback_socket_path();
         eprintln!(
             "[music-bars] Falha ao abrir socket em {}: {}; tentando {}",
             path.display(),
@@ -231,9 +262,20 @@ fn start_socket(clients: Arc<Mutex<Vec<std::os::unix::net::UnixStream>>>) {
 #[cfg(feature = "ipc-socket")]
 fn bind_socket(path: &Path) -> std::io::Result<(UnixListener, PathBuf)> {
     if path.exists() {
-        std::fs::remove_file(path).ok();
+        if UnixStream::connect(path).is_ok() {
+            return Err(io::Error::new(
+                io::ErrorKind::AddrInUse,
+                format!("socket ativo em {}", path.display()),
+            ));
+        }
+        fs::remove_file(path)?;
     }
-    UnixListener::bind(path).map(|listener| (listener, path.to_path_buf()))
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let listener = UnixListener::bind(path)?;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    Ok((listener, path.to_path_buf()))
 }
 
 // ================================================================
@@ -252,34 +294,44 @@ fn band_center(index: usize) -> f32 {
 }
 
 fn band_width(index: usize) -> f32 {
-    let prev = if index == 0 { MIN_FREQ.log2() } else { band_center(index - 1).log2() };
-    let next = if index + 1 == BANDS { MAX_FREQ.log2() } else { band_center(index + 1).log2() };
+    let prev = if index == 0 {
+        MIN_FREQ.log2()
+    } else {
+        band_center(index - 1).log2()
+    };
+    let next = if index + 1 == BANDS {
+        MAX_FREQ.log2()
+    } else {
+        band_center(index + 1).log2()
+    };
     ((next - prev) * 0.56).max(0.08)
 }
 
 fn build_band_weights() -> Vec<Vec<(usize, f32)>> {
     let bin_hz = SAMPLE_RATE as f32 / FFT_SIZE as f32;
-    (0..BANDS).map(|band| {
-        let center = band_center(band).log2();
-        let width = band_width(band);
-        let mut weights = Vec::new();
+    (0..BANDS)
+        .map(|band| {
+            let center = band_center(band).log2();
+            let width = band_width(band);
+            let mut weights = Vec::new();
 
-        for bin in 1..(FFT_SIZE / 2) {
-            let freq = bin as f32 * bin_hz;
-            if !(MIN_FREQ..=MAX_FREQ).contains(&freq) {
-                continue;
+            for bin in 1..(FFT_SIZE / 2) {
+                let freq = bin as f32 * bin_hz;
+                if !(MIN_FREQ..=MAX_FREQ).contains(&freq) {
+                    continue;
+                }
+
+                let distance = ((freq.log2() - center) / width).abs();
+                if distance >= 1.25 {
+                    continue;
+                }
+
+                weights.push((bin, (1.0 - distance / 1.25).powf(2.0)));
             }
 
-            let distance = ((freq.log2() - center) / width).abs();
-            if distance >= 1.25 {
-                continue;
-            }
-
-            weights.push((bin, (1.0 - distance / 1.25).powf(2.0)));
-        }
-
-        weights
-    }).collect()
+            weights
+        })
+        .collect()
 }
 
 fn log_bands_into(mags: &[f32], weights: &[Vec<(usize, f32)>], out: &mut [f32]) {
@@ -293,7 +345,9 @@ fn log_bands_into(mags: &[f32], weights: &[Vec<(usize, f32)>], out: &mut [f32]) 
             weight_total += weight;
         }
 
-        out[band] = (weighted_sum / weight_total.max(f32::EPSILON)).sqrt().max(0.0);
+        out[band] = (weighted_sum / weight_total.max(f32::EPSILON))
+            .sqrt()
+            .max(0.0);
     }
 }
 
@@ -373,7 +427,12 @@ impl VisualState {
     }
 
     fn ingest(&mut self, raw: &[f32]) {
-        let signal = normalize_bands_into(raw, &mut self.adaptive_peak, &self.config, &mut self.normalized);
+        let signal = normalize_bands_into(
+            raw,
+            &mut self.adaptive_peak,
+            &self.config,
+            &mut self.normalized,
+        );
         let live_signal = signal > SILENCE_GATE * 2.5;
         for (band, target) in self.target.iter_mut().enumerate() {
             let shaped = if live_signal {
@@ -434,8 +493,7 @@ impl VisualState {
                 0.0
             };
 
-            let target = ((sampled + beat_kick + flutter + idle_wiggle).max(0.0)
-                * (1.0 + shimmer))
+            let target = ((sampled + beat_kick + flutter + idle_wiggle).max(0.0) * (1.0 + shimmer))
                 .clamp(live_floor, 1.0);
             self.spring_to(index, target, self.config.apple_smoothness);
         }
@@ -507,11 +565,38 @@ fn line_value<'a>(line: &'a str, prefix: &str) -> Option<&'a str> {
     line.trim().strip_prefix(prefix).map(str::trim)
 }
 
-fn sink_monitor_name(sink_id: &str) -> Option<String> {
-    let out = std::process::Command::new("pactl")
-        .args(["list", "sinks"])
-        .output()
+fn command_output_timeout(
+    program: &str,
+    args: &[&str],
+    timeout: Duration,
+) -> Option<CommandOutput> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
         .ok()?;
+    let started = Instant::now();
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => return child.wait_with_output().ok(),
+            Ok(None) => {}
+            Err(_) => return None,
+        }
+
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn sink_monitor_name(sink_id: &str) -> Option<String> {
+    let out = command_output_timeout("pactl", &["list", "sinks"], Duration::from_secs(4))?;
 
     let sinks = String::from_utf8_lossy(&out.stdout);
     let mut in_sink = false;
@@ -592,15 +677,14 @@ fn sink_input_score(block: &str) -> Option<(u8, String)> {
         score = score.saturating_sub(20);
     }
 
-    sink.map(|sink| (score, sink)).filter(|(score, _)| *score > 0)
+    sink.map(|sink| (score, sink))
+        .filter(|(score, _)| *score > 0)
 }
 
 fn find_music_monitor() -> Option<String> {
-    let output = std::process::Command::new("pactl")
-        .args(["list", "sink-inputs"])
-        .output();
+    let output = command_output_timeout("pactl", &["list", "sink-inputs"], Duration::from_secs(4));
 
-    if let Ok(out) = output {
+    if let Some(out) = output {
         let text = String::from_utf8_lossy(&out.stdout);
         let best = text
             .split("\nSink Input #")
@@ -625,8 +709,8 @@ fn find_music_monitor() -> Option<String> {
 fn connect_monitor(monitor_name: &str) -> Option<Simple> {
     // Match the PipeWire/Pulse default sink format and mix to mono ourselves.
     let spec = Spec {
-        format:   Format::F32le,
-        rate:     SAMPLE_RATE,
+        format: Format::F32le,
+        rate: SAMPLE_RATE,
         channels: CHANNELS,
     };
     assert!(spec.is_valid());
@@ -639,18 +723,23 @@ fn connect_monitor(monitor_name: &str) -> Option<Simple> {
     };
 
     Simple::new(
-        None,                           // servidor padrão (PipeWire)
-        "astrea-music-bars",            // nome do app
+        None,                // servidor padrão (PipeWire)
+        "astrea-music-bars", // nome do app
         pulse::stream::Direction::Record,
-        Some(monitor_name),             // source: monitor do player de música
-        "music bars",                   // descrição do stream
+        Some(monitor_name), // source: monitor do player de música
+        "music bars",       // descrição do stream
         &spec,
-        None,                           // channel map padrão
-        Some(&buffer_attr),             // baixa latência para o music bars
-    ).map_err(|e| {
-        eprintln!("[music-bars] Erro ao conectar em '{}': {:?}", monitor_name, e);
+        None,               // channel map padrão
+        Some(&buffer_attr), // baixa latência para o music bars
+    )
+    .map_err(|e| {
+        eprintln!(
+            "[music-bars] Erro ao conectar em '{}': {:?}",
+            monitor_name, e
+        );
         e
-    }).ok()
+    })
+    .ok()
 }
 
 fn push_samples(pcm: &Arc<Mutex<Vec<f32>>>, samples: &[f32]) {
@@ -697,8 +786,8 @@ fn main() {
 
     // Thread FFT
     {
-        let pcm_r  = pcm.clone();
-        let out    = output.clone();
+        let pcm_r = pcm.clone();
+        let out = output.clone();
         let window = hann_window(FFT_SIZE);
         let mut visual = VisualState::new(config.clone());
         let mut planner = FftPlanner::<f32>::new();
@@ -710,37 +799,41 @@ fn main() {
         let band_weights = build_band_weights();
         let mut raw_bands = vec![0.0f32; BANDS];
 
-        thread::spawn(move || loop {
-            thread::sleep(frame_interval);
+        thread::spawn(move || {
+            loop {
+                thread::sleep(frame_interval);
 
-            let has_samples = {
-                let mut b = pcm_r.lock().unwrap();
-                if b.len() >= FFT_SIZE {
-                    let start = b.len() - FFT_SIZE;
-                    samples.copy_from_slice(&b[start..]);
-                    b.clear();
-                    true
-                } else {
-                    false
+                let has_samples = {
+                    let mut b = pcm_r.lock().unwrap();
+                    if b.len() >= FFT_SIZE {
+                        let start = b.len() - FFT_SIZE;
+                        samples.copy_from_slice(&b[start..]);
+                        b.clear();
+                        true
+                    } else {
+                        false
+                    }
+                };
+
+                if has_samples {
+                    for ((slot, &sample), &w) in
+                        cx.iter_mut().zip(samples.iter()).zip(window.iter())
+                    {
+                        slot.re = sample * w;
+                        slot.im = 0.0;
+                    }
+                    fft.process(&mut cx);
+
+                    for (out, value) in mags.iter_mut().zip(cx[..FFT_SIZE / 2].iter()) {
+                        *out = value.norm() / FFT_SIZE as f32;
+                    }
+
+                    log_bands_into(&mags, &band_weights, &mut raw_bands);
+                    visual.ingest(&raw_bands);
                 }
-            };
 
-            if has_samples {
-                for ((slot, &sample), &w) in cx.iter_mut().zip(samples.iter()).zip(window.iter()) {
-                    slot.re = sample * w;
-                    slot.im = 0.0;
-                }
-                fft.process(&mut cx);
-
-                for (out, value) in mags.iter_mut().zip(cx[..FFT_SIZE / 2].iter()) {
-                    *out = value.norm() / FFT_SIZE as f32;
-                }
-
-                log_bands_into(&mags, &band_weights, &mut raw_bands);
-                visual.ingest(&raw_bands);
+                out.send(&visual.frame());
             }
-
-            out.send(&visual.frame());
         });
     }
 
@@ -781,7 +874,10 @@ fn main() {
                 }
             }
 
-            for (out, frame) in samples.iter_mut().zip(buf.chunks_exact(4 * CHANNELS as usize)) {
+            for (out, frame) in samples
+                .iter_mut()
+                .zip(buf.chunks_exact(4 * CHANNELS as usize))
+            {
                 let mut sum = 0.0;
                 for sample in frame.chunks_exact(4) {
                     sum += f32::from_le_bytes([sample[0], sample[1], sample[2], sample[3]]);

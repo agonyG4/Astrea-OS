@@ -54,6 +54,18 @@ Item {
     property var    wifiNetworks: []
     property string wifiSelectedSsid: ""
     property bool   wifiSelectedRequiresPassword: false
+    property bool   warpLoading: true
+    property bool   warpInstalled: false
+    property bool   warpConnected: false
+    property bool   warpServiceActive: false
+    property bool   warpActionPending: false
+    property string warpStatus: "Unknown"
+    property string warpNetwork: ""
+    property string warpDetail: ""
+    property string warpServiceState: "unknown"
+    property string warpServiceEnabled: "unknown"
+    property string warpTrayState: "unknown"
+    property string warpActionStatus: ""
     property real   lastRx: 0
     property real   lastTx: 0
     property string _statsBuf: ""
@@ -61,6 +73,8 @@ Item {
     property string _firewallBuf: ""
     property string _wifiBuf: ""
     property string _wifiActionBuf: ""
+    property string _warpBuf: ""
+    property string _warpActionBuf: ""
     readonly property color accent: Theme.accent
     readonly property color textPrimary: Theme.textPrimary
     readonly property color textSecondary: Theme.textSecondary
@@ -176,6 +190,54 @@ Item {
         wifiTogglePending = true
         wifiRadioProc.enabledValue = enabled ? "on" : "off"
         wifiRadioProc.running = true
+    }
+
+    function warpSubtitle() {
+        if (warpLoading) return "Checking Cloudflare WARP"
+        if (!warpInstalled) return "warp-cli is not installed"
+        if (warpActionPending) return "Applying change"
+        if (warpConnected) return warpNetwork ? ("Connected · " + warpNetwork) : "Connected"
+        if (warpServiceActive) return "Daemon active, tunnel disconnected"
+        return "Daemon stopped"
+    }
+
+    function applyWarpPayload(payload) {
+        warpLoading = false
+        warpInstalled = !!payload.installed
+        warpConnected = !!payload.connected
+        warpServiceActive = !!payload.service_active
+        warpStatus = payload.status || "Unknown"
+        warpNetwork = payload.network || ""
+        warpDetail = payload.detail || payload.reason || ""
+        warpServiceState = payload.service_state || "unknown"
+        warpServiceEnabled = payload.service_enabled || "unknown"
+        warpTrayState = payload.tray_state || "unknown"
+    }
+
+    function loadWarp() {
+        if (warpStatusProc.running) return
+        _warpBuf = ""
+        warpStatusProc.running = true
+    }
+
+    function setWarpEnabled(enabled) {
+        if (!warpInstalled || warpActionProc.running)
+            return
+        warpActionStatus = ""
+        _warpActionBuf = ""
+        warpActionPending = true
+        warpActionProc.action = enabled ? "on" : "off"
+        warpActionProc.running = true
+    }
+
+    function restartWarp() {
+        if (!warpInstalled || warpActionProc.running)
+            return
+        warpActionStatus = ""
+        _warpActionBuf = ""
+        warpActionPending = true
+        warpActionProc.action = "restart"
+        warpActionProc.running = true
     }
 
     // ── Processes ────────────────────────────────────────────────────────────
@@ -329,6 +391,50 @@ Item {
         }
     }
 
+    Process {
+        id: warpStatusProc
+        command: ["python3", root._script, "warp_status"]
+        stdout: SplitParser { onRead: (l) => root._warpBuf += l }
+        onExited: (code) => {
+            if (code === 0 && root._warpBuf) {
+                try {
+                    root.applyWarpPayload(JSON.parse(root._warpBuf))
+                } catch (_) {
+                    root.warpLoading = false
+                    root.warpActionStatus = "error"
+                }
+            } else {
+                root.warpLoading = false
+            }
+            root._warpBuf = ""
+        }
+    }
+
+    Process {
+        id: warpActionProc
+        property string action: "on"
+        command: action === "restart"
+            ? ["python3", root._script, "warp_restart"]
+            : ["python3", root._script, "warp_set_enabled", action]
+        stdout: SplitParser { onRead: (l) => root._warpActionBuf += l }
+        onExited: (code) => {
+            let ok = code === 0
+            if (root._warpActionBuf) {
+                try {
+                    const payload = JSON.parse(root._warpActionBuf)
+                    ok = ok && payload.success !== false
+                    root.applyWarpPayload(payload)
+                } catch (_) {
+                    ok = false
+                }
+            }
+            root.warpActionPending = false
+            root.warpActionStatus = ok ? "ok" : "error"
+            root._warpActionBuf = ""
+            root.loadWarp()
+        }
+    }
+
     Timer { interval: 1000
  running: true
  repeat: true
@@ -337,13 +443,18 @@ Item {
  running: true
  repeat: true
  onTriggered: root.loadWifi() }
+    Timer { interval: 15000
+ running: true
+ repeat: true
+ onTriggered: root.loadWarp() }
     Timer { id: statusClearTimer
  interval: 3000
  repeat: false
- onTriggered: { root.applyStatus = ""; root.wifiActionStatus = "" } }
+ onTriggered: { root.applyStatus = ""; root.wifiActionStatus = ""; root.warpActionStatus = "" } }
     onApplyStatusChanged: if (applyStatus) statusClearTimer.restart()
     onWifiActionStatusChanged: if (wifiActionStatus) statusClearTimer.restart()
-    Component.onCompleted: { statsProc.running = true; fetchDns(); firewallProc.running = true; loadWifi() }
+    onWarpActionStatusChanged: if (warpActionStatus) statusClearTimer.restart()
+    Component.onCompleted: { statsProc.running = true; fetchDns(); firewallProc.running = true; loadWifi(); loadWarp() }
 
     // ── Inline Components ─────────────────────────────────────────────────────
 
@@ -872,6 +983,86 @@ Item {
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
                 isLast: true
+            }
+        }
+
+        SectionHeader {
+            text: "CLOUDFLARE WARP"
+            textSecondary: root.textSecondary
+            Layout.bottomMargin: 12
+        }
+
+        FormCard {
+            Layout.bottomMargin: 24
+
+            SettingRow {
+                label: "Cloudflare WARP"
+                sublabel: root.warpActionStatus === "ok"
+                    ? "WARP setting applied"
+                    : (root.warpActionStatus === "error" ? "Could not apply WARP setting" : root.warpSubtitle())
+                textPrimary: root.textPrimary
+                textSecondary: root.warpActionStatus === "error" ? "#ff5f57" : (root.warpActionStatus === "ok" ? "#3ddc97" : root.textSecondary)
+                cardBorder: root.cardBorder
+
+                ToggleSwitch {
+                    enabled: root.warpInstalled && !root.warpActionPending
+                    checked: root.warpConnected
+                    onToggled: targetChecked => root.setWarpEnabled(targetChecked)
+                }
+            }
+
+            SettingRow {
+                label: "Tunnel"
+                sublabel: root.warpDetail || (root.warpNetwork ? ("Network " + root.warpNetwork) : "Connection status")
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+
+                ValueLabel {
+                    text: root.warpStatus
+                    color: root.warpConnected ? "#3ddc97" : root.textSecondary
+                    strong: root.warpConnected
+                }
+            }
+
+            SettingRow {
+                label: "Daemon"
+                sublabel: "Boot: " + root.warpServiceEnabled + " · Tray: " + root.warpTrayState
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+
+                ValueLabel {
+                    text: root.warpServiceState
+                    color: root.warpServiceActive ? "#3ddc97" : root.textSecondary
+                    strong: root.warpServiceActive
+                }
+            }
+
+            SettingRow {
+                label: "Actions"
+                sublabel: root.warpInstalled ? "Refresh status or reconnect the daemon" : "Install Cloudflare WARP to enable these controls"
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                isLast: true
+
+                RowLayout {
+                    spacing: 8
+
+                    MiniButton {
+                        label: "Refresh"
+                        enabledState: !root.warpActionPending
+                        onClicked: root.loadWarp()
+                    }
+
+                    MiniButton {
+                        label: "Restart"
+                        primary: true
+                        enabledState: root.warpInstalled && !root.warpActionPending
+                        onClicked: root.restartWarp()
+                    }
+                }
             }
         }
 

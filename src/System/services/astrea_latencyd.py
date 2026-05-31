@@ -355,6 +355,16 @@ class LatencyDaemon:
     details: list[str] = field(default_factory=list)
     running: bool = True
 
+    def rollback_payload(self) -> dict[str, Any] | None:
+        if not self.active:
+            return None
+        return {
+            "previous_profile": self.previous_profile,
+            "previous_governors": self.previous_governors,
+            "previous_no_turbo": self.previous_no_turbo,
+            "privileged_snapshot": self.privileged_snapshot,
+        }
+
     def handle_payload(self, payload: dict[str, Any]) -> None:
         if payload.get("op") != "boost":
             self.record("ignored", payload, ["unknown op"])
@@ -395,8 +405,16 @@ class LatencyDaemon:
         if self.active and not self.boosts:
             self.rollback()
 
-    def rollback(self) -> None:
-        details: list[str] = []
+    def rollback(
+        self,
+        event: str = "rollback",
+        payload: dict[str, Any] | None = None,
+        leading_details: list[str] | None = None,
+    ) -> list[str]:
+        if not self.active:
+            return []
+
+        details: list[str] = list(leading_details or [])
         if self.previous_profile and self.previous_profile != "performance":
             details.append(set_power_profile(self.previous_profile))
         details.extend(privileged_restore(self.privileged_snapshot))
@@ -415,8 +433,11 @@ class LatencyDaemon:
         self.previous_no_turbo = None
         self.privileged_snapshot = None
         self.details = details
-        self.record("rollback", {"op": "rollback"}, details or ["nothing to rollback"])
+        self.record(
+            event, payload or {"op": "rollback"}, details or ["nothing to rollback"]
+        )
         self.write_state()
+        return details
 
     def next_timeout(self) -> float:
         self.prune_expired()
@@ -433,6 +454,7 @@ class LatencyDaemon:
             "current_profile": read_power_profile(),
             "cpu_governors": snapshot_cpu_governors(),
             "boosts": [boost.__dict__ for boost in self.boosts],
+            "rollback": self.rollback_payload(),
             "details": self.details[-12:],
             "socket": str(socket_path()),
         }
@@ -457,6 +479,48 @@ def parse_pid(value: Any) -> int | None:
     return pid if pid > 0 else None
 
 
+def recover_pending_rollback() -> list[str]:
+    try:
+        payload = json.loads(state_path().read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return []
+
+    if not isinstance(payload, dict) or not payload.get("active"):
+        return []
+
+    rollback = payload.get("rollback")
+    if not isinstance(rollback, dict):
+        return []
+
+    daemon = LatencyDaemon(active=True)
+    previous_profile = rollback.get("previous_profile")
+    daemon.previous_profile = (
+        previous_profile if isinstance(previous_profile, str) else None
+    )
+
+    previous_governors = rollback.get("previous_governors")
+    if isinstance(previous_governors, dict):
+        daemon.previous_governors = {
+            str(path): str(governor)
+            for path, governor in previous_governors.items()
+            if isinstance(path, str) and isinstance(governor, str)
+        }
+
+    previous_no_turbo = rollback.get("previous_no_turbo")
+    daemon.previous_no_turbo = previous_no_turbo if previous_no_turbo in {"0", "1"} else None
+
+    privileged_snapshot = rollback.get("privileged_snapshot")
+    daemon.privileged_snapshot = (
+        privileged_snapshot if isinstance(privileged_snapshot, dict) else None
+    )
+
+    return daemon.rollback(
+        event="recover-rollback",
+        payload={"op": "recover-rollback"},
+        leading_details=["recovered stale boost rollback"],
+    )
+
+
 def install_signal_handlers(daemon: LatencyDaemon) -> None:
     def stop(_signum: int, _frame: Any) -> None:
         daemon.running = False
@@ -474,6 +538,7 @@ def serve() -> int:
         pass
 
     daemon = LatencyDaemon()
+    recover_pending_rollback()
     install_signal_handlers(daemon)
 
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -505,7 +570,8 @@ def serve() -> int:
                             )
             daemon.prune_expired()
     finally:
-        daemon.rollback()
+        if daemon.active:
+            daemon.rollback()
         selector.close()
         server.close()
         try:

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import os
 import signal
 import sys
 from pathlib import Path
@@ -16,9 +17,11 @@ OBJECT_PATH = "/org/freedesktop/Notifications"
 IFACE = "org.freedesktop.Notifications"
 
 BASE_DIR = Path(__file__).resolve().parent
-STATE_PATH = BASE_DIR / "state.json"
-LOG_PATH = BASE_DIR / "notifications.log"
+STATE_DIR = Path(os.environ.get("XDG_STATE_HOME") or (Path.home() / ".local/state")).expanduser() / "Astrea/notifications"
+STATE_PATH = STATE_DIR / "state.json"
+LOG_PATH = STATE_DIR / "notifications.log"
 IDLE_TIMEOUT_MS = 30000
+MAX_HISTORY = 80
 
 
 def _variant_to_plain(value):
@@ -52,9 +55,11 @@ class NotificationDaemon(dbus.service.Object):
         super().__init__(self.bus_name, OBJECT_PATH)
         self.next_id = 1
         self.notifications = {}
+        self.history = {}
         self.timeouts = {}
         self.idle_source = None
         self.loop = None
+        self._load_state()
         self._ensure_state()
         self._schedule_idle_exit()
 
@@ -67,10 +72,53 @@ class NotificationDaemon(dbus.service.Object):
         with LOG_PATH.open("a", encoding="utf-8") as log_file:
             log_file.write(f"{GLib.DateTime.new_now_local().format('%F %T')} {message}\n")
 
+    def _normalize_saved_notification(self, item):
+        notification_id = int(item.get("id") or item.get("notificationId") or 0)
+        if notification_id <= 0:
+            return None
+
+        return {
+            "id": notification_id,
+            "appName": str(item.get("appName") or "Application"),
+            "appIcon": str(item.get("appIcon") or ""),
+            "summary": str(item.get("summary") or "Notification"),
+            "body": str(item.get("body") or ""),
+            "actions": [str(action) for action in item.get("actions", [])],
+            "hints": item.get("hints") if isinstance(item.get("hints"), dict) else {},
+            "urgency": int(item.get("urgency") or 1),
+            "createdAt": str(item.get("createdAt") or ""),
+        }
+
+    def _load_state(self):
+        try:
+            payload = json.loads(STATE_PATH.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+
+        saved_history = payload.get("history") or payload.get("notifications") or []
+        for item in saved_history[-MAX_HISTORY:]:
+            if not isinstance(item, dict):
+                continue
+            notification = self._normalize_saved_notification(item)
+            if not notification:
+                continue
+            self.history[notification["id"]] = notification
+            self.next_id = max(self.next_id, notification["id"] + 1)
+
+    def _remember_history(self, notification):
+        notification_id = int(notification["id"])
+        self.history.pop(notification_id, None)
+        self.history[notification_id] = dict(notification)
+
+        while len(self.history) > MAX_HISTORY:
+            oldest_id = next(iter(self.history))
+            self.history.pop(oldest_id, None)
+
     def _write_state(self):
         payload = {
             "server": APP_NAME,
             "notifications": list(self.notifications.values()),
+            "history": list(self.history.values()),
         }
         state = json.dumps(payload, ensure_ascii=False, indent=2)
         if STATE_PATH.exists():
@@ -149,7 +197,7 @@ class NotificationDaemon(dbus.service.Object):
         plain_hints = _variant_to_plain(hints)
         urgency = int(plain_hints.get("urgency", 1))
 
-        self.notifications[notification_id] = {
+        notification = {
             "id": notification_id,
             "appName": str(app_name) or "Application",
             "appIcon": str(app_icon),
@@ -160,6 +208,8 @@ class NotificationDaemon(dbus.service.Object):
             "urgency": urgency,
             "createdAt": GLib.DateTime.new_now_local().format("%H:%M"),
         }
+        self.notifications[notification_id] = notification
+        self._remember_history(notification)
 
         self._cancel_idle_exit()
         self._write_state()
@@ -178,6 +228,36 @@ class NotificationDaemon(dbus.service.Object):
             self._write_state()
             self.NotificationClosed(notification_id, 3)
             self._schedule_idle_exit()
+
+    @dbus.service.method(IFACE, in_signature="u", out_signature="")
+    def ClearHistoryItem(self, notification_id):
+        notification_id = int(notification_id)
+        old_source = self.timeouts.pop(notification_id, None)
+        if old_source:
+            GLib.source_remove(old_source)
+
+        if notification_id in self.notifications:
+            self.notifications.pop(notification_id, None)
+            self.NotificationClosed(notification_id, 3)
+
+        self.history.pop(notification_id, None)
+        self._write_state()
+        self._schedule_idle_exit()
+
+    @dbus.service.method(IFACE, in_signature="", out_signature="")
+    def ClearHistory(self):
+        for notification_id in list(self.timeouts):
+            old_source = self.timeouts.pop(notification_id, None)
+            if old_source:
+                GLib.source_remove(old_source)
+
+        for notification_id in list(self.notifications):
+            self.NotificationClosed(notification_id, 3)
+
+        self.notifications = {}
+        self.history = {}
+        self._write_state()
+        self._schedule_idle_exit()
 
     @dbus.service.method(IFACE, in_signature="", out_signature="ssss")
     def GetServerInformation(self):

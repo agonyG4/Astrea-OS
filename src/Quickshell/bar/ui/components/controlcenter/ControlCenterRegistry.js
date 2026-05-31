@@ -18,56 +18,56 @@ const widgetCatalog = [
         "kind": "wifi",
         "icon": "󰖩",
         "label": "Wi-Fi",
-        "summary": "Rede sem fio e conexao atual",
+        "summary": "Wireless network and current connection",
         "accent": "#34b7f1"
     },
     {
         "kind": "bluetooth",
         "icon": "󰂯",
         "label": "Bluetooth",
-        "summary": "Dispositivos e energia do Bluetooth",
+        "summary": "Bluetooth power and devices",
         "accent": "#4aa3ff"
     },
     {
         "kind": "airdrop",
         "icon": "󰀝",
         "label": "AirDrop",
-        "summary": "Compartilhamento rapido",
+        "summary": "Quick sharing",
         "accent": "#28c7fa"
     },
     {
         "kind": "focus",
         "icon": "󰘶",
-        "label": "Foco",
-        "summary": "Modo de foco",
+        "label": "Focus",
+        "summary": "Focus mode",
         "accent": "#9b8cff"
     },
     {
         "kind": "mirror",
         "icon": "󰍺",
-        "label": "Espelhar",
-        "summary": "Espelhamento de tela",
+        "label": "Mirror",
+        "summary": "Screen mirroring",
         "accent": "#6bd6b7"
     },
     {
         "kind": "brightness",
         "icon": "󰃠",
-        "label": "Tela",
-        "summary": "Slider de brilho do monitor",
+        "label": "Display",
+        "summary": "Monitor brightness slider",
         "accent": "#ffd166"
     },
     {
         "kind": "volume",
         "icon": "󰕾",
-        "label": "Som",
-        "summary": "Volume e mudo do audio principal",
+        "label": "Sound",
+        "summary": "Main volume and mute",
         "accent": "#8bd450"
     },
     {
         "kind": "media",
         "icon": "󰝚",
-        "label": "Tocando",
-        "summary": "Musica atual e controles de midia",
+        "label": "Now Playing",
+        "summary": "Current media and playback controls",
         "accent": "#ff7ab6"
     }
 ]
@@ -92,31 +92,31 @@ const definitions = {
         "sizes": { "small": 74, "medium": 92, "large": 120 }
     },
     "focus": {
-        "label": "Foco",
+        "label": "Focus",
         "defaultSize": "small",
         "span": 1,
         "sizes": { "small": 74, "medium": 92, "large": 120 }
     },
     "mirror": {
-        "label": "Espelhar",
+        "label": "Mirror",
         "defaultSize": "small",
         "span": 1,
         "sizes": { "small": 74, "medium": 92, "large": 120 }
     },
     "brightness": {
-        "label": "Tela",
+        "label": "Display",
         "defaultSize": "small",
         "span": 4,
         "sizes": { "small": 68, "medium": 92, "large": 120 }
     },
     "volume": {
-        "label": "Som",
+        "label": "Sound",
         "defaultSize": "small",
         "span": 4,
         "sizes": { "small": 68, "medium": 92, "large": 120 }
     },
     "media": {
-        "label": "Reproduzindo agora",
+        "label": "Now Playing",
         "defaultSize": "medium",
         "span": 4,
         "sizes": { "small": 68, "medium": 84, "large": 128 }

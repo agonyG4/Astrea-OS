@@ -472,8 +472,8 @@ ApplicationWindow {
                             bottom: parent.bottom; bottomMargin: 14
                         }
                         width: Math.min(320, parent.width - 28)
-                        readonly property bool fileOpVisible: AppState.fileOperationRunning
                         readonly property bool archiveVisible: AppState.archiveExtractionRunning
+                        readonly property bool fileOpVisible: AppState.fileOperationRunning && !archiveVisible
                         visible: fileOpVisible || archiveVisible
                         opacity: visible ? 1 : 0
                         z: 20

@@ -5,6 +5,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -16,9 +17,11 @@ REFRESH_LOCK = STATE_DIR / "storage-refresh.lock"
 REFRESH_STATUS = STATE_DIR / "storage-refresh.json"
 REFRESH_LOG = STATE_DIR / "storage-refresh.log"
 AUTO_REFRESH_AFTER_SECONDS = int(os.environ.get("ASTREA_STORAGE_REFRESH_AFTER_SECONDS", "900"))
+REFRESH_SCAN_TIMEOUT = int(os.environ.get("ASTREA_STORAGE_REFRESH_TIMEOUT", "3600"))
 REFRESH_POLL_SECONDS = 5
 COMPSIZE_CACHE = STATE_DIR / "storage-compsize.json"
 COMPSIZE_CACHE_AFTER_SECONDS = int(os.environ.get("ASTREA_STORAGE_COMPSIZE_AFTER_SECONDS", "3600"))
+SENSE_JSON_TIMEOUT = int(os.environ.get("ASTREA_STORAGE_JSON_TIMEOUT", "20"))
 COMPSIZE_PATHS = [Path("/"), Path("/home")]
 SENSE_SCRIPT_CANDIDATES = [
     Path(os.environ["ASTREA_STORAGESENSE"])
@@ -131,9 +134,22 @@ def read_json(path: Path, default: dict) -> dict:
 
 def write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, path)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(path.parent),
+        text=True,
+    )
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def parse_compsize_size(value: str) -> int:
@@ -442,14 +458,30 @@ def run_refresh_background(sense_script: Path, reason: str) -> int:
         command_base = [sys.executable, str(sense_script)]
         env = os.environ.copy()
         env["PYTHONPATH"] = str(sense_script.parent) + os.pathsep + env.get("PYTHONPATH", "")
-        result = subprocess.run(
-            command_base + ["scan", "--quiet"],
-            cwd=str(sense_script.parent),
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                command_base + ["scan", "--quiet"],
+                cwd=str(sense_script.parent),
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=REFRESH_SCAN_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as exc:
+            exit_code = 124
+            write_json(REFRESH_STATUS, {
+                "pid": os.getpid(),
+                "running": False,
+                "reason": reason,
+                "started_at": started,
+                "finished_at": time.time(),
+                "updated_at": time.time(),
+                "ok": False,
+                "error": f"refresh timed out after {REFRESH_SCAN_TIMEOUT}s",
+                "log": str(REFRESH_LOG),
+            })
+            return exit_code
         if result.returncode != 0:
             exit_code = result.returncode
             write_json(REFRESH_STATUS, {
@@ -698,7 +730,23 @@ def print_sense_json(sense_script: Path) -> int:
     command = [sys.executable, str(sense_script), "json"]
     env = os.environ.copy()
     env["PYTHONPATH"] = str(sense_script.parent) + os.pathsep + env.get("PYTHONPATH", "")
-    result = subprocess.run(command, cwd=str(sense_script.parent), env=env, capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            command,
+            cwd=str(sense_script.parent),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=SENSE_JSON_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as err:
+        payload = {
+            "error": f"StorageSense json timed out after {SENSE_JSON_TIMEOUT}s",
+            "data": [],
+            **cache_metadata(),
+        }
+        print(json.dumps(enrich_refresh_metadata(payload, sense_script), ensure_ascii=False))
+        return 1
     if result.returncode != 0:
         payload = {
             "error": (result.stderr or result.stdout or "StorageSense json failed").strip(),

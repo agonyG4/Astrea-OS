@@ -49,6 +49,11 @@ FloatingWindow {
             Qt.quit()
     }
 
+    onSettingsOpenChanged: {
+        if (settingsOpen)
+            cityInput.text = weather.city || ""
+    }
+
     State.WeatherState {
         id: weather
     }
@@ -208,7 +213,7 @@ FloatingWindow {
 
             Rectangle {
                 width: parent.width
-                height: 210
+                height: 342
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 0
@@ -266,6 +271,100 @@ FloatingWindow {
                         lineColor: UI.Theme.cardBorder
                     }
 
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        UI.TextLabel {
+                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.location"]) || "Location")
+                            font.pixelSize: UI.Theme.fontSizeTitle
+                            font.weight: 500
+                            textColor: UI.Theme.textPrimary
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 10
+
+                            Rectangle {
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 38
+                                radius: 10
+                                color: Qt.rgba(1, 1, 1, 0.045)
+                                border.width: 1
+                                border.color: cityInput.activeFocus ? UI.Theme.accent : UI.Theme.cardBorder
+
+                                UI.TextLabel {
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 12
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    visible: cityInput.text.length === 0
+                                    text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.city_country"]) || "Automatic location")
+                                    font.pixelSize: UI.Theme.fontSizeLarge
+                                    textColor: UI.Theme.textTertiary
+                                }
+
+                                TextInput {
+                                    id: cityInput
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 12
+                                    anchors.rightMargin: 12
+                                    verticalAlignment: TextInput.AlignVCenter
+                                    text: weather.city
+                                    color: UI.Theme.textPrimary
+                                    selectionColor: UI.Theme.accent
+                                    selectedTextColor: "#ffffff"
+                                    font.pixelSize: UI.Theme.fontSizeLarge
+                                    enabled: !weather.settingsBusy
+                                    Keys.onReturnPressed: weather.setCity(text)
+                                    Keys.onEnterPressed: weather.setCity(text)
+                                }
+                            }
+
+                            Rectangle {
+                                Layout.preferredWidth: 74
+                                Layout.preferredHeight: 38
+                                radius: 10
+                                color: weather.settingsBusy
+                                    ? Qt.rgba(1, 1, 1, 0.06)
+                                    : saveCityArea.containsMouse ? Qt.lighter(UI.Theme.accent, 1.12) : UI.Theme.accent
+                                opacity: weather.settingsBusy ? 0.65 : 1
+
+                                UI.TextLabel {
+                                    anchors.centerIn: parent
+                                    text: weather.settingsBusy
+                                        ? ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.saving"]) || "Saving")
+                                        : ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.save"]) || "Save")
+                                    font.pixelSize: UI.Theme.fontSizeLarge
+                                    font.weight: 600
+                                    textColor: "#ffffff"
+                                }
+
+                                MouseArea {
+                                    id: saveCityArea
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    enabled: !weather.settingsBusy
+                                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: weather.setCity(cityInput.text)
+                                }
+                            }
+                        }
+
+                        UI.TextLabel {
+                            Layout.fillWidth: true
+                            visible: weather.settingsError.length > 0
+                            text: weather.settingsError
+                            font.pixelSize: 12
+                            textColor: UI.Theme.errorColor
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+
+                    UI.Divider {
+                        lineColor: UI.Theme.cardBorder
+                    }
+
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: 12
@@ -282,7 +381,9 @@ FloatingWindow {
                             }
 
                             UI.TextLabel {
-                                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.inmet_alerts"]) || "INMET alerts")
+                                text: weather.countryCode === "BR"
+                                    ? ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.inmet_alerts"]) || "INMET alerts")
+                                    : ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.weather.ui.weather_app_view.text.weather_alerts"]) || "Weather alerts")
                                 font.pixelSize: UI.Theme.fontSizeLarge
                                 textColor: UI.Theme.textTertiary
                             }

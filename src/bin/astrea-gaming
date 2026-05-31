@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+import shlex
+import shutil
+import sys
+from pathlib import Path
+
+
+DEFAULT = {
+    "config_version": 2,
+    "preset": "recommended",
+    "gamemode": True,
+    "mangohud": False,
+    "enable_nvapi": False,
+    "hide_nvidia_gpu": False,
+    "sync_mode": "default",
+    "enable_esync": True,
+    "enable_fsync": True,
+    "dxvk_async": False,
+    "dxvk_hdr": False,
+    "vkd3d_dxr": False,
+    "use_wined3d": False,
+    "fsr": False,
+    "fsr_strength": 2,
+    "custom_env": "",
+    "custom_prefix": "",
+}
+
+
+def config_path() -> Path:
+    config_home = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")).expanduser()
+    return config_home / "AstreaOS/gaming/proton.json"
+
+
+def load_config() -> dict:
+    try:
+        data = json.loads(config_path().read_text(encoding="utf-8"))
+    except Exception:
+        data = {}
+    cfg = DEFAULT.copy()
+    cfg.update(data or {})
+    return cfg
+
+
+def main() -> int:
+    command = sys.argv[1:]
+    if not command:
+        print("Usage: astrea-gaming %command%", file=sys.stderr)
+        return 2
+
+    cfg = load_config()
+    env = os.environ.copy()
+    prefix = []
+
+    if cfg.get("gamemode") and shutil.which("gamemoderun"):
+        prefix.append("gamemoderun")
+    if cfg.get("mangohud") and shutil.which("mangohud"):
+        prefix.append("mangohud")
+    if cfg.get("enable_nvapi"):
+        env["PROTON_FORCE_NVAPI"] = "1"
+        env["PROTON_HIDE_NVIDIA_GPU"] = "0"
+    elif cfg.get("hide_nvidia_gpu"):
+        env["PROTON_HIDE_NVIDIA_GPU"] = "1"
+    if cfg.get("sync_mode") in ("disable-esync", "disable-both"):
+        env["PROTON_NO_ESYNC"] = "1"
+    if cfg.get("sync_mode") in ("disable-fsync", "disable-both"):
+        env["PROTON_NO_FSYNC"] = "1"
+    if cfg.get("use_wined3d"):
+        env["PROTON_USE_WINED3D"] = "1"
+    if cfg.get("dxvk_async"):
+        env["DXVK_ASYNC"] = "1"
+    if cfg.get("dxvk_hdr"):
+        env["DXVK_HDR"] = "1"
+    if cfg.get("vkd3d_dxr"):
+        env["VKD3D_CONFIG"] = "dxr"
+    if cfg.get("fsr"):
+        env["WINE_FULLSCREEN_FSR"] = "1"
+        env["WINE_FULLSCREEN_FSR_STRENGTH"] = str(cfg.get("fsr_strength", 2))
+
+    for item in shlex.split(str(cfg.get("custom_env") or "")):
+        if "=" in item:
+            key, value = item.split("=", 1)
+            if key:
+                env[key] = value
+    prefix += shlex.split(str(cfg.get("custom_prefix") or ""))
+
+    final = prefix + command
+    os.execvpe(final[0], final, env)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

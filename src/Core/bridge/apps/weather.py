@@ -12,14 +12,27 @@ import time
 import unicodedata
 import tempfile
 import fcntl
+import shutil
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # ── Config ────────────────────────────────────────────────────────────────────
-CACHE_DIR  = os.path.join(os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")), "weather")
+STATE_DIR = os.environ.get(
+    "ASTREA_WEATHER_STATE_DIR",
+    os.path.expanduser("~/.local/state/Astrea/weather"),
+)
+DEFAULT_CACHE_DIR = os.path.join(
+    os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")),
+    "weather",
+)
+CACHE_DIR = os.environ.get("ASTREA_WEATHER_CACHE_DIR", DEFAULT_CACHE_DIR)
+_CACHE_READY = False
 CACHE_TTL  = 30 * 60
 STALE_CACHE_TTL = 24 * 60 * 60
 COORDS_CACHE_TTL = 30 * 24 * 60 * 60
+IP_LOCATION_CACHE_TTL = 6 * 60 * 60
+SYSTEM_LOCATION_CACHE_TTL = 15 * 60
+REVERSE_GEOCODE_CACHE_TTL = 30 * 24 * 60 * 60
 HISTORY_CACHE_TTL = 24 * 60 * 60
 HISTORY_CACHE_RETENTION = 3 * 24 * 60 * 60
 FORECAST_CACHE_RETENTION = 2 * 24 * 60 * 60
@@ -33,11 +46,15 @@ HTTP_TIMEOUT = 10
 USER_AGENT = "AstreaWeather/1.0 (+https://open-meteo.com/)"
 NOTIFY_STATE_PATH = os.environ.get(
     "ASTREA_WEATHER_NOTIFY_STATE",
-    os.path.expanduser("~/.local/state/Astrea/weather/alerts-seen.json"),
+    os.path.join(STATE_DIR, "alerts-seen.json"),
 )
 SETTINGS_PATH = os.environ.get(
     "ASTREA_WEATHER_SETTINGS_STATE",
-    os.path.expanduser("~/.local/state/Astrea/weather/settings.json"),
+    os.path.join(STATE_DIR, "settings.json"),
+)
+SYSTEM_SETTINGS_PATH = os.environ.get(
+    "ASTREA_SYSTEM_SETTINGS_PATH",
+    os.path.expanduser("~/.config/AstreaOS/system/settings.json"),
 )
 ASTREA_NOTIFY_PATH = os.environ.get(
     "ASTREA_NOTIFY",
@@ -72,6 +89,56 @@ STATE_TO_UF = {
     "São Paulo": "SP",
     "Sergipe": "SE",
     "Tocantins": "TO",
+}
+COUNTRY_ALIASES = {
+    "br": "BR",
+    "bra": "BR",
+    "brasil": "BR",
+    "brazil": "BR",
+    "eua": "US",
+    "usa": "US",
+    "us": "US",
+    "united states": "US",
+    "united states of america": "US",
+    "estados unidos": "US",
+    "fr": "FR",
+    "fra": "FR",
+    "france": "FR",
+    "franca": "FR",
+    "it": "IT",
+    "italy": "IT",
+    "italia": "IT",
+    "pt": "PT",
+    "portugal": "PT",
+    "es": "ES",
+    "spain": "ES",
+    "espanha": "ES",
+    "de": "DE",
+    "germany": "DE",
+    "alemanha": "DE",
+    "gb": "GB",
+    "uk": "GB",
+    "united kingdom": "GB",
+    "reino unido": "GB",
+    "jp": "JP",
+    "japan": "JP",
+    "japao": "JP",
+    "ca": "CA",
+    "canada": "CA",
+    "ar": "AR",
+    "argentina": "AR",
+    "cl": "CL",
+    "chile": "CL",
+    "uy": "UY",
+    "uruguay": "UY",
+}
+COUNTRY_TIME_FORMAT_DEFAULTS = {
+    "US": "12h",
+    "CA": "12h",
+    "PH": "12h",
+    "AU": "12h",
+    "NZ": "12h",
+    "IN": "12h",
 }
 
 
@@ -109,13 +176,43 @@ def cache_slug(city: str) -> str:
     return slug or "unknown"
 
 
+def cache_dir_candidates() -> list[str]:
+    candidates = [
+        CACHE_DIR,
+        os.path.join(STATE_DIR, "cache"),
+        os.path.join(tempfile.gettempdir(), f"astrea-weather-{os.getuid()}"),
+    ]
+    unique: list[str] = []
+    for path in candidates:
+        if path and path not in unique:
+            unique.append(path)
+    return unique
+
+
 def ensure_cache_dir() -> None:
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    prune_weather_cache()
+    global CACHE_DIR, _CACHE_READY
+    if _CACHE_READY:
+        return
+
+    last_error: OSError | None = None
+    for candidate in cache_dir_candidates():
+        try:
+            os.makedirs(candidate, exist_ok=True)
+            probe = os.path.join(candidate, f".write-test-{os.getpid()}")
+            with open(probe, "w", encoding="utf-8") as f:
+                f.write("")
+            os.remove(probe)
+            CACHE_DIR = candidate
+            _CACHE_READY = True
+            prune_weather_cache()
+            return
+        except OSError as exc:
+            last_error = exc
+
+    raise WeatherError(f"cache indisponivel: {last_error}") from last_error
 
 
 def prune_weather_cache() -> None:
-    os.makedirs(CACHE_DIR, exist_ok=True)
     marker = os.path.join(CACHE_DIR, ".last-prune")
     now = datetime.datetime.now().timestamp()
     marker_age = file_age(marker)
@@ -166,6 +263,22 @@ def normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", without_accents).strip().lower()
 
 
+def country_code_hint(value: str) -> str:
+    key = normalize_text(value)
+    if len(key) == 2 and key.isalpha():
+        return key.upper()
+    return COUNTRY_ALIASES.get(key, "")
+
+
+def parse_location_query(city: str) -> tuple[str, str]:
+    parts = [part.strip() for part in str(city or "").split(",") if part.strip()]
+    if not parts:
+        return DEFAULT_CITY, ""
+    country = country_code_hint(parts[-1]) if len(parts) > 1 else ""
+    city_name = parts[0] if country else str(city or "").strip()
+    return city_name or DEFAULT_CITY, country
+
+
 def file_age(path: str) -> float | None:
     if not os.path.exists(path):
         return None
@@ -194,6 +307,51 @@ def write_json_atomic(path: str, payload: dict) -> None:
     finally:
         if os.path.exists(tmp):
             os.remove(tmp)
+
+
+def normalize_country_code(value: str) -> str:
+    code = str(value or "").strip().upper().replace("-", "_")
+    return code if len(code) == 2 and code.isalpha() else "BR"
+
+
+def load_region_preferences() -> dict:
+    settings = load_json(SYSTEM_SETTINGS_PATH)
+    region = settings.get("region", {}) if isinstance(settings, dict) else {}
+    if not isinstance(region, dict):
+        region = {}
+    time_format = str(region.get("time_format") or "system").strip().lower()
+    if time_format not in ("system", "24h", "12h"):
+        time_format = "system"
+    return {
+        "country_code": normalize_country_code(region.get("country_code", "BR")),
+        "time_format": time_format,
+        "automatic_location": bool(region.get("automatic_location", True)),
+    }
+
+
+def automatic_location_enabled() -> bool:
+    return bool(load_region_preferences().get("automatic_location", True))
+
+
+def effective_time_format(region: dict | None = None) -> str:
+    prefs = region or load_region_preferences()
+    selected = str(prefs.get("time_format") or "system").lower()
+    if selected in ("12h", "24h"):
+        return selected
+    country_code = normalize_country_code(prefs.get("country_code", "BR"))
+    return COUNTRY_TIME_FORMAT_DEFAULTS.get(country_code, "24h")
+
+
+def format_local_time(value: str, region: dict | None = None) -> str:
+    try:
+        dt = datetime.datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return ""
+    if effective_time_format(region) == "12h":
+        hour = dt.hour % 12 or 12
+        suffix = "AM" if dt.hour < 12 else "PM"
+        return f"{hour}:{dt.minute:02d} {suffix}"
+    return dt.strftime("%H:%M")
 
 
 def load_weather_cache(city: str, days: int, max_age: int) -> dict | None:
@@ -241,17 +399,18 @@ def timestamp_now() -> str:
 
 
 def pick_geocode_result(results: list[dict], city: str) -> dict:
-    city_key = normalize_text(city)
+    city_name, country_hint = parse_location_query(city)
+    city_key = normalize_text(city_name)
     known_states = {normalize_text(k) for k in STATE_TO_UF}
 
-    def score(item: dict) -> tuple[int, int]:
+    def score(item: dict) -> tuple[int, int, int, int]:
         name = normalize_text(item.get("name", ""))
         country = item.get("country_code", "")
         admin1 = normalize_text(item.get("admin1", ""))
         exact_city = 0 if name == city_key else 1
-        brazil = 0 if country == "BR" else 1
+        country_match = 0 if country_hint and country == country_hint else 1 if country_hint else 0
         known_state = 0 if admin1 in known_states else 1
-        return (exact_city + brazil + known_state, -int(item.get("population") or 0))
+        return (country_match, exact_city, known_state, -int(item.get("population") or 0))
 
     return sorted(results, key=score)[0]
 
@@ -263,9 +422,13 @@ def get_coords(city: str) -> dict:
     if cached and "country_code" in cached:
         return cached
 
+    city_name, country_hint = parse_location_query(city)
+    params = {"name": city_name, "count": 10, "language": "pt", "format": "json"}
+    if country_hint:
+        params["countryCode"] = country_hint
     data = cached_get_json(
         "https://geocoding-api.open-meteo.com/v1/search",
-        {"name": city, "count": 5, "language": "pt", "format": "json"}
+        params
     )
     if "results" not in data or not data["results"]:
         raise WeatherError(f"Cidade nao encontrada: {city}")
@@ -281,6 +444,251 @@ def get_coords(city: str) -> dict:
     }
     write_json_atomic(path, result)
     return result
+
+
+def reverse_geocode_location(latitude, longitude, fallback_name: str = "") -> dict:
+    key = f"{round(float(latitude), 3)}_{round(float(longitude), 3)}"
+    path = aux_cache_path("reverse", key)
+    age = file_age(path)
+    cached = load_json(path) if age is not None and age < REVERSE_GEOCODE_CACHE_TTL else None
+    if valid_location(cached):
+        return cached
+
+    try:
+        payload = cached_get_json(
+            "https://nominatim.openstreetmap.org/reverse",
+            {
+                "format": "jsonv2",
+                "lat": latitude,
+                "lon": longitude,
+                "zoom": 10,
+                "addressdetails": 1,
+                "accept-language": "pt-BR,pt,en",
+            },
+            timeout=8,
+        )
+        address = payload.get("address", {}) if isinstance(payload, dict) else {}
+        city = (
+            address.get("city")
+            or address.get("town")
+            or address.get("village")
+            or address.get("municipality")
+            or fallback_name
+            or "Current location"
+        )
+        result = {
+            "name": str(city).strip(),
+            "admin1": str(address.get("state") or "").strip(),
+            "country": str(address.get("country") or "").strip(),
+            "country_code": str(address.get("country_code") or "").upper(),
+            "latitude": latitude,
+            "longitude": longitude,
+            "timezone": "auto",
+            "location_source": "system",
+        }
+        if not result["country_code"]:
+            result["country_code"] = load_region_preferences()["country_code"]
+        write_json_atomic(path, result)
+        return result
+    except (requests.RequestException, WeatherError, TypeError, ValueError):
+        prefs = load_region_preferences()
+        return {
+            "name": fallback_name or "Current location",
+            "admin1": "",
+            "country": "",
+            "country_code": prefs["country_code"],
+            "latitude": latitude,
+            "longitude": longitude,
+            "timezone": "auto",
+            "location_source": "system",
+        }
+
+
+def gdbus_call(args: list[str], timeout: float = 5.0) -> str:
+    if not shutil.which("gdbus"):
+        raise WeatherError("GeoClue unavailable: gdbus not found")
+    try:
+        result = subprocess.run(
+            ["gdbus", "call", "--system", "--dest", "org.freedesktop.GeoClue2", *args],
+            capture_output=True,
+            check=False,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise WeatherError(f"GeoClue unavailable: {exc}") from exc
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "GeoClue call failed").strip()
+        raise WeatherError(detail)
+    return result.stdout.strip()
+
+
+def extract_object_path(value: str) -> str:
+    match = re.search(r"/org/freedesktop/GeoClue2/[A-Za-z0-9_/\-]+", value or "")
+    if not match:
+        raise WeatherError("GeoClue returned no object path")
+    return match.group(0)
+
+
+def extract_dbus_number(value: str) -> float:
+    match = re.search(r"[-+]?\d+(?:\.\d+)?", value or "")
+    if not match:
+        raise WeatherError("GeoClue returned no numeric coordinate")
+    return float(match.group(0))
+
+
+def extract_dbus_string(value: str) -> str:
+    match = re.search(r"'([^']*)'", value or "")
+    return match.group(1) if match else ""
+
+
+def get_system_location() -> dict:
+    path = aux_cache_path("system_location", "current")
+    age = file_age(path)
+    cached = load_json(path) if age is not None and age < SYSTEM_LOCATION_CACHE_TTL else None
+    if valid_location(cached):
+        return cached
+
+    client_out = gdbus_call([
+        "--object-path", "/org/freedesktop/GeoClue2/Manager",
+        "--method", "org.freedesktop.GeoClue2.Manager.CreateClient",
+    ])
+    client_path = extract_object_path(client_out)
+
+    try:
+        gdbus_call([
+            "--object-path", client_path,
+            "--method", "org.freedesktop.DBus.Properties.Set",
+            "org.freedesktop.GeoClue2.Client",
+            "DesktopId",
+            "<'astrea-weather'>",
+        ])
+        gdbus_call([
+            "--object-path", client_path,
+            "--method", "org.freedesktop.DBus.Properties.Set",
+            "org.freedesktop.GeoClue2.Client",
+            "RequestedAccuracyLevel",
+            "<uint32 4>",
+        ])
+    except WeatherError:
+        pass
+
+    gdbus_call([
+        "--object-path", client_path,
+        "--method", "org.freedesktop.GeoClue2.Client.Start",
+    ], timeout=8)
+    location_out = gdbus_call([
+        "--object-path", client_path,
+        "--method", "org.freedesktop.DBus.Properties.Get",
+        "org.freedesktop.GeoClue2.Client",
+        "Location",
+    ], timeout=8)
+    location_path = extract_object_path(location_out)
+    lat = extract_dbus_number(gdbus_call([
+        "--object-path", location_path,
+        "--method", "org.freedesktop.DBus.Properties.Get",
+        "org.freedesktop.GeoClue2.Location",
+        "Latitude",
+    ]))
+    lon = extract_dbus_number(gdbus_call([
+        "--object-path", location_path,
+        "--method", "org.freedesktop.DBus.Properties.Get",
+        "org.freedesktop.GeoClue2.Location",
+        "Longitude",
+    ]))
+    description = extract_dbus_string(gdbus_call([
+        "--object-path", location_path,
+        "--method", "org.freedesktop.DBus.Properties.Get",
+        "org.freedesktop.GeoClue2.Location",
+        "Description",
+    ]))
+    result = reverse_geocode_location(lat, lon, description)
+    write_json_atomic(path, result)
+    return result
+
+
+def valid_location(loc: dict | None) -> bool:
+    if not isinstance(loc, dict):
+        return False
+    return (
+        bool(str(loc.get("name") or "").strip())
+        and loc.get("latitude") is not None
+        and loc.get("longitude") is not None
+    )
+
+
+def ipapi_location(payload: dict) -> dict:
+    if payload.get("error"):
+        raise WeatherError(str(payload.get("reason") or "IP geolocation failed"))
+    return {
+        "name": str(payload.get("city") or "").strip(),
+        "admin1": str(payload.get("region") or "").strip(),
+        "country": str(payload.get("country_name") or "").strip(),
+        "country_code": str(payload.get("country_code") or "").upper(),
+        "latitude": payload.get("latitude"),
+        "longitude": payload.get("longitude"),
+        "timezone": payload.get("timezone") or "auto",
+        "location_source": "ip",
+    }
+
+
+def ipwhois_location(payload: dict) -> dict:
+    if payload.get("success") is False:
+        raise WeatherError(str(payload.get("message") or "IP geolocation failed"))
+    timezone = payload.get("timezone")
+    timezone_id = timezone.get("id") if isinstance(timezone, dict) else timezone
+    return {
+        "name": str(payload.get("city") or "").strip(),
+        "admin1": str(payload.get("region") or "").strip(),
+        "country": str(payload.get("country") or "").strip(),
+        "country_code": str(payload.get("country_code") or "").upper(),
+        "latitude": payload.get("latitude"),
+        "longitude": payload.get("longitude"),
+        "timezone": timezone_id or "auto",
+        "location_source": "ip",
+    }
+
+
+def get_ip_location() -> dict:
+    path = aux_cache_path("ip_location", "current")
+    age = file_age(path)
+    cached = load_json(path) if age is not None and age < IP_LOCATION_CACHE_TTL else None
+    if valid_location(cached):
+        return cached
+
+    providers = (
+        ("https://ipapi.co/json/", ipapi_location),
+        ("https://ipwho.is/", ipwhois_location),
+    )
+    errors: list[str] = []
+    for url, parser in providers:
+        try:
+            loc = parser(cached_get_json(url, timeout=6))
+            if not valid_location(loc):
+                raise WeatherError("IP geolocation returned an incomplete location")
+            write_json_atomic(path, loc)
+            return loc
+        except (requests.RequestException, WeatherError, TypeError, ValueError) as exc:
+            errors.append(str(exc))
+
+    raise WeatherError("; ".join(errors) or "nao foi possivel detectar localizacao por IP")
+
+
+def resolve_location(city: str) -> dict:
+    if str(city or "").strip():
+        return get_coords(city)
+    if not automatic_location_enabled():
+        raise WeatherError("Localizacao automatica desativada. Escolha uma cidade nas configuracoes do Weather.")
+    try:
+        return get_system_location()
+    except (requests.RequestException, WeatherError, TypeError, ValueError):
+        pass
+    try:
+        return get_ip_location()
+    except (requests.RequestException, WeatherError, TypeError, ValueError):
+        fallback = get_coords(DEFAULT_CITY)
+        fallback["location_source"] = "default"
+        return fallback
 
 
 def fetch_inmet_alerts(city: str, state: str = "") -> list[dict]:
@@ -328,6 +736,21 @@ def fetch_inmet_alerts(city: str, state: str = "") -> list[dict]:
             })
 
     return matches
+
+
+def alert_sources_for_location(loc: dict) -> list[dict]:
+    country_code = str(loc.get("country_code") or "").upper()
+    if country_code == "BR":
+        return [{"id": "inmet", "name": "INMET", "country_code": "BR"}]
+    return []
+
+
+def fetch_weather_alerts(loc: dict) -> list[dict]:
+    alerts: list[dict] = []
+    for source in alert_sources_for_location(loc):
+        if source["id"] == "inmet":
+            alerts.extend(fetch_inmet_alerts(loc.get("name", ""), loc.get("admin1", "")))
+    return alerts
 
 
 def alert_stable_id(alert: dict) -> str:
@@ -575,7 +998,17 @@ def fetch_weather(city: str, days: int = 10, force: bool = False) -> dict:
 
 
 def fetch_weather_uncached(city: str, days: int, path: str) -> dict:
-    loc = get_coords(city)
+    region = load_region_preferences()
+    try:
+        loc = resolve_location(city)
+    except (requests.RequestException, WeatherError):
+        stale = load_weather_cache(city, days, STALE_CACHE_TTL)
+        if stale:
+            stale = dict(stale)
+            stale["stale"] = True
+            stale["stale_reason"] = "location_unavailable"
+            return stale
+        raise
     try:
         data = cached_get_json(
             "https://api.open-meteo.com/v1/forecast",
@@ -657,10 +1090,7 @@ def fetch_weather_uncached(city: str, days: int, path: str) -> dict:
             pass
 
     def short_time(value: str) -> str:
-        try:
-            return datetime.datetime.fromisoformat(value).strftime("%H:%M")
-        except (TypeError, ValueError):
-            return ""
+        return format_local_time(value, region)
 
     future_hourly = []
     for i, t in enumerate(data["hourly"]["time"]):
@@ -669,7 +1099,7 @@ def fetch_weather_uncached(city: str, days: int, path: str) -> dict:
             future_hourly.append({
                 "iso_time": t,
                 "date": hour_dt.date().isoformat(),
-                "time": hour_dt.strftime("%H:%M"),
+                "time": short_time(t),
                 "temp": safe_round(data["hourly"]["temperature_2m"][i]),
                 "feels_like": safe_round(data["hourly"]["apparent_temperature"][i]),
                 "weather_code": safe_number(data["hourly"]["weather_code"][i]),
@@ -714,6 +1144,9 @@ def fetch_weather_uncached(city: str, days: int, path: str) -> dict:
         "country":   loc.get("country", ""),
         "country_code": loc.get("country_code", ""),
         "timezone":  loc["timezone"],
+        "location_source": loc.get("location_source", "city"),
+        "region_country_code": region["country_code"],
+        "time_format": effective_time_format(region),
         "current_time": current.get("time", ""),
         "temp":      safe_round(current["temperature_2m"]),
         "condition": weather_code_to_text(safe_number(current["weather_code"])),
@@ -733,7 +1166,8 @@ def fetch_weather_uncached(city: str, days: int, path: str) -> dict:
         "uv":        weekly[0]["uv"],
         "hourly":    future_hourly[:24],
         "weekly":    weekly,
-        "alerts":    fetch_inmet_alerts(loc["name"], loc["admin1"])
+        "alerts":    fetch_weather_alerts(loc),
+        "alert_sources": alert_sources_for_location(loc),
     }
 
     write_json_atomic(path, result)
@@ -893,8 +1327,8 @@ def main():
     city_kwargs = dict(
         metavar="CIDADE",
         nargs="?",
-        default=DEFAULT_CITY,
-        help=f"Nome da cidade (padrão: {DEFAULT_CITY})"
+        default="",
+        help="Nome da cidade (omitir = localização automática por IP)"
     )
 
     sub = parser.add_subparsers(dest="cmd", required=True)

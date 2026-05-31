@@ -178,6 +178,13 @@ ScrollPage {
 
     Component.onCompleted: reloadApps()
 
+    Connections {
+        target: AstreaI18n.I18n
+        function onLanguageChanged() {
+            root.reloadApps()
+        }
+    }
+
     Process {
         id: appsProc
         command: ["python3", root.scriptPath]

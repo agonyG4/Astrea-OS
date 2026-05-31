@@ -1,22 +1,24 @@
 import QtQuick
 import "../../../.."
+import "../../../../../AstreaI18n" as AstreaI18n
 
 Rectangle {
     id: module
 
     property var control: null
 
-    readonly property string title: control ? control.musicTitle : "Nada tocando"
-    readonly property string artist: control ? control.musicArtist : "Spotify"
+    readonly property string title: control ? control.musicTitle : AstreaI18n.I18n.tr("quickshell.bar.ui.components.controlcenter.media.nothing_playing", "Nothing playing")
+    readonly property string artist: control ? control.musicArtist : AstreaI18n.I18n.tr("quickshell.bar.ui.components.controlcenter.media.no_app", "Media")
     readonly property string artSource: control ? control.musicArt : ""
     readonly property bool playing: control ? control.musicPlaying : false
     readonly property bool active: control ? control.hasMusic : false
 
     radius: Theme.radiusLarge
-    color: Theme.background
+    color: Theme.surface
     border.width: 1
     border.color: active ? Theme.barBorderHover : Theme.border
 
+    Behavior on color { ColorAnimation { duration: Theme.animationStandard } }
     Behavior on border.color { ColorAnimation { duration: Theme.animationStandard } }
 
     Rectangle {
@@ -28,7 +30,9 @@ Rectangle {
         height: 52
         radius: Theme.tileRadius
         clip: true
-        color: Theme.surface
+        color: Theme.background
+        border.width: 1
+        border.color: Theme.border
 
         Image {
             anchors.fill: parent

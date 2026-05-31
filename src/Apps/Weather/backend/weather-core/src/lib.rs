@@ -4,15 +4,18 @@ use std::collections::{BTreeMap, HashSet};
 use std::env;
 use std::fs;
 use std::hash::{Hash, Hasher};
-use std::io;
+use std::io::{self, Read};
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::process::{Command, Output, Stdio};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub const DEFAULT_CITY: &str = "Itajaí";
 pub const DEFAULT_INTERVAL_SECONDS: u64 = 30 * 60;
 pub const CACHE_MAX_AGE_SECONDS: u64 = 35 * 60;
 pub const SEEN_TTL_SECONDS: u64 = 14 * 24 * 60 * 60;
+pub const WEATHER_BACKEND_TIMEOUT_SECONDS: u64 = 45;
+pub const NOTIFY_TIMEOUT_SECONDS: u64 = 5;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WeatherAlert {
@@ -57,7 +60,7 @@ impl Default for WeatherSettings {
         Self {
             schema_version: 1,
             notifications_enabled: true,
-            city: DEFAULT_CITY.to_string(),
+            city: String::new(),
         }
     }
 }
@@ -166,8 +169,8 @@ pub fn load_settings() -> WeatherSettings {
         city: value
             .get("city")
             .and_then(Value::as_str)
-            .filter(|city| !city.trim().is_empty())
-            .unwrap_or(DEFAULT_CITY)
+            .unwrap_or_default()
+            .trim()
             .to_string(),
     }
 }
@@ -231,6 +234,19 @@ fn cached_current_for_city(city: &str, max_age_seconds: u64) -> Option<Value> {
     }
 }
 
+fn stale_current_for_city(city: &str, reason: &str) -> Option<Value> {
+    let mut cached = if normalized_city(city).is_empty() {
+        cached_current(u64::MAX)?
+    } else {
+        cached_current_for_city(city, u64::MAX)?
+    };
+    if let Some(object) = cached.as_object_mut() {
+        object.insert("stale".to_string(), json!(true));
+        object.insert("stale_reason".to_string(), json!(reason));
+    }
+    Some(cached)
+}
+
 pub fn fetch_weather_json(city: &str, force: bool) -> Result<Value, String> {
     if !force {
         if let Some(cached) = cached_current_for_city(city, CACHE_MAX_AGE_SECONDS) {
@@ -259,22 +275,118 @@ pub fn fetch_weather_json(city: &str, force: bool) -> Result<Value, String> {
         command.arg("--force");
     }
 
-    let output = command
-        .output()
-        .map_err(|err| format!("failed to run weather backend: {err}"))?;
+    let output = match command_output_with_timeout(
+        command,
+        Duration::from_secs(WEATHER_BACKEND_TIMEOUT_SECONDS),
+    ) {
+        Ok(output) => output,
+        Err(err) => {
+            if let Some(stale) = stale_current_for_city(city, "backend_unavailable") {
+                return Ok(stale);
+            }
+            return Err(err);
+        }
+    };
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        return Err(if stderr.is_empty() {
+        let message = if stderr.is_empty() {
             "weather backend failed".to_string()
         } else {
             stderr
-        });
+        };
+        if let Some(stale) = stale_current_for_city(city, "backend_failed") {
+            return Ok(stale);
+        }
+        return Err(message);
     }
 
     let data: Value = serde_json::from_slice(&output.stdout)
         .map_err(|err| format!("weather backend returned invalid json: {err}"))?;
     let _ = write_json_atomic(current_cache_path(), &data);
     Ok(data)
+}
+
+pub fn command_output_with_timeout(
+    mut command: Command,
+    timeout: Duration,
+) -> Result<Output, String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|err| format!("failed to run weather backend: {err}"))?;
+    let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
+    let stdout_reader = thread::spawn(move || {
+        let mut buffer = Vec::new();
+        if let Some(pipe) = stdout.as_mut() {
+            let _ = pipe.read_to_end(&mut buffer);
+        }
+        buffer
+    });
+    let stderr_reader = thread::spawn(move || {
+        let mut buffer = Vec::new();
+        if let Some(pipe) = stderr.as_mut() {
+            let _ = pipe.read_to_end(&mut buffer);
+        }
+        buffer
+    });
+    let started = Instant::now();
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let stdout = stdout_reader
+                    .join()
+                    .map_err(|_| "failed to read weather backend stdout".to_string())?;
+                let stderr = stderr_reader
+                    .join()
+                    .map_err(|_| "failed to read weather backend stderr".to_string())?;
+                return Ok(Output {
+                    status,
+                    stdout,
+                    stderr,
+                });
+            }
+            Ok(None) => {}
+            Err(err) => return Err(format!("failed to wait for weather backend: {err}")),
+        }
+
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err(format!(
+                "weather backend timed out after {:.1}s",
+                timeout.as_secs_f32()
+            ));
+        }
+
+        thread::sleep(Duration::from_millis(20));
+    }
+}
+
+pub fn command_success_with_timeout(mut command: Command, timeout: Duration) -> bool {
+    let Ok(mut child) = command.spawn() else {
+        return false;
+    };
+    let started = Instant::now();
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) => {}
+            Err(_) => return false,
+        }
+
+        if started.elapsed() >= timeout {
+            let _ = child.kill();
+            let _ = child.wait();
+            return false;
+        }
+
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 pub fn evaluate_weather_alerts(data: &Value) -> Vec<WeatherAlert> {
@@ -304,7 +416,7 @@ pub fn evaluate_weather_alerts(data: &Value) -> Vec<WeatherAlert> {
             };
             let body = compact_text(&format!("{city} • {severity}{when} • {risks}"), 260);
             alerts.push(WeatherAlert::new(
-                "inmet",
+                &provider_alert_kind(source),
                 &format!("{source}: {title}"),
                 &body,
                 &urgency_from_text(&format!("{severity} {title}")),
@@ -425,10 +537,7 @@ pub fn notify_alert(alert: &WeatherAlert, dry_run: bool) -> bool {
     if dry_run {
         command.arg("--dry-run");
     }
-    command
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    command_success_with_timeout(command, Duration::from_secs(NOTIFY_TIMEOUT_SECONDS))
 }
 
 pub fn check_and_notify(data: &Value, dry_run: bool) -> CheckResult {
@@ -556,6 +665,29 @@ fn urgency_from_text(text: &str) -> String {
     }
 }
 
+fn provider_alert_kind(source: &str) -> String {
+    let key = source
+        .chars()
+        .filter_map(|ch| {
+            let lower = ch.to_lowercase().next().unwrap_or(ch);
+            if lower.is_ascii_alphanumeric() {
+                Some(lower)
+            } else if lower.is_whitespace() || lower == '-' || lower == '_' {
+                Some('-')
+            } else {
+                None
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    if key == "inmet" || key.is_empty() {
+        "inmet".to_string()
+    } else {
+        format!("provider:{key}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -598,6 +730,34 @@ mod tests {
     }
 
     #[test]
+    fn provider_alerts_keep_source_specific_kind() {
+        let payload = json!({
+            "city": "Springfield",
+            "temp": 18,
+            "temp_max": 21,
+            "temp_min": 12,
+            "condition": "Nublado",
+            "hourly": [],
+            "alerts": [
+                {
+                    "title": "Flood watch",
+                    "severity": "Warning",
+                    "risks": ["Flooding near rivers"],
+                    "source": "NOAA"
+                }
+            ]
+        });
+
+        let alerts = evaluate_weather_alerts(&payload);
+        let provider = alerts
+            .iter()
+            .find(|alert| alert.title.starts_with("NOAA:"))
+            .unwrap();
+
+        assert_eq!(provider.kind, "provider:noaa");
+    }
+
+    #[test]
     fn dedupe_state_only_delivers_new_alerts() {
         let alerts = vec![
             WeatherAlert::new("rain", "Rain", "Strong rain", "normal"),
@@ -620,5 +780,32 @@ mod tests {
             normalized_city("São   José-dos_Pinhais"),
             "sao jose dos pinhais"
         );
+    }
+
+    #[test]
+    fn backend_command_timeout_returns_error() {
+        let mut command = std::process::Command::new("/usr/bin/env");
+        command.args(["sh", "-c", "sleep 2"]);
+
+        let err = command_output_with_timeout(command, Duration::from_millis(20))
+            .expect_err("slow backend should time out");
+
+        assert!(err.contains("timed out"));
+    }
+
+    #[test]
+    fn backend_command_drains_large_stdout_while_waiting() {
+        let mut command = std::process::Command::new("/usr/bin/env");
+        command.args([
+            "python3",
+            "-c",
+            "import sys; sys.stdout.write('x' * 200000)",
+        ]);
+
+        let output = command_output_with_timeout(command, Duration::from_secs(2))
+            .expect("large backend output should not deadlock");
+
+        assert!(output.status.success());
+        assert_eq!(output.stdout.len(), 200000);
     }
 }

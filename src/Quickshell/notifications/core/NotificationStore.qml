@@ -6,8 +6,11 @@ Item {
 
     property string statePath: ""
     readonly property int maxRenderedNotifications: 8
+    readonly property int maxHistoryNotifications: 50
     property alias model: notificationModel
     property alias count: notificationModel.count
+    property alias historyModel: notificationHistoryModel
+    property alias historyCount: notificationHistoryModel.count
 
     function modelIndexFor(notificationId) {
         for (let index = 0; index < notificationModel.count; index++) {
@@ -19,13 +22,20 @@ Item {
 
     function normalizedNotification(item) {
         return {
-            notificationId: item.id || 0,
+            notificationId: item.notificationId || item.id || 0,
             appName: item.appName || "Application",
             appIcon: item.appIcon || "",
             summary: item.summary || "Notification",
             body: item.body || "",
             urgency: item.urgency || 1,
             createdAt: item.createdAt || ""
+        }
+    }
+
+    function removeFromModel(targetModel, notificationId) {
+        for (let index = targetModel.count - 1; index >= 0; index--) {
+            if (targetModel.get(index).notificationId === notificationId)
+                targetModel.remove(index)
         }
     }
 
@@ -54,6 +64,14 @@ Item {
             notificationModel.remove(0)
     }
 
+    function syncHistory(items) {
+        notificationHistoryModel.clear()
+
+        const historyItems = (items || []).slice(-root.maxHistoryNotifications)
+        for (let index = historyItems.length - 1; index >= 0; index--)
+            notificationHistoryModel.append(normalizedNotification(historyItems[index]))
+    }
+
     function closeNotification(notificationId) {
         closeProc.command = [
             "gdbus",
@@ -68,10 +86,42 @@ Item {
         closeProc.running = true
     }
 
+    function clearHistoryItem(notificationId) {
+        removeFromModel(notificationHistoryModel, notificationId)
+        removeFromModel(notificationModel, notificationId)
+        historyProc.command = [
+            "gdbus",
+            "call",
+            "--session",
+            "--dest", "org.freedesktop.Notifications",
+            "--object-path", "/org/freedesktop/Notifications",
+            "--method", "org.freedesktop.Notifications.ClearHistoryItem",
+            String(notificationId)
+        ]
+        historyProc.running = false
+        historyProc.running = true
+    }
+
+    function clearHistory() {
+        notificationHistoryModel.clear()
+        notificationModel.clear()
+        historyProc.command = [
+            "gdbus",
+            "call",
+            "--session",
+            "--dest", "org.freedesktop.Notifications",
+            "--object-path", "/org/freedesktop/Notifications",
+            "--method", "org.freedesktop.Notifications.ClearHistory"
+        ]
+        historyProc.running = false
+        historyProc.running = true
+    }
+
     function loadState() {
         try {
             const payload = JSON.parse(stateFile.text())
             root.syncNotifications(payload.notifications || [])
+            root.syncHistory(payload.history || payload.notifications || [])
         } catch (error) {
         }
     }
@@ -82,8 +132,18 @@ Item {
         id: notificationModel
     }
 
+    ListModel {
+        id: notificationHistoryModel
+    }
+
     Process {
         id: closeProc
+        command: []
+        running: false
+    }
+
+    Process {
+        id: historyProc
         command: []
         running: false
     }

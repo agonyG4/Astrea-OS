@@ -53,6 +53,19 @@ class ExplorerQmlShortcutWiringTests(unittest.TestCase):
         self.assertIn("id: archiveExtractStderr", file_ops_qml)
         self.assertIn("ops.archiveExtractionError || archiveErr", file_ops_qml)
 
+    def test_archive_completion_navigates_to_extracted_destination(self):
+        file_ops_qml = (APP_ROOT / "state" / "FileOperationsState.qml").read_text(encoding="utf-8")
+
+        self.assertIn('ops.archiveOperationMode === "extract" && ops.archiveExtractionDestination !== ""', file_ops_qml)
+        self.assertIn("app.navigateTo(ops.archiveExtractionDestination)", file_ops_qml)
+        self.assertIn('interval: ops.archiveExtractionError !== "" ? 6000 : 1800', file_ops_qml)
+
+    def test_archive_progress_card_takes_priority_over_file_operation_card(self):
+        main_qml = (APP_ROOT / "Main.qml").read_text(encoding="utf-8")
+
+        self.assertIn("readonly property bool archiveVisible: AppState.archiveExtractionRunning", main_qml)
+        self.assertIn("readonly property bool fileOpVisible: AppState.fileOperationRunning && !archiveVisible", main_qml)
+
 
 class ExplorerDialogAndDragRegressionTests(unittest.TestCase):
     def test_views_do_not_assume_main_window_focus_helper_exists(self):
