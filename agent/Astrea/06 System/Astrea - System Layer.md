@@ -50,6 +50,9 @@ It contains:
 - `System/scripts/astrea-spotlight`
 - `System/scripts/astrea-performance`
 - `System/scripts/astrea-windows-run`
+- `System/scripts/astrea-gaming-settings`
+- `bin/astrea-gaming`
+- `bin/astrea-gamescope-session`
 
 Hyprland starts display settings from
 `~/.config/hypr/system/autostart.conf`.
@@ -86,6 +89,8 @@ the Weather QML app.
 See [[Astrea - Polkit Auth]] before changing it.
 
 See [[Astrea - Launcher and Latency]] for launch-specific behavior.
+
+Gaming and Windows compatibility settings live in [[Astrea - Gaming and Compatibility]].
 
 ## External System Tools
 Observed dependencies:

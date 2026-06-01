@@ -26,7 +26,7 @@ Item {
     property var _cleanupQueue: []
 
     function reconcile() {
-        const nextStatusShouldRun = root.topbarEnabled && !root.gameModeActive
+        const nextStatusShouldRun = root.topbarEnabled
         if (!root._statusKnown || nextStatusShouldRun !== root._statusShouldRun) {
             root._statusShouldRun = nextStatusShouldRun
             root._statusKnown = true

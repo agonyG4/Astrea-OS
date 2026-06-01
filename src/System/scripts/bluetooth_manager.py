@@ -40,6 +40,12 @@ STATE_DIR = (
 CONFIG_PATH = STATE_DIR / "autoconnect.json"
 RUNTIME_PATH = STATE_DIR / "runtime.json"
 STATUS_CACHE_PATH = STATE_DIR / "status-cache.json"
+SHARED_STATUS_PATH = (
+    Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")).expanduser()
+    / "Astrea"
+    / "status"
+    / "bluetooth.json"
+)
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -116,6 +122,16 @@ def _unlink(path: Path) -> None:
 
 def invalidate_status_cache() -> None:
     _unlink(STATUS_CACHE_PATH)
+
+
+def publish_status_snapshot(payload: dict) -> None:
+    snapshot = dict(payload)
+    snapshot.pop("_cached_at", None)
+    snapshot.setdefault("powered", False)
+    snapshot.setdefault("connected_name", "")
+    snapshot.setdefault("paired_devices", [])
+    snapshot["ok"] = bool(snapshot.get("success", True))
+    atomic_write_json(SHARED_STATUS_PATH, snapshot, indent=None, sort_keys=True)
 
 
 # ─── Process helper ───────────────────────────────────────────────────────────
@@ -452,7 +468,9 @@ def _clear_device_cooldown(mac: str) -> None:
 
 
 def cmd_status() -> None:
-    _out(get_status_payload())
+    payload = get_status_payload()
+    publish_status_snapshot(payload)
+    _out(payload)
 
 
 def cmd_save_config(raw_json: str) -> None:
@@ -461,6 +479,7 @@ def cmd_save_config(raw_json: str) -> None:
     except json.JSONDecodeError as exc:
         _err(f"invalid JSON: {exc}")
     save_config(payload)
+    publish_status_snapshot(get_status_payload())
     _out({"success": True, "config": load_config()})
 
 
@@ -472,6 +491,7 @@ def cmd_connect(mac: str) -> None:
     if connected:
         _remember_success(target)
     invalidate_status_cache()
+    publish_status_snapshot(get_status_payload())
     _out(
         {
             "success": connected,
@@ -489,6 +509,7 @@ def cmd_disconnect(mac: str) -> None:
     if success:
         _set_device_cooldown(target, load_config()["disconnect_snooze_sec"])
     invalidate_status_cache()
+    publish_status_snapshot(get_status_payload())
     _out(
         {
             "success": success,
@@ -575,7 +596,9 @@ def run_autoconnect(force: bool = False) -> dict:
 
 
 def _cmd_autoconnect(force: bool) -> None:
-    _out(run_autoconnect(force))
+    result = run_autoconnect(force)
+    publish_status_snapshot(get_status_payload())
+    _out(result)
 
 
 def cmd_autoconnect() -> None:
@@ -593,6 +616,7 @@ def cmd_power(state: str) -> None:
     proc = _run("bluetoothctl", "power", wanted, timeout=SHOW_TIMEOUT)
     powered = _read_power_after_change(wanted == "on")
     invalidate_status_cache()
+    publish_status_snapshot(get_status_payload())
     _out(
         {
             "success": proc.returncode == 0 and powered == (wanted == "on"),

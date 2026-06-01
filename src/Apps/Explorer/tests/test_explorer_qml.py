@@ -88,6 +88,47 @@ class ExplorerDialogAndDragRegressionTests(unittest.TestCase):
         self.assertIn("dropModeFor(drop, AppState)", icon_view)
         self.assertIn("handleDroppedUrls(AppState, drop, destinationPath)", list_view)
 
+    def test_drag_drop_uses_normalized_paths_for_multi_file_moves(self):
+        drag_support = (APP_ROOT / "AstreaFiles" / "DragDropSupport.js").read_text(encoding="utf-8")
+        app_state = (APP_ROOT / "AppState.qml").read_text(encoding="utf-8")
+        file_ops_qml = (APP_ROOT / "state" / "FileOperationsState.qml").read_text(encoding="utf-8")
+
+        self.assertIn('dataAsString(drop, "text/uri-list")', drag_support)
+        self.assertIn('dataAsString(drop, "text/plain")', drag_support)
+        self.assertIn("appState.dropFilePaths(", drag_support)
+        self.assertIn("DragDropSupport.dropPaths(drop)", (APP_ROOT / "components" / "views" / "FileIconView.qml").read_text(encoding="utf-8"))
+        self.assertIn("function dropFilePaths(paths, destinationPath, mode)", app_state)
+        self.assertIn("function dropFilePaths(paths, destinationPath, mode)", file_ops_qml)
+        self.assertIn('cmd = cmd.concat(["--rename", pendingPasteRename])', file_ops_qml)
+        self.assertNotIn("policy,\n            pendingPasteRename", file_ops_qml)
+
+    def test_file_dialog_uses_astrea_components_and_multiple_selection(self):
+        file_dialog = (APP_ROOT / "FileDialog.qml").read_text(encoding="utf-8")
+        portal_dialog = (APP_ROOT / "PortalDialog.qml").read_text(encoding="utf-8")
+
+        self.assertIn('import "AstreaComponents" as UI', file_dialog)
+        self.assertIn("property bool allowMultiple", file_dialog)
+        self.assertIn("signal filesChosen(var files)", file_dialog)
+        self.assertIn("UI.Button", file_dialog)
+        self.assertIn("UI.SearchField", file_dialog)
+        self.assertIn("UI.TextLabel", file_dialog)
+        self.assertIn("dialog.allowMultiple = Boolean(options.multiple)", portal_dialog)
+        self.assertIn("onFilesChosen", portal_dialog)
+        self.assertNotIn("Bench File Dialog", portal_dialog)
+
+    def test_remote_directories_disable_watchers_and_thumbnail_warmup(self):
+        app_state = (APP_ROOT / "AppState.qml").read_text(encoding="utf-8")
+        navigation = (APP_ROOT / "state" / "NavigationState.qml").read_text(encoding="utf-8")
+        preview = (APP_ROOT / "state" / "PreviewState.qml").read_text(encoding="utf-8")
+
+        self.assertIn("property alias remoteDirectoryActive", app_state)
+        self.assertIn("property bool remoteDirectoryActive", navigation)
+        self.assertIn("function remotePathReason(path)", navigation)
+        self.assertIn("updateRemoteStateFromItems(items)", navigation)
+        self.assertIn("item.fileRemote", navigation)
+        self.assertIn("remoteDirectoryActive", navigation)
+        self.assertIn("app.remoteDirectoryActive", preview)
+
 
 class ExplorerIconRenderingRegressionTests(unittest.TestCase):
     def test_icon_grid_decodes_theme_icons_at_stable_size_during_resize(self):

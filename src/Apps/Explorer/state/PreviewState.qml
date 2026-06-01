@@ -27,7 +27,7 @@ QtObject {
     }
 
     function beginCurrentFolderWarm() {
-        if (!startupWorkEnabled || !app.currentPath || app.loadingDir || app.searchActive || app.isRecentPath(app.currentPath) || app.fileModel.count <= 0)
+        if (!startupWorkEnabled || !app.currentPath || app.remoteDirectoryActive || app.loadingDir || app.searchActive || app.isRecentPath(app.currentPath) || app.fileModel.count <= 0)
             return
         var initialLimit = viewMode === "icon" ? 18 : 24
         requestThumbnailWarm(app.currentPath, 0, initialLimit)
@@ -37,7 +37,7 @@ QtObject {
     }
 
     function queueNextCurrentFolderWarmChunk() {
-        if (!app.currentPath || app.loadingDir || app.searchActive || app.isRecentPath(app.currentPath) || currentFolderWarmOffset < 0)
+        if (!app.currentPath || app.remoteDirectoryActive || app.loadingDir || app.searchActive || app.isRecentPath(app.currentPath) || currentFolderWarmOffset < 0)
             return
         if (currentFolderWarmOffset >= app.fileModel.count) {
             clearCurrentFolderWarm()
@@ -66,24 +66,30 @@ QtObject {
         function onFoldersFirstChanged() { preview.clearCurrentFolderWarm() }
         function onViewModeChanged() {
             preview.clearCurrentFolderWarm()
-            if (app.currentPath && !app.loadingDir && !app.searchActive)
+            if (app.currentPath && !app.remoteDirectoryActive && !app.loadingDir && !app.searchActive)
                 preview.beginCurrentFolderWarm()
         }
         function onLoadingDirChanged() {
             if (app.loadingDir)
                 preview.clearCurrentFolderWarm()
-            else if (app.currentPath && !app.searchActive)
+            else if (app.currentPath && !app.remoteDirectoryActive && !app.searchActive)
                 preview.beginCurrentFolderWarm()
         }
         function onSearchActiveChanged() {
             if (app.searchActive)
                 preview.clearCurrentFolderWarm()
         }
+        function onRemoteDirectoryActiveChanged() {
+            if (app.remoteDirectoryActive)
+                preview.clearCurrentFolderWarm()
+            else if (app.currentPath && !app.loadingDir && !app.searchActive)
+                preview.beginCurrentFolderWarm()
+        }
     }
 
 
     function refreshPreviewMetadata() {
-        if (!startupWorkEnabled || !app.currentPath || previewRefreshProcess.running || app.searchActive || app.isRecentPath(app.currentPath))
+        if (!startupWorkEnabled || !app.currentPath || app.remoteDirectoryActive || previewRefreshProcess.running || app.searchActive || app.isRecentPath(app.currentPath))
             return
 
         activePreviewRefreshPath = app.currentPath
@@ -462,7 +468,7 @@ QtObject {
     }
 
     function requestThumbnailWarm(path, offset, limit) {
-        if (!path)
+        if (!path || app.remoteDirectoryActive)
             return
         pendingThumbnailWarmRequest = {
             path: path,
@@ -478,7 +484,7 @@ QtObject {
     }
 
     function startThumbnailWarm(request) {
-        if (!request)
+        if (!request || app.remoteDirectoryActive)
             return
         activeThumbnailWarmRequest = request
         pendingThumbnailWarmRequest = null
@@ -498,7 +504,7 @@ QtObject {
     }
 
     function requestHasMissingPreview(request) {
-        if (!request || request.path !== app.currentPath || app.fileModel.count <= 0)
+        if (app.remoteDirectoryActive || !request || request.path !== app.currentPath || app.fileModel.count <= 0)
             return false
 
         var offset = Math.max(0, parseInt(request.offset || "0", 10))
@@ -534,13 +540,13 @@ QtObject {
     }
 
     function warmCurrentDirectoryThumbnails() {
-        if (!startupWorkEnabled || !app.currentPath || app.searchActive || app.isRecentPath(app.currentPath))
+        if (!startupWorkEnabled || !app.currentPath || app.remoteDirectoryActive || app.searchActive || app.isRecentPath(app.currentPath))
             return
         requestThumbnailWarm(app.currentPath, 0, viewMode === "icon" ? 18 : 24)
     }
 
     function scheduleVisibleThumbnailWarm(firstIndex, lastIndex) {
-        if (!startupWorkEnabled || !app.currentPath || app.loadingDir || app.isRecentPath(app.currentPath))
+        if (!startupWorkEnabled || !app.currentPath || app.remoteDirectoryActive || app.loadingDir || app.isRecentPath(app.currentPath))
             return
         if (firstIndex < 0 || lastIndex < firstIndex)
             return
@@ -571,7 +577,7 @@ QtObject {
         if (startupWorkEnabled)
             return
         startupWorkEnabled = true
-        if (app.currentPath && !app.loadingDir && !app.searchActive)
+        if (app.currentPath && !app.remoteDirectoryActive && !app.loadingDir && !app.searchActive)
             beginCurrentFolderWarm()
         if (!startupWarmTimer.running && startupWarmQueue.length > 0)
             startupWarmTimer.start()
@@ -670,9 +676,22 @@ QtObject {
     function openWindowsExecutable(path) {
         if (!path)
             return
-        windowsExecutableProcess.command = [app.windowsRun, path]
+        app.fileOperationError = ""
+        app.fileOperationStatus = "Abrindo app Windows..."
+        windowsExecutableProcess.command = [app.windowsRun, "--json", path]
         windowsExecutableProcess.running = false
         windowsExecutableProcess.running = true
+    }
+
+    function windowsLaunchPayload() {
+        var text = windowsExecutableStdout.text.trim()
+        if (!text)
+            return null
+        try {
+            return JSON.parse(text)
+        } catch (error) {
+            return null
+        }
     }
 
     function openExternalFile(path, fileUrl) {
@@ -830,9 +849,28 @@ QtObject {
     property Process windowsExecutableProcess: Process {
         command: []
         running: false
+        stdout: StdioCollector { id: windowsExecutableStdout }
+        stderr: StdioCollector { id: windowsExecutableStderr }
         onExited: function(exitCode) {
-            if (exitCode !== 0)
-                Qt.openUrlExternally(app.fileUrlForPath(command[command.length - 1]))
+            var payload = preview.windowsLaunchPayload()
+            if (exitCode === 0 && (!payload || payload.ok !== false)) {
+                app.fileOperationError = ""
+                app.fileOperationStatus = "Abrindo app Windows via " + ((payload && payload.runner) ? payload.runner : "Proton GE")
+                return
+            }
+
+            var message = ""
+            if (payload && payload.error)
+                message = payload.error
+            else if (windowsExecutableStderr.text.trim())
+                message = windowsExecutableStderr.text.trim()
+            else
+                message = "Falha ao abrir app Windows"
+
+            if (payload && payload.log)
+                message += " (" + payload.log + ")"
+            app.fileOperationError = message
+            app.fileOperationStatus = message
         }
     }
 

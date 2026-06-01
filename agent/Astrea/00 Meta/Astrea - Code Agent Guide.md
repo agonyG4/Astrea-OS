@@ -88,11 +88,13 @@ For a targeted bug or feature:
 | Session/state JSON helpers | [[MOC - Bridges and Backends]] | [[Astrea - Session Daemon]], [[Astrea - State JSON Bridge]] |
 | Audio | [[MOC - Bridges and Backends]] | [[Astrea - Audio Bridge]] |
 | Display | [[MOC - Bridges and Backends]] | [[Astrea - Display Bridge]] |
+| Network, Wi-Fi, DNS, WARP | [[MOC - Bridges and Backends]] | [[Astrea - Network Bridge]], [[Astrea - Settings App]] |
 | Wallpaper | [[MOC - Bridges and Backends]] | [[Astrea - Wallpaper Bridge]] |
 | I18n/language | [[MOC - System]] | [[Astrea - I18n]] |
 | Polkit/auth prompts | [[MOC - System]] | [[Astrea - Polkit Auth]] |
 | Bluetooth | [[MOC - System]] | [[Astrea - Bluetooth Manager]] |
 | Launch and latency | [[MOC - System]] | [[Astrea - Launcher and Latency]] |
+| Gamescope, Proton, Wine, Windows apps | [[MOC - System]] | [[Astrea - Gaming and Compatibility]] |
 | Runtime state/data | [[MOC - Data]] | [[Astrea - Assets and Data]] |
 | External tools | [[MOC - Dependencies]] | [[Astrea - External Dependencies]] |
 
@@ -110,6 +112,9 @@ For a targeted bug or feature:
 - Weather cache: `~/.cache/weather`
 - Launch history: `~/.local/state/Astrea/launch/history.jsonl`
 - Latency history: `~/.local/state/Astrea/latencyd/history.jsonl`
+- Component toggles: `~/.config/AstreaOS/ui/components.json`
+- Gaming settings: `~/.config/AstreaOS/gaming/*.json`
+- User wallpaper library: `~/.local/share/AstreaOS/user/wallpapers`
 
 ## Validation Commands
 Use the smallest command that proves the change.

@@ -51,8 +51,6 @@ Item {
 
     readonly property string fontFamily: Borealis.Tokens.fontFamily
     readonly property string monoFontFamily: Borealis.Tokens.monoFontFamily
-    readonly property string iconFontFamily: Borealis.Tokens.iconFontFamily
-    readonly property string symbolFontFamily: Borealis.Tokens.symbolFontFamily
 
     readonly property int fontSizeHero: Borealis.Tokens.fontSizeHero
     readonly property int fontSizeHeader: Borealis.Tokens.fontSizeHeader

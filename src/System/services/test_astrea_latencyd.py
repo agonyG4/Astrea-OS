@@ -23,6 +23,45 @@ def load_module():
 
 
 class AstreaLatencydTests(unittest.TestCase):
+    def test_read_request_lines_reassembles_large_json_line(self):
+        latencyd = load_module()
+        payload = {"op": "boost", "reason": "x" * 9000}
+        raw = (json.dumps(payload) + "\n").encode("utf-8")
+
+        class ChunkedConnection:
+            def __init__(self, chunks):
+                self.chunks = list(chunks)
+
+            def recv(self, _size):
+                return self.chunks.pop(0) if self.chunks else b""
+
+        lines = latencyd.read_request_lines(
+            ChunkedConnection([raw[:4096], raw[4096:8192], raw[8192:]])
+        )
+
+        self.assertEqual([json.loads(line.decode("utf-8")) for line in lines], [payload])
+
+    def test_handle_connection_records_read_errors_without_crashing(self):
+        latencyd = load_module()
+
+        class Daemon:
+            def __init__(self):
+                self.events = []
+
+            def record(self, event, payload, details):
+                self.events.append((event, payload, details))
+
+            def handle_payload(self, payload):
+                raise AssertionError(f"unexpected payload: {payload}")
+
+        with mock.patch.object(latencyd, "read_request_lines", side_effect=ValueError("request too large")):
+            daemon = Daemon()
+            latencyd.handle_connection(daemon, object())
+
+        self.assertEqual(daemon.events[0][0], "error")
+        self.assertEqual(daemon.events[0][1], {"raw": ""})
+        self.assertEqual(daemon.events[0][2], ["request too large"])
+
     def test_write_state_persists_rollback_snapshot_for_crash_recovery(self):
         latencyd = load_module()
         with tempfile.TemporaryDirectory() as tmp:

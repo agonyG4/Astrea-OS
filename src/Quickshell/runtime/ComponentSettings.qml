@@ -27,7 +27,6 @@ Item {
     property bool spotlight: true
     property bool alttab: true
     property bool notifications: true
-    property string _ensureConfigBuffer: ""
 
     function isEnabled(key) {
         return root[key] !== false
@@ -57,14 +56,9 @@ Item {
         command: ["python3", root.stateJsonScript, "read-or-init", root.configPath, root.defaultConfigJson]
         running: true
         stdout: SplitParser {
-            onRead: data => root._ensureConfigBuffer += data
+            onRead: data => root.applyConfigText(data)
         }
-        onExited: {
-            if (root._ensureConfigBuffer.length > 0)
-                root.applyConfigText(root._ensureConfigBuffer)
-            root._ensureConfigBuffer = ""
-            componentFile.reload()
-        }
+        onExited: componentFile.reload()
     }
 
     FileView {

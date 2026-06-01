@@ -36,7 +36,7 @@ class AstreaBinLauncherTests(unittest.TestCase):
 
         self.assertIn("script_path=", source)
         self.assertIn("${script_path@Q}", source)
-        self.assertNotIn("/home/agony/.local/bin/astrea-settings-open", source)
+        self.assertNotIn("/.local/bin/astrea-settings-open", source)
 
     def test_topbar_uses_runtime_settings_launcher(self) -> None:
         source = (ROOT / "Quickshell/bar/ui/components/astrea/AstreaPopup.qml").read_text(encoding="utf-8")

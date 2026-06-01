@@ -40,6 +40,9 @@ ScrollPage {
     ]
     property var countryValues: countryData.map(item => item.code)
     property var countryOptions: []
+    property string countrySearchText: ""
+    property var filteredCountryOptions: []
+    property var filteredCountryIndexes: []
     property var timeFormatValues: ["system", "24h", "12h"]
     property var timeFormatOptions: []
 
@@ -101,6 +104,28 @@ ScrollPage {
 
     function rebuildCountryOptions() {
         countryOptions = countryData.map(item => root.countryLabel(item.code, item.name || item.code))
+        rebuildFilteredCountryOptions()
+    }
+
+    function normalizedSearch(value) {
+        return String(value || "").trim().toLowerCase()
+    }
+
+    function rebuildFilteredCountryOptions() {
+        var query = normalizedSearch(root.countrySearchText)
+        var labels = []
+        var indexes = []
+        for (var i = 0; i < root.countryData.length; i++) {
+            var item = root.countryData[i] || ({})
+            var label = root.countryOptions[i] || root.countryLabel(item.code, item.name || item.code)
+            var haystack = normalizedSearch(label + " " + (item.name || "") + " " + (item.code || ""))
+            if (query === "" || haystack.indexOf(query) >= 0) {
+                labels.push(label)
+                indexes.push(i)
+            }
+        }
+        root.filteredCountryOptions = labels
+        root.filteredCountryIndexes = indexes
     }
 
     function rebuildTimeFormatOptions() {
@@ -153,6 +178,8 @@ ScrollPage {
         root.rebuildTimeFormatOptions()
     }
 
+    onCountrySearchTextChanged: rebuildFilteredCountryOptions()
+
     function runSave(args) {
         if (saveConfigProc.running)
             return
@@ -185,7 +212,6 @@ ScrollPage {
     }
 
     function setAutomaticLocation(enabled) {
-        root.automaticLocation = enabled
         runSave(["--automatic-location", enabled ? "true" : "false"])
     }
 
@@ -347,7 +373,7 @@ ScrollPage {
                     cardBorder: root.cardBorder
 
                     SelectButton {
-                        implicitWidth: 190
+                        implicitWidth: 220
                         label: root.languageOptions[root.selectedLanguage] || ""
                         options: root.languageOptions
                         selectedIndex: root.selectedLanguage
@@ -360,22 +386,49 @@ ScrollPage {
                 }
 
                 SettingRow {
-                    label: root.t("settings.language.row.country", "Country or region")
-                    sublabel: root.t("settings.language.row.country.description", "Used for weather providers, regional defaults and date/time formatting.")
+                    label: root.t("settings.language.row.country_search", "Search location")
+                    sublabel: root.t("settings.language.row.country_search.description", "Type a country, region or country code to filter the list below.")
                     textPrimary: root.textPrimary
                     textSecondary: root.textSecondary
                     cardBorder: root.cardBorder
 
+                    SearchField {
+                        implicitWidth: 220
+                        placeholderText: root.t("settings.language.search.country", "Search country")
+                        text: root.countrySearchText
+                        accent: root.accent
+                        textPrimary: root.textPrimary
+                        textSecondary: root.textSecondary
+                        surfaceColor: root.popupBg
+                        borderColor: root.cardBorder
+                        controlHeight: 36
+                        onTextEdited: value => root.countrySearchText = value
+                        onCleared: root.countrySearchText = ""
+                    }
+                }
+
+                SettingRow {
+                    label: root.t("settings.language.row.country", "Country or region")
+                    sublabel: root.filteredCountryOptions.length === 0
+                        ? root.t("settings.language.row.country.no_results", "No locations match your search.")
+                        : root.t("settings.language.row.country.description", "Used for weather providers, regional defaults and date/time formatting.")
+                    textPrimary: root.textPrimary
+                    textSecondary: root.filteredCountryOptions.length === 0 ? root.errorColor : root.textSecondary
+                    cardBorder: root.cardBorder
+
                     SelectButton {
-                        implicitWidth: 210
+                        implicitWidth: 220
                         label: root.countryOptions[root.selectedCountry] || ""
-                        options: root.countryOptions
-                        selectedIndex: root.selectedCountry
+                        options: root.filteredCountryOptions.length > 0 ? root.filteredCountryOptions : [root.t("settings.language.search.no_results", "No results")]
+                        selectedIndex: root.filteredCountryIndexes.indexOf(root.selectedCountry)
                         accent: root.accent
                         textPrimary: root.textPrimary
                         textSecondary: root.textSecondary
                         popupBg: root.popupBg
-                        onSelected: index => root.setCountry(index)
+                        onSelected: index => {
+                            if (index >= 0 && index < root.filteredCountryIndexes.length)
+                                root.setCountry(root.filteredCountryIndexes[index])
+                        }
                     }
                 }
 
@@ -387,7 +440,7 @@ ScrollPage {
                     cardBorder: root.cardBorder
 
                     SelectButton {
-                        implicitWidth: 190
+                        implicitWidth: 220
                         label: root.timeFormatOptions[root.selectedTimeFormat] || ""
                         options: root.timeFormatOptions
                         selectedIndex: root.selectedTimeFormat

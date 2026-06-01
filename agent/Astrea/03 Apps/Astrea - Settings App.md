@@ -19,9 +19,13 @@ Settings is the user-facing control center for system and Astrea configuration.
 Observed sections:
 - System
 - Software Update
+- Language
 - Display
 - Apps
 - Performance
+- SteamOS / Gamescope
+- Proton
+- Compatibility
 - Internet
 - Bluetooth
 - Personalization
@@ -29,14 +33,26 @@ Observed sections:
 - Audio
 - Island
 - Storage
+- Components
 
 ## Navigation Model
 `main.qml` defines:
 - a sidebar nav model
+- grouped section overview models for Desempenho, Aparencia, and Mais Ajustes
 - `selectedIndex`
 - page paths
 - a `Loader` for pages
 - profile navigation to `pages/personalization/User.qml`
+
+Live page files:
+- `pages/SectionOverview.qml`
+- `pages/apps/Apps.qml`
+- `pages/connectivity/Audio.qml`, `Bluetooth.qml`, `Internet.qml`
+- `pages/display/Desktop.qml`, `Display.qml`, `Island.qml`
+- `pages/gaming/Compatibility.qml`, `Gamescope.qml`, `Proton.qml`
+- `pages/paper/Lockscreen.qml`, `Paper.qml`, `Screensaver.qml`, `Wallpaper.qml`
+- `pages/personalization/Personalization.qml`, `User.qml`
+- `pages/system/Components.qml`, `Language.qml`, `Performance.qml`, `SoftwareUpdate.qml`, `Storage.qml`, `System.qml`
 
 ## Dependencies
 - [[Astrea - Core Components]]
@@ -44,6 +60,8 @@ Observed sections:
 - [[Astrea - App Manager Bridge]]
 - [[Astrea - Display Bridge]]
 - [[Astrea - Audio Bridge]]
+- [[Astrea - Network Bridge]]
+- [[Astrea - Gaming and Compatibility]]
 - [[Astrea - Bluetooth Manager]]
 - [[Astrea - Wallpaper Bridge]]
 - [[Astrea - I18n]]
@@ -69,6 +87,10 @@ Observed config/state paths:
 - `~/.local/state/Astrea/desktop-icons/state.json`
 - `~/.config/AstreaOS/system/settings.json`
 - `~/.config/AstreaOS/ui/theme.json`
+- `~/.config/AstreaOS/ui/components.json`
+- `~/.config/AstreaOS/gaming/gamescope.json`
+- `~/.config/AstreaOS/gaming/proton.json`
+- `~/.config/AstreaOS/gaming/compatibility.json`
 - WirePlumber config under `~/.config/wireplumber`
 - PipeWire spatial audio config under `~/.config/pipewire/pipewire.conf.d/astrea-audio-engine.conf`
 
@@ -111,6 +133,30 @@ Clicking an app expands its row inline. The expanded card exposes:
 - uninstall
 
 `Settings` is protected from uninstall through `astrea-settings.desktop`.
+
+## Components Page
+`pages/system/Components.qml` edits:
+- `~/.config/AstreaOS/ui/components.json`
+
+It uses `Core/bridge/state_json.py read-or-init` and `write` so the resident shell can watch a stable JSON file. The toggles control Desktop Icons, Topbar, Island, Spotlight, Alt-Tab, and Notifications through `Quickshell/runtime/ComponentSettings.qml`.
+
+## Language Page
+`pages/system/Language.qml` uses:
+- `Core/bridge/system/region.py`
+- `System/i18n/i18n.py list-languages`
+
+It edits language, country, time format, and automatic-location preferences under AstreaOS system config. Keep language option labels in the i18n catalogs rather than hardcoding every visible string in the page.
+
+## Internet Page
+`pages/connectivity/Internet.qml` uses [[Astrea - Network Bridge]].
+
+It covers interface throughput, DNS presets/custom DNS, Wi-Fi scanning/connect/disconnect/radio power, and Cloudflare WARP status/actions when WARP is installed.
+
+## Gaming Pages
+The gaming pages use [[Astrea - Gaming and Compatibility]]:
+- `pages/gaming/Gamescope.qml`
+- `pages/gaming/Proton.qml`
+- `pages/gaming/Compatibility.qml`
 
 ## Page Pattern
 Most pages follow this pattern:

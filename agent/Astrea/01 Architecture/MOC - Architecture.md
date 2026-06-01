@@ -18,6 +18,7 @@ Architecture notes describe the project shape, boundaries, entry points, runtime
 - [[MOC - Apps]]
 - [[MOC - Bridges and Backends]]
 - [[MOC - System]]
+- [[MOC - Data]]
 
 ## AI Reading Order
 1. [[Astrea - Project Overview]]

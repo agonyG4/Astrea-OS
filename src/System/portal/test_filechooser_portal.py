@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 PORTAL = Path(__file__).with_name("astrea_filechooser_portal.py")
+TEST_DESKTOP = "/home/astrea/Desktop"
 
 
 def load_portal_module():
@@ -69,12 +70,26 @@ class FileChooserPortalTests(unittest.TestCase):
     def test_save_files_rejects_path_traversal_names(self):
         portal = load_portal_module()
         with self.assertRaises(ValueError):
-            portal.build_results_for_save_files({"filePath": "/home/agony/Desktop"}, ["../escape.txt"])
+            portal.build_results_for_save_files({"filePath": TEST_DESKTOP}, ["../escape.txt"])
 
     def test_save_files_accepts_plain_file_names(self):
         portal = load_portal_module()
-        result = portal.build_results_for_save_files({"filePath": "/home/agony/Desktop"}, ["note.txt"])
-        self.assertEqual(list(result["uris"]), ["file:///home/agony/Desktop/note.txt"])
+        result = portal.build_results_for_save_files({"filePath": TEST_DESKTOP}, ["note.txt"])
+        self.assertEqual(list(result["uris"]), ["file:///home/astrea/Desktop/note.txt"])
+
+    def test_open_file_result_accepts_multiple_files(self):
+        portal = load_portal_module()
+        result = portal.build_results_from_selection({
+            "accepted": True,
+            "files": [
+                {"filePath": "/home/astrea/Desktop/a file.txt"},
+                {"filePath": "/home/astrea/Desktop/b.txt"},
+            ],
+        })
+        self.assertEqual(list(result["uris"]), [
+            "file:///home/astrea/Desktop/a%20file.txt",
+            "file:///home/astrea/Desktop/b.txt",
+        ])
 
 
 if __name__ == "__main__":

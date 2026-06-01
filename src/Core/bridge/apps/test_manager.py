@@ -134,7 +134,7 @@ class ManagerActionsTest(unittest.TestCase):
             "comment": "Play this game on Steam",
             "exec": "steam steam://rungameid/413150",
             "icon": "steam_icon_413150",
-            "desktop_file": "/home/agony/.local/share/applications/Stardew Valley.desktop",
+            "desktop_file": "/home/astrea/.local/share/applications/Stardew Valley.desktop",
             "source": "user",
         }
         info = manager.uninstall_info(app)

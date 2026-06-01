@@ -14,33 +14,17 @@ class ComponentSettingsTests(unittest.TestCase):
         self.assertIn("FileView", source)
         self.assertIn("watchChanges: true", source)
         self.assertIn("function isEnabled(key)", source)
-        self.assertIn("property string _ensureConfigBuffer", source)
-        self.assertIn("onRead: data => root._ensureConfigBuffer += data", source)
-        self.assertIn("onExited: {", source)
-        self.assertNotIn("onRead: data => root.applyConfigText(data)", source)
 
         qmldir = (RUNTIME_DIR / "qmldir").read_text()
         self.assertIn("ComponentSettings 1.0 ComponentSettings.qml", qmldir)
-
-    def test_pretty_printed_component_json_is_parsed_as_one_payload(self):
-        source = (RUNTIME_DIR / "ComponentSettings.qml").read_text()
-        self.assertIn('readonly property string defaultConfigJson: JSON.stringify(defaults, null, 4)', source)
-        self.assertRegex(
-            source,
-            r"stdout:\s*SplitParser\s*\{\s*onRead: data => root\._ensureConfigBuffer \+= data\s*\}",
-        )
-        self.assertRegex(
-            source,
-            r"onExited:\s*\{\s*if \(root\._ensureConfigBuffer\.length > 0\)\s*root\.applyConfigText\(root\._ensureConfigBuffer\)",
-        )
-        pretty_json = '{\n    "desktop": false,\n    "topbar": true\n}'
-        self.assertIn('"desktop": false', pretty_json)
 
     def test_runtime_component_service_manager_controls_dependencies(self):
         source = (RUNTIME_DIR / "ComponentServiceManager.qml").read_text()
         self.assertIn("astrea-status.service", source)
         self.assertIn("topbarEnabled", source)
         self.assertIn("gameModeActive", source)
+        self.assertIn("const nextStatusShouldRun = root.topbarEnabled", source)
+        self.assertNotIn("root.topbarEnabled && !root.gameModeActive", source)
         self.assertIn("notification_daemon.py", source)
         self.assertIn("--watch-signature", source)
         self.assertIn("pkill", source)
@@ -77,9 +61,22 @@ class ComponentSettingsTests(unittest.TestCase):
         self.assertIn('label: "Components"', main)
         self.assertIn("ToggleSwitch", page)
         self.assertIn("components.json", page)
+        self.assertIn("read-or-init", page)
+        self.assertIn("root.componentConfig[key] !== false", page)
+        self.assertNotIn("root.componentConfig[key] === true", page)
         self.assertIn("Desktop Icons", page)
         self.assertIn("Topbar", page)
         self.assertIn("Spotlight", page)
+
+    def test_proton_page_initializes_switches_from_backend_defaults(self):
+        page = (SETTINGS_DIR / "pages" / "gaming" / "Proton.qml").read_text()
+        self.assertIn("readonly property var defaultProton", page)
+        self.assertIn("property var proton: Object.assign({}, defaultProton)", page)
+        self.assertIn('"gamemode": true', page)
+        self.assertIn('"use_gamescope_profile": true', page)
+        self.assertIn('"gamescope_fullscreen": true', page)
+        self.assertIn("root.proton = Object.assign({}, root.defaultProton, payload.proton || ({}))", page)
+        self.assertNotIn("root.loading = false\n            if (code !== 0)", page)
 
     def test_desktop_icons_stops_processes_on_destroy(self):
         source = (ROOT / "desktop" / "DesktopIcons.qml").read_text()

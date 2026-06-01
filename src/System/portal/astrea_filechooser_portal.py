@@ -229,6 +229,7 @@ def run_dialog(mode, title, options):
             "acceptLabel": str(options.get("accept_label", "")),
             "currentName": current_name,
             "filters": parse_filters(options.get("filters")),
+            "multiple": option_to_bool(options.get("multiple", False)),
         }
     )
     env["ASTREA_FILE_DIALOG_OPTIONS"] = dialog_options
@@ -328,8 +329,20 @@ def run_dialog(mode, title, options):
 
 
 def build_results_from_selection(selection):
-    uri = file_uri(selection["filePath"])
-    return dbus.Dictionary({"uris": dbus.Array([uri], signature="s")}, signature="sv")
+    files = selection.get("files") or []
+    uris = []
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        path = str(item.get("filePath", "")).strip()
+        if path:
+            uris.append(file_uri(path))
+
+    if not uris:
+        uri = file_uri(selection["filePath"])
+        uris.append(uri)
+
+    return dbus.Dictionary({"uris": dbus.Array(uris, signature="s")}, signature="sv")
 
 
 def build_results_for_save_files(folder_selection, files):

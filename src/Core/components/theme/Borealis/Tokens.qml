@@ -4,8 +4,6 @@ import QtQuick
 QtObject {
     readonly property string fontFamily: "Inter"
     readonly property string monoFontFamily: "JetBrains Mono"
-    readonly property string iconFontFamily: "JetBrainsMono Nerd Font"
-    readonly property string symbolFontFamily: iconFontFamily
 
     readonly property int fontSizeHero: 20
     readonly property int fontSizeHeader: 24

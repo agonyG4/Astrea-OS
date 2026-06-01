@@ -125,7 +125,7 @@ Item {
     }
 
     function handleDroppedUrls(drop, destinationPath) {
-        DragDropSupport.handleDroppedUrls(AppState, drop, destinationPath)
+        return DragDropSupport.handleDroppedUrls(AppState, drop, destinationPath)
     }
 
     Connections {

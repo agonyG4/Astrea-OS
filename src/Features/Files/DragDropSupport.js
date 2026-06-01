@@ -12,17 +12,59 @@ function normalizeFileUrl(url) {
     }
 }
 
+function appendUniquePath(paths, seen, path) {
+    const value = String(path || "").trim()
+    if (!value || seen[value])
+        return
+    seen[value] = true
+    paths.push(value)
+}
+
+function appendUriList(paths, seen, text) {
+    const entries = String(text || "").split(/\r?\n/)
+    for (var i = 0; i < entries.length; i++) {
+        const path = normalizeFileUrl(entries[i])
+        if (path)
+            appendUniquePath(paths, seen, path)
+    }
+}
+
+function appendPlainPathList(paths, seen, text) {
+    const entries = String(text || "").split(/\r?\n/)
+    for (var i = 0; i < entries.length; i++) {
+        const value = String(entries[i] || "").trim()
+        if (value.indexOf("/") === 0)
+            appendUniquePath(paths, seen, value)
+    }
+}
+
+function dataAsString(drop, format) {
+    if (!drop || typeof drop.getDataAsString !== "function")
+        return ""
+    try {
+        return drop.getDataAsString(format) || ""
+    } catch (error) {
+        return ""
+    }
+}
+
 function dropPaths(drop) {
     const urls = [].concat((drop && drop.urls) || [])
     const paths = []
+    const seen = {}
     for (var i = 0; i < urls.length; i++) {
-        const entries = String(urls[i] || "").split(/\r?\n/)
-        for (var j = 0; j < entries.length; j++) {
-            const path = normalizeFileUrl(entries[j])
-            if (path)
-                paths.push(path)
-        }
+        const path = normalizeFileUrl(urls[i])
+        if (path)
+            appendUniquePath(paths, seen, path)
+        else
+            appendUriList(paths, seen, urls[i])
     }
+
+    appendUriList(paths, seen, dataAsString(drop, "text/uri-list"))
+    appendPlainPathList(paths, seen, dataAsString(drop, "text/plain"))
+    if (drop && drop.hasText)
+        appendPlainPathList(paths, seen, drop.text)
+
     return paths
 }
 
@@ -53,10 +95,11 @@ function dragImageUrl(previewUrl, fallbackIconUrl) {
 }
 
 function handleDroppedUrls(appState, drop, destinationPath) {
-    if (!drop || !drop.hasUrls)
+    const paths = dropPaths(drop)
+    if (!paths || paths.length === 0)
         return false
-    appState.dropFiles(
-        drop.urls,
+    appState.dropFilePaths(
+        paths,
         destinationPath || appState.currentPath,
         dropModeFor(drop, appState)
     )

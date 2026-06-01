@@ -63,6 +63,8 @@ QtObject {
     property alias dialogMode: navigationObj.dialogMode
     property alias dialogFilePatterns: navigationObj.dialogFilePatterns
     property alias activeDirectoryRequestPath: navigationObj.activeDirectoryRequestPath
+    property alias remoteDirectoryActive: navigationObj.remoteDirectoryActive
+    property alias remoteDirectoryReason: navigationObj.remoteDirectoryReason
     property alias searchActive: navigationObj.searchActive
     property alias searchVisible: navigationObj.searchVisible
     property alias searchQuery: navigationObj.searchQuery
@@ -238,6 +240,7 @@ QtObject {
     function cutSelected() { fileOps.cutSelected() }
     function pasteFiles() { fileOps.pasteFiles() }
     function dropFiles(urls, destinationPath, mode) { fileOps.dropFiles(urls, destinationPath, mode) }
+    function dropFilePaths(paths, destinationPath, mode) { fileOps.dropFilePaths(paths, destinationPath, mode) }
     function resolvePasteConflict(policy) { fileOps.resolvePasteConflict(policy) }
     function renamePasteConflict(newName) { fileOps.renamePasteConflict(newName) }
     function cancelPasteConflict() { fileOps.cancelPasteConflict() }

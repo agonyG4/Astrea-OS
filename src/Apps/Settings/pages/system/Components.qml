@@ -20,7 +20,7 @@ ScrollPage {
     readonly property string astreaRoot: (Quickshell.env("ASTREA_ROOT") || ((Quickshell.env("HOME") || "") + "/.local/share/Astrea")) + ""
     readonly property string stateJsonScript: astreaRoot + "/Core/bridge/state_json.py"
     readonly property string configPath: (Quickshell.env("HOME") || "") + "/.config/AstreaOS/ui/components.json"
-    readonly property var defaultConfig: ({
+    readonly property var defaultComponentConfig: ({
         desktop: true,
         topbar: true,
         island: true,
@@ -28,7 +28,7 @@ ScrollPage {
         alttab: true,
         notifications: true
     })
-    readonly property string defaultConfigJson: JSON.stringify(defaultConfig, null, 4)
+    readonly property string defaultConfigJson: JSON.stringify(defaultComponentConfig, null, 4)
     readonly property var componentItems: [
         {
             key: "desktop",
@@ -72,14 +72,14 @@ ScrollPage {
     property string message: ""
     property bool messageIsError: false
     property string _configBuf: ""
-    property var componentConfig: defaultConfig
+    property var componentConfig: defaultComponentConfig
 
     function enabled(key) {
         return root.componentConfig[key] !== false
     }
 
     function setComponent(key, value) {
-        var next = Object.assign({}, root.defaultConfig, root.componentConfig)
+        var next = Object.assign({}, root.defaultComponentConfig, root.componentConfig)
         next[key] = value
         root.componentConfig = next
         saveConfigProc.jsonData = JSON.stringify(next, null, 4)
@@ -103,19 +103,20 @@ ScrollPage {
             onRead: line => root._configBuf += line
         }
         onExited: code => {
-            root.loading = false
             if (code !== 0) {
                 root.showMessage("Não foi possível carregar components.json", true)
+                root.loading = false
                 return
             }
 
             try {
-                root.componentConfig = Object.assign({}, root.defaultConfig, JSON.parse(root._configBuf || "{}"))
+                root.componentConfig = Object.assign({}, root.defaultComponentConfig, JSON.parse(root._configBuf || "{}"))
             } catch (error) {
-                root.componentConfig = root.defaultConfig
+                root.componentConfig = root.defaultComponentConfig
                 root.showMessage("components.json inválido; usando padrão seguro", true)
             }
             root._configBuf = ""
+            root.loading = false
         }
     }
 
@@ -176,7 +177,7 @@ ScrollPage {
             Layout.bottomMargin: 22
 
             Repeater {
-                model: root.componentItems
+                model: root.loading ? [] : root.componentItems
 
                 delegate: SettingRow {
                     required property var modelData

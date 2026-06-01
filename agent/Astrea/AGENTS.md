@@ -51,6 +51,8 @@ Examples:
 - Shared file UI belongs in `Features/Files` and must be exported through `Features/Files/qmldir`.
 - Shared Settings controls belong in `Core/components` and must be exported through `Core/components/qmldir`.
 - Launch behavior belongs in `System/launch`, `bin/astrea-launch`, `System/services/astrea_latencyd.py`, and the `astrea-launchd`/`astrea-latencyd` services.
+- Network behavior belongs in `Core/bridge/network/manager.py` and `Apps/Settings/pages/connectivity/Internet.qml`.
+- Gamescope, Proton, Wine, and Windows app compatibility belong in `System/scripts/astrea-gaming-settings`, `System/scripts/astrea-windows-run`, and `Apps/Settings/pages/gaming`.
 - Media Viewer behavior belongs in `Apps/MediaViewer/Main.qml` and `Apps/MediaViewer/media_viewer_helper.py`; previews cache under `~/.cache/Astrea/media-viewer/previews`.
 - Standalone Wallpapers behavior belongs in `Apps/Wallpapers/main.qml`; wallpaper side effects stay in `Core/bridge/wallpaper/wallpaper_manager.py`.
 
@@ -65,8 +67,10 @@ Use `Theme.*` tokens before introducing any hardcoded colors.
 - Python, Rust, Bash, DBus, portal, or CLI behavior: read `05 Bridges/MOC - Bridges and Backends.md`.
 - Bluetooth, system services, display, theme side effects: read `06 System/MOC - System.md`.
 - Audio, PipeWire, spatial output, HRIR, or sink routing: read `05 Bridges/Astrea - Audio Bridge.md` plus `07 Data/Astrea - Assets and Data.md`.
+- Internet, Wi-Fi, DNS, or WARP: read `05 Bridges/Astrea - Network Bridge.md`.
 - Language/i18n or Polkit prompts: read `06 System/MOC - System.md`.
 - App launch, latency burst, or runtime service install: read `06 System/Astrea - Launcher and Latency.md`.
+- Gamescope, Proton, Wine, or Windows app launch: read `06 System/Astrea - Gaming and Compatibility.md`.
 - Paths, cache, generated state, assets: read `07 Data/MOC - Data.md` and `08 Dependencies/MOC - Dependencies.md`.
 
 ## Validation Bias

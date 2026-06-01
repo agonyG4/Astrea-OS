@@ -46,6 +46,8 @@ network_route_time = 0.0
 wifi_ssid_cache: dict[str, tuple[float, str]] = {}
 json_lock = threading.Lock()
 audio_monitor_proc: subprocess.Popen | None = None
+bluetooth_autoconnect_lock = threading.Lock()
+bluetooth_autoconnect_thread: threading.Thread | None = None
 
 
 def dependency_payload(name: str, *, kind: str = "dependency_missing") -> dict:
@@ -422,6 +424,27 @@ def bluetooth_autoconnect():
         run_cmd(["python3", str(BLUETOOTH_HELPER), "autoconnect"], timeout=20)
 
 
+def request_bluetooth_autoconnect() -> bool:
+    global bluetooth_autoconnect_thread
+
+    with bluetooth_autoconnect_lock:
+        if bluetooth_autoconnect_thread and bluetooth_autoconnect_thread.is_alive():
+            return False
+
+        def worker():
+            global bluetooth_autoconnect_thread
+            try:
+                bluetooth_autoconnect()
+            finally:
+                with bluetooth_autoconnect_lock:
+                    if bluetooth_autoconnect_thread is threading.current_thread():
+                        bluetooth_autoconnect_thread = None
+
+        bluetooth_autoconnect_thread = threading.Thread(target=worker, daemon=True)
+        bluetooth_autoconnect_thread.start()
+        return True
+
+
 def health_payload() -> dict:
     deps = {
         "wpctl": command_available("wpctl"),
@@ -493,8 +516,8 @@ def main():
 
         if now >= next_autoconnect:
             if bluetooth_powered:
-                bluetooth_autoconnect()
-                next_bluetooth = 0.0
+                if request_bluetooth_autoconnect():
+                    next_bluetooth = min(next_bluetooth, now + 5.0)
             next_autoconnect = now + AUTOCONNECT_SEC
 
         next_due = min(next_audio, next_network, next_bluetooth, next_health, next_autoconnect)

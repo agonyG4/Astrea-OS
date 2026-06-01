@@ -27,6 +27,7 @@ It provides:
 - wallpaper and lockscreen features
 - notification handling
 - app launch routing and temporary latency burst
+- network, Wi-Fi, DNS, WARP, Gamescope, Proton, and Windows-app compatibility controls
 - command bridges to Linux desktop services
 
 ## Tech Stack
@@ -36,6 +37,7 @@ It provides:
 - Bash for system service wrappers.
 - Rust native executables for Explorer, Weather, app launch, and music bars.
 - Hyprland, PipeWire/WirePlumber, bluetoothctl, playerctl, systemd user units, DBus, gsettings, hyprsunset, and nvibrant.
+- NetworkManager/nmcli, Cloudflare WARP when installed, Gamescope, Steam/Proton, Wine, umu, GameMode, MangoHud, XDG portals, ImageMagick, and ffmpeg are optional or domain-specific integrations.
 
 ## Architecture Style
 Astrea is a modular desktop stack.

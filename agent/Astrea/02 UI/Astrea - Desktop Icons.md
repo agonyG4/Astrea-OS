@@ -18,10 +18,10 @@ It renders launchable `.desktop` applications on the desktop, supports drag plac
 ## Runtime Integration
 `Quickshell/shell.qml` loads `DesktopIcons.qml` through a `Loader`.
 
-It must not instantiate Desktop Icons directly. The loader reads:
-- `~/.local/state/Astrea/desktop-icons/config.json`
+It must not instantiate Desktop Icons directly. The loader is gated by:
+- `~/.config/AstreaOS/ui/components.json`
 
-When `enabled` is `false`, the main shell does not load the desktop icon overlay.
+When the `desktop` component is `false`, the main shell does not load the desktop icon overlay.
 
 The overlay creates one bottom-layer `PanelWindow` per screen.
 
@@ -43,7 +43,10 @@ Local module link:
 Do not reintroduce a local desktop-only context menu frame.
 
 ## State
-Runtime enablement:
+Runtime component enablement:
+- `~/.config/AstreaOS/ui/components.json`
+
+Desktop icons behavior/config:
 - `~/.local/state/Astrea/desktop-icons/config.json`
 
 Persistent layout state:

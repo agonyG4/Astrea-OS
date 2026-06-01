@@ -25,12 +25,42 @@ ScrollPage {
     readonly property var presetValues: ["recommended", "nvidia", "hdr", "diagnostic", "custom"]
     readonly property var syncModeOptions: ["Proton default", "Disable Esync", "Disable Fsync", "Disable both"]
     readonly property var syncModeValues: ["default", "disable-esync", "disable-fsync", "disable-both"]
+    readonly property var defaultProton: ({
+        "config_version": 2,
+        "preset": "recommended",
+        "gamemode": true,
+        "mangohud": false,
+        "gamescope": false,
+        "use_gamescope_profile": true,
+        "gamescope_width": 1920,
+        "gamescope_height": 1080,
+        "gamescope_refresh": 60,
+        "gamescope_fullscreen": true,
+        "gamescope_immediate_flips": false,
+        "gamescope_hide_cursor": false,
+        "gamescope_force_grab_cursor": false,
+        "gamescope_adaptive_sync": false,
+        "gamescope_extra_args": "",
+        "enable_nvapi": false,
+        "hide_nvidia_gpu": false,
+        "sync_mode": "default",
+        "enable_esync": true,
+        "enable_fsync": true,
+        "dxvk_async": false,
+        "dxvk_hdr": false,
+        "vkd3d_dxr": false,
+        "use_wined3d": false,
+        "fsr": false,
+        "fsr_strength": 2,
+        "custom_env": "",
+        "custom_prefix": ""
+    })
 
     property bool loading: true
     property string message: ""
     property bool messageIsError: false
     property string buffer: ""
-    property var proton: ({})
+    property var proton: Object.assign({}, defaultProton)
     property var status: ({ proton_command: "astrea-gaming %command%", proton_wrapper: "", proton_preview: "astrea-gaming %command%", proton_env: ({}), proton_prefix: [], proton_preset: "recommended" })
 
     function t(key, fallback, params) {
@@ -80,7 +110,7 @@ ScrollPage {
     }
 
     function updateConfig(key, value, showMessage, keepPreset) {
-        var next = Object.assign({}, root.proton)
+        var next = Object.assign({}, root.defaultProton, root.proton)
         next[key] = value
         root.makeCustom(next, keepPreset || key === "preset")
         root.proton = next
@@ -94,7 +124,7 @@ ScrollPage {
 
     function applyPreset(index) {
         const preset = root.presetValues[Math.max(0, Math.min(index, root.presetValues.length - 1))]
-        var next = Object.assign({}, root.proton)
+        var next = Object.assign({}, root.defaultProton, root.proton)
         next.preset = preset
         if (preset !== "custom") {
             next.custom_env = ""
@@ -157,21 +187,22 @@ ScrollPage {
         command: [root.helperPath, "get"]
         stdout: SplitParser { onRead: line => root.buffer += line }
         onExited: code => {
-            root.loading = false
             if (code !== 0) {
+                root.loading = false
                 root.message = root.t("apps.settings.pages.gaming.proton.error.load", "Could not load Proton settings")
                 root.messageIsError = true
                 return
             }
             try {
                 const payload = JSON.parse(root.buffer || "{}")
-                root.proton = payload.proton || ({})
+                root.proton = Object.assign({}, root.defaultProton, payload.proton || ({}))
                 root.status = payload.status || root.status
             } catch (e) {
                 root.message = root.t("apps.settings.pages.gaming.proton.error.parse", "Could not parse settings: {error}", { error: e })
                 root.messageIsError = true
             }
             root.buffer = ""
+            root.loading = false
         }
     }
 
@@ -190,7 +221,7 @@ ScrollPage {
             try {
                 const payload = JSON.parse(saveProc.saveBuffer || "{}")
                 if (payload.proton)
-                    root.proton = payload.proton
+                    root.proton = Object.assign({}, root.defaultProton, payload.proton)
                 if (payload.status) {
                     root.status = Object.assign({}, root.status, payload.status, {
                         proton_wrapper: payload.status.proton_wrapper || payload.status.wrapper || root.status.proton_wrapper,

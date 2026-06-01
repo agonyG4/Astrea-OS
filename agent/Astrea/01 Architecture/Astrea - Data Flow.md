@@ -4,13 +4,14 @@ Related notes: [[Astrea]], [[Astrea - Patterns]], [[Astrea - Core Bridge]]
 
 ## Shell Startup
 1. Quickshell loads `Quickshell/shell.qml`.
-2. `shell.qml` creates shared `MusicMonitor`.
-3. It loads [[Astrea - Desktop Icons]] only when desktop icons are enabled.
-4. It creates one [[Astrea - Top Bar]] per screen.
-5. It creates one [[Astrea - Island]] per screen.
-6. It creates resident [[Astrea - Spotlight]].
-7. It creates resident [[Astrea - Alt Tab]].
-8. It creates resident [[Astrea - Notifications]].
+2. `ComponentSettings` reads `~/.config/AstreaOS/ui/components.json`.
+3. `ComponentServiceManager` reconciles status-service and helper cleanup for disabled surfaces.
+4. `GameModeManager` tracks whether selected services should pause for game mode.
+5. `shell.qml` creates shared `MusicMonitor`.
+6. It loads [[Astrea - Desktop Icons]] only when the component is enabled.
+7. It creates one [[Astrea - Top Bar]] per screen when topbar is enabled.
+8. It creates one [[Astrea - Island]] per screen when island is enabled.
+9. It creates resident [[Astrea - Spotlight]], [[Astrea - Alt Tab]], and [[Astrea - Notifications]] when enabled.
 
 ## Shell Status Flow
 1. `astrea-status.service` runs `System/services/astrea_statusd.py`.
@@ -28,6 +29,19 @@ Related notes: [[Astrea]], [[Astrea - Patterns]], [[Astrea - Core Bridge]]
 5. Process calls [[Astrea - Core Bridge]] or [[Astrea - System Layer]].
 6. Backend returns JSON or applies a side effect.
 7. QML updates state.
+
+## Shell Components Flow
+1. Settings Components page reads or initializes `~/.config/AstreaOS/ui/components.json` through [[Astrea - State JSON Bridge]].
+2. `Quickshell/runtime/ComponentSettings.qml` watches the file with `FileView`.
+3. `shell.qml` gates Desktop Icons, Top Bar, Island, Spotlight, Alt Tab, and Notifications from those booleans.
+4. `ComponentServiceManager.qml` stops `astrea-status.service` when the topbar is disabled or game mode is active, and kills desktop/music/notification helper processes when their owning surface is disabled.
+
+## Network Settings Flow
+1. `Apps/Settings/pages/connectivity/Internet.qml` calls [[Astrea - Network Bridge]].
+2. The bridge returns interface stats, DNS state, Wi-Fi status/networks, and Cloudflare WARP status as JSON.
+3. DNS changes write through `nmcli connection modify`.
+4. Wi-Fi actions call `nmcli radio wifi`, `nmcli device wifi connect`, or device disconnect commands.
+5. WARP actions use `warp-cli` plus systemd service/tray state when WARP is installed.
 
 ## Explorer Flow
 1. `Apps/Explorer/Main.qml` starts.
@@ -48,8 +62,8 @@ Related notes: [[Astrea]], [[Astrea - Patterns]], [[Astrea - Core Bridge]]
 7. The portal backend returns selected file URIs to the caller.
 
 ## Desktop Icons Flow
-1. `Quickshell/shell.qml` reads `~/.local/state/Astrea/desktop-icons/config.json`.
-2. If enabled, a `Loader` opens `DesktopIcons.qml`.
+1. `Quickshell/shell.qml` reads component enablement from `~/.config/AstreaOS/ui/components.json`.
+2. If the `desktop` component is enabled, a `Loader` opens `DesktopIcons.qml`.
 3. `DesktopIcons.qml` creates one bottom-layer window per screen.
 4. `app_index.py` returns XDG desktop-folder `.desktop` entries as JSON.
 5. QML renders icons with `image://icon`.
@@ -88,6 +102,13 @@ Related notes: [[Astrea]], [[Astrea - Patterns]], [[Astrea - Core Bridge]]
 4. When configured, it asks `astrea-latencyd` for a temporary launch burst.
 5. `astrea-latencyd` snapshots state, applies the burst through its narrow helper path, then rolls back.
 6. Launch records are written under `~/.local/state/Astrea/launch/history.jsonl`.
+
+## Gaming And Compatibility Flow
+1. Settings Gamescope, Proton, and Compatibility pages call `System/scripts/astrea-gaming-settings`.
+2. The helper writes `~/.config/AstreaOS/gaming/gamescope.json`, `proton.json`, and `compatibility.json`.
+3. Gamescope saves regenerate `~/.local/bin/astrea-gamescope-session` and `~/.config/environment.d/gamescope-session-plus.conf`.
+4. Proton saves regenerate the `astrea-gaming %command%` wrapper behavior consumed by launchers.
+5. `System/scripts/astrea-windows-run <path>` opens `.exe` and `.msi` files with Proton, Wine, or auto mode, using the shared prefix under `~/.local/share/AstreaOS/windows-prefixes/shared/proton`.
 
 ## Music Flow
 1. `MusicMonitor.qml` starts `playerctl` and `music_bars.sh`.

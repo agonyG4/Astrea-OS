@@ -1003,65 +1003,12 @@ Item {
                 textPrimary: root.textPrimary
                 textSecondary: root.warpActionStatus === "error" ? "#ff5f57" : (root.warpActionStatus === "ok" ? "#3ddc97" : root.textSecondary)
                 cardBorder: root.cardBorder
+                isLast: true
 
                 ToggleSwitch {
                     enabled: root.warpInstalled && !root.warpActionPending
                     checked: root.warpConnected
                     onToggled: targetChecked => root.setWarpEnabled(targetChecked)
-                }
-            }
-
-            SettingRow {
-                label: "Tunnel"
-                sublabel: root.warpDetail || (root.warpNetwork ? ("Network " + root.warpNetwork) : "Connection status")
-                textPrimary: root.textPrimary
-                textSecondary: root.textSecondary
-                cardBorder: root.cardBorder
-
-                ValueLabel {
-                    text: root.warpStatus
-                    color: root.warpConnected ? "#3ddc97" : root.textSecondary
-                    strong: root.warpConnected
-                }
-            }
-
-            SettingRow {
-                label: "Daemon"
-                sublabel: "Boot: " + root.warpServiceEnabled + " · Tray: " + root.warpTrayState
-                textPrimary: root.textPrimary
-                textSecondary: root.textSecondary
-                cardBorder: root.cardBorder
-
-                ValueLabel {
-                    text: root.warpServiceState
-                    color: root.warpServiceActive ? "#3ddc97" : root.textSecondary
-                    strong: root.warpServiceActive
-                }
-            }
-
-            SettingRow {
-                label: "Actions"
-                sublabel: root.warpInstalled ? "Refresh status or reconnect the daemon" : "Install Cloudflare WARP to enable these controls"
-                textPrimary: root.textPrimary
-                textSecondary: root.textSecondary
-                cardBorder: root.cardBorder
-                isLast: true
-
-                RowLayout {
-                    spacing: 8
-
-                    MiniButton {
-                        label: "Refresh"
-                        enabledState: !root.warpActionPending
-                        onClicked: root.loadWarp()
-                    }
-
-                    MiniButton {
-                        label: "Restart"
-                        primary: true
-                        enabledState: root.warpInstalled && !root.warpActionPending
-                        onClicked: root.restartWarp()
-                    }
                 }
             }
         }

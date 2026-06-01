@@ -14,7 +14,7 @@ Item {
     property color textPrimary: Components.Theme.textPrimary
     property color textSecondary: Components.Theme.textSecondary
     property color cardBorder: Components.Theme.cardBorder
-    property color rowHoverBg:    Qt.rgba(1, 1, 1, 0.03)
+    property color rowHoverBg:    Qt.rgba(1, 1, 1, 0.055)
 
     default property alias control: slot.data
     implicitWidth: parent ? parent.width : 200
@@ -25,7 +25,7 @@ Item {
         id: bgHighlight
         anchors { fill: parent; leftMargin: Components.Theme.spacingMicro; rightMargin: Components.Theme.spacingMicro; topMargin: Components.Theme.spacingTiny; bottomMargin: Components.Theme.spacingTiny }
         radius: Components.Theme.controlRadius
-        color: rowArea.containsMouse ? sr.rowHoverBg : "transparent"
+        color: rowArea.containsMouse && sr.clickable ? sr.rowHoverBg : "transparent"
         Behavior on color { ColorAnimation { duration: Components.Theme.animationSlow; easing.type: Easing.OutQuart } }
     }
 
@@ -69,7 +69,7 @@ Item {
             Layout.preferredHeight: implicitHeight
             Layout.maximumWidth: Math.max(0, sr.width - rowLayout.anchors.leftMargin - rowLayout.anchors.rightMargin)
             Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
-            scale: rowArea.pressed ? 0.98 : 1.0
+            scale: rowArea.pressed && sr.clickable ? 0.98 : 1.0
             Behavior on scale { NumberAnimation { duration: Components.Theme.animationFast; easing.type: Easing.OutCubic } }
         }
     }

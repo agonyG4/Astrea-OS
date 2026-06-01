@@ -12,6 +12,11 @@ pub fn run_warm(args: &[String]) -> Result<(), String> {
     let offset = args.get(5).and_then(|v| v.parse().ok()).unwrap_or(0usize);
     let limit = args.get(6).and_then(|v| v.parse().ok()).unwrap_or(24usize);
 
+    if entries::path_uses_remote_listing(dir) {
+        println!("0");
+        return Ok(());
+    }
+
     let cache = cache_dir()?;
     fs::create_dir_all(&cache).map_err(|e| format!("cache dir: {e}"))?;
 

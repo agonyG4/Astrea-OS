@@ -433,14 +433,15 @@ Item {
                             }
 
                             Rectangle {
-                                width: 18; height: 18; radius: 9
-                                color: isEffectiveDefault ? root.accent : "transparent"
-                                border.width: 2
-                                border.color: isEffectiveDefault ? root.accent : Qt.rgba(1,1,1,0.3)
+                                width: 20; height: 20; radius: 10
+                                color: isEffectiveDefault ? root.accent : Qt.rgba(1, 1, 1, 0.035)
+                                border.width: 1
+                                border.color: isEffectiveDefault ? root.accent : Qt.rgba(1,1,1,0.24)
                                 Behavior on color { ColorAnimation { duration: 130 } }
+                                Behavior on border.color { ColorAnimation { duration: 130 } }
                                 Rectangle {
                                     anchors.centerIn: parent
-                                    width: 7; height: 7; radius: 4; color: "#fff"
+                                    width: 6; height: 6; radius: 3; color: "#fff"
                                     visible: isEffectiveDefault
                                 }
                             }
@@ -545,14 +546,16 @@ Item {
                                         id: appIcon
                                         anchors.centerIn: parent
                                         appData: modelData
-                                        iconSize: 18
-                                        iconPadding: 0
-                                        fallbackRadius: 4
-                                        fallbackColor: "transparent"
+                                        iconSize: 22
+                                        iconRadius: 6
+                                        iconPadding: 2
+                                        sourcePixelSize: 96
+                                        fallbackRadius: 6
+                                        fallbackColor: Qt.rgba(1, 1, 1, 0.08)
                                         fallbackBorderColor: "transparent"
                                         fallbackTextColor: root.textSecondary
-                                        fallbackFontFamily: "Inter"
-                                        fallbackFontSize: Theme.fontSizeSmall
+                                        fallbackFontFamily: ""
+                                        fallbackFontSize: 10
                                         opacity: iconRect.isMuted ? 0.35 : 1.0
                                         Behavior on opacity { NumberAnimation { duration: 150 } }
                                     }

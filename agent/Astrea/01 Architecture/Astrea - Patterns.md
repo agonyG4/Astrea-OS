@@ -74,10 +74,13 @@ This preserves short paths while allowing internal organization.
 ## Config and State Convention
 Observed convention:
 - `~/.config/AstreaOS` for persistent user-facing config.
+- `~/.config/AstreaOS/ui/components.json` for resident shell surface toggles.
+- `~/.config/AstreaOS/gaming/*.json` for Gamescope, Proton, and Windows compatibility settings.
 - `~/.local/state/Astrea` for runtime/application state.
 - `~/.local/state/Astrea/weather/settings.json` for Weather notification preferences.
 - `~/.local/state/Astrea/weather/alerts-seen.json` for Weather alert deduplication.
 - `~/.cache/weather` for weather cache.
+- `~/.local/share/AstreaOS` for durable user-owned library data such as wallpapers and Windows prefixes.
 
 Some runtime state also exists inside the Astrea tree. See [[Astrea - Unknowns]].
 

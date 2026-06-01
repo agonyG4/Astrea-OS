@@ -236,13 +236,13 @@ ApplicationWindow {
             }
 // ── Content area ──────────────────────────────────────────────
 Item {
-    Layout.fillWidth: true
-    Layout.fillHeight: true
+                Layout.fillWidth: true
+                Layout.fillHeight: true
 
-    Loader {
-        id: pageLoader
-        anchors.fill: parent
-        onStatusChanged: if (status === Loader.Ready) fadeIn.start()
+                Loader {
+                    id: pageLoader
+                    anchors.fill: parent
+                    onStatusChanged: if (status === Loader.Ready) fadeIn.start()
         
         Connections {
             target: pageLoader.item
@@ -271,8 +271,8 @@ Item {
             easing.type: Easing.OutCubic
         }
     }
-}
-            
+
         }
     }
+}
 }

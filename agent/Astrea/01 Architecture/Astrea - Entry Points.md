@@ -25,12 +25,14 @@ Use this live path for code changes unless the user explicitly requests document
 | weather, INMET, forecast | [[Astrea - Weather App]], [[Astrea - Weather Bridge]] |
 | audio, music bars, PipeWire | [[Astrea - Audio Bridge]] |
 | monitor, display, Hyprland display config | [[Astrea - Display Bridge]] |
+| internet, Wi-Fi, DNS, Cloudflare WARP, network status | [[Astrea - Network Bridge]], [[Astrea - Settings App]] |
 | wallpaper, lockscreen media | [[Astrea - Wallpaper Bridge]] |
 | wallpapers app, wallpaper library | [[Astrea - Wallpapers App]], [[Astrea - Wallpaper Bridge]] |
 | bluetooth | [[Astrea - Bluetooth Manager]] |
 | language, translation, i18n, locale | [[Astrea - I18n]] |
 | polkit, authentication prompt, privilege prompt | [[Astrea - Polkit Auth]] |
 | app launch, launcher daemon, latency burst | [[Astrea - Launcher and Latency]] |
+| gamescope, SteamOS session, Proton, Wine, Windows `.exe` or `.msi` | [[Astrea - Gaming and Compatibility]] |
 
 ## Main Shell
 - File: `Quickshell/shell.qml`
@@ -91,10 +93,22 @@ Use this live path for code changes unless the user explicitly requests document
   - built source for `bin/astrea-launch`.
 - `bin/astrea-launch`
   - app-facing launch wrapper used by Spotlight, Desktop Icons, Explorer, and app manager calls.
+- `bin/astrea-gaming`
+  - Proton/GameMode/MangoHud wrapper generated from `~/.config/AstreaOS/gaming/proton.json`.
+- `bin/astrea-gamescope-session`
+  - Gamescope/Steam session launcher generated from `~/.config/AstreaOS/gaming/gamescope.json`.
+- `System/scripts/astrea-windows-run`
+  - Windows `.exe`/`.msi` runner using Proton, Wine, or auto mode.
 - `bin/weather-cli`
   - Weather CLI consumed by Weather QML and Spotlight.
 - `bin/astrea-weatherd`
   - Weather monitor daemon binary installed by `astrea-services.sh`.
 
-## Unknown
-The exact external autostart owner for `Quickshell/shell.qml` was not established in this pass. See [[Astrea - Unknowns]].
+## Session Autostart
+Hyprland starts the live shell from:
+- `~/.config/hypr/system/autostart.conf`
+
+Current relevant entries include:
+- `quickshell -p ~/.local/share/Astrea/Quickshell`
+- `quickshell -p ~/.local/share/Astrea/Features/Paper/lockscreen/Lockscreen.qml`
+- `bash $HOME/.local/share/Astrea/System/services/display_apply.sh`

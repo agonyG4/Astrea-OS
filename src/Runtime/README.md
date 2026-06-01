@@ -8,4 +8,5 @@ Canonical namespace for runtime wiring.
 - `i18n` points to language resources and translation helpers.
 
 Generated state should stay out of this tree when possible and prefer
-`~/.local/state/Astrea`, `~/.cache/astrea`, or `~/.config/AstreaOS`.
+`~/.local/state/Astrea`, `~/.cache/Astrea`, `~/.cache/weather`, `~/.config/AstreaOS`,
+or durable user-library paths under `~/.local/share/AstreaOS`.

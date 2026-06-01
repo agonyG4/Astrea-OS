@@ -20,6 +20,7 @@ Rectangle {
     property color fallbackBorderColor: Qt.rgba(1, 1, 1, 0.14)
     property color fallbackTextColor: "#f5f5f7"
     property string fallbackFontFamily: "Inter"
+    property int retryCount: 0
     readonly property bool hasIcon: iconImage.status === Image.Ready
 
     width: iconSize
@@ -58,6 +59,11 @@ Rectangle {
         const cls = String(value.className || value.class || value.initialClass || "").toLowerCase()
         const text = String((value.title || value.name || "") + " " + cls).toLowerCase()
 
+        if (cls.indexOf("zen") >= 0 || text.indexOf("zen") >= 0)
+            return "zen-browser"
+        if (cls.indexOf("spotify") >= 0 || text.indexOf("spotify") >= 0)
+            return "spotify"
+
         if (value.icon_path)
             return value.icon_path
         if (value.iconPath)
@@ -71,14 +77,10 @@ Rectangle {
 
         if (cls === "org.vinegarhq.sober")
             return "org.vinegarhq.Sober"
-        if (cls.indexOf("zen") >= 0)
-            return "zen-browser"
         if (cls.indexOf("kitty") >= 0)
             return "kitty"
         if (cls.indexOf("code") >= 0 || cls.indexOf("cursor") >= 0)
             return "visual-studio-code"
-        if (cls.indexOf("spotify") >= 0)
-            return "spotify"
         if (cls.indexOf("discord") >= 0)
             return "discord"
         const steamGame = cls.match(/^steam_app_(\d+)$/)
@@ -122,7 +124,10 @@ Rectangle {
         })
     }
 
-    onResolvedIconNameChanged: reloadIcon()
+    onResolvedIconNameChanged: {
+        retryCount = 0
+        reloadIcon()
+    }
 
     Image {
         id: iconImage
@@ -139,8 +144,10 @@ Rectangle {
         visible: status === Image.Ready
 
         onStatusChanged: {
-            if (status === Image.Error && root.resolvedIconName.length > 0)
+            if (status === Image.Error && root.resolvedIconName.length > 0 && root.retryCount < 2) {
+                root.retryCount += 1
                 iconRetryTimer.restart()
+            }
         }
     }
 

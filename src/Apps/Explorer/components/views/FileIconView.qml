@@ -109,16 +109,16 @@ Item {
     }
 
     function handleDroppedUrls(drop, destinationPath) {
-        if (!drop || !drop.hasUrls)
+        var paths = DragDropSupport.dropPaths(drop)
+        if (!paths || paths.length === 0)
             return false
 
         const targetPath = destinationPath || AppState.currentPath
         const dropMode = DragDropSupport.dropModeFor(drop, AppState)
-        const urls = [].concat(drop.urls || [])
 
         drop.accepted = true
         Qt.callLater(function() {
-            AppState.dropFiles(urls, targetPath, dropMode)
+            AppState.dropFilePaths(paths, targetPath, dropMode)
         })
         return true
     }

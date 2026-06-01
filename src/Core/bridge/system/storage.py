@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -95,6 +96,7 @@ SYSTEM_IDS = {
     "fonts",
 }
 PACMAN_IDS = {"sys:pacman"}
+SIZE_RE = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGTPE]?)(?:I?B)?\s*$", re.IGNORECASE)
 
 
 def find_sense_script() -> Path | None:
@@ -156,18 +158,19 @@ def parse_compsize_size(value: str) -> int:
     value = value.strip()
     if not value:
         return 0
-    suffix = value[-1].upper()
-    multiplier = 1
-    number = value
-    if suffix in {"K", "M", "G", "T", "P"}:
-        multiplier = {
-            "K": 1_000,
-            "M": 1_000_000,
-            "G": 1_000_000_000,
-            "T": 1_000_000_000_000,
-            "P": 1_000_000_000_000_000,
-        }[suffix]
-        number = value[:-1]
+    match = SIZE_RE.match(value)
+    if not match:
+        raise ValueError(f"invalid size: {value}")
+    number, suffix = match.groups()
+    multiplier = {
+        "": 1,
+        "K": 1_000,
+        "M": 1_000_000,
+        "G": 1_000_000_000,
+        "T": 1_000_000_000_000,
+        "P": 1_000_000_000_000_000,
+        "E": 1_000_000_000_000_000_000,
+    }[suffix.upper()]
     return int(float(number) * multiplier)
 
 
@@ -373,6 +376,25 @@ def refresh_running() -> bool:
     return bool(refresh_status().get("running"))
 
 
+def acquire_refresh_lock() -> bool:
+    while True:
+        try:
+            fd = os.open(REFRESH_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            if refresh_running():
+                return False
+            try:
+                REFRESH_LOCK.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                return False
+            continue
+        with os.fdopen(fd, "w", encoding="ascii") as handle:
+            handle.write(str(os.getpid()))
+        return True
+
+
 def cache_needs_auto_refresh(meta: dict) -> bool:
     if not meta.get("cache_exists"):
         return True
@@ -432,17 +454,8 @@ def enrich_refresh_metadata(payload: dict, sense_script: Path | None = None) -> 
 
 def run_refresh_background(sense_script: Path, reason: str) -> int:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        fd = os.open(REFRESH_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(os.getpid()).encode("ascii"))
-        os.close(fd)
-    except FileExistsError:
-        if refresh_running():
-            return 0
-        try:
-            REFRESH_LOCK.unlink()
-        except OSError:
-            pass
+    if not acquire_refresh_lock():
+        return 0
 
     started = time.time()
     write_json(REFRESH_STATUS, {
@@ -600,46 +613,48 @@ def print_cached_json() -> int:
 
     try:
         conn = sqlite3.connect(f"file:{CACHE_DB}?mode=ro", uri=True)
-        columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
-        if "disk_size" in columns and "disk_ready" in columns:
-            physical_expr = "CASE WHEN disk_ready = 1 THEN disk_size ELSE size END"
-            compressed_expr = "CASE WHEN disk_ready = 1 AND size > disk_size THEN size - disk_size ELSE 0 END"
-            compression_missing_expr = "CASE WHEN disk_ready = 1 THEN 0 ELSE 1 END"
-        elif "disk_size" in columns:
-            physical_expr = "size"
-            compressed_expr = "0"
-            compression_missing_expr = "1"
-        else:
-            physical_expr = "size"
-            compressed_expr = "0"
-            compression_missing_expr = "1"
-        rows = conn.execute(
-            f"""
-            SELECT cat,
-                   COUNT(*),
-                   SUM(size),
-                   SUM({physical_expr}),
-                   SUM({compressed_expr})
-            FROM files
-            GROUP BY cat
-            ORDER BY SUM(size) DESC
-            """
-        ).fetchall()
-        total_scanned, total_physical, total_saved, compression_missing = conn.execute(
-            f"""
-            SELECT
-                SUM(size),
-                SUM({physical_expr}),
-                SUM({compressed_expr}),
-                SUM({compression_missing_expr})
-            FROM files
-            """
-        ).fetchone()
-        total_scanned = total_scanned or 0
-        total_physical = total_physical or 0
-        total_saved = total_saved or 0
-        compression_missing = compression_missing or 0
-        conn.close()
+        try:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
+            if "disk_size" in columns and "disk_ready" in columns:
+                physical_expr = "CASE WHEN disk_ready = 1 THEN disk_size ELSE size END"
+                compressed_expr = "CASE WHEN disk_ready = 1 AND size > disk_size THEN size - disk_size ELSE 0 END"
+                compression_missing_expr = "CASE WHEN disk_ready = 1 THEN 0 ELSE 1 END"
+            elif "disk_size" in columns:
+                physical_expr = "size"
+                compressed_expr = "0"
+                compression_missing_expr = "1"
+            else:
+                physical_expr = "size"
+                compressed_expr = "0"
+                compression_missing_expr = "1"
+            rows = conn.execute(
+                f"""
+                SELECT cat,
+                       COUNT(*),
+                       SUM(size),
+                       SUM({physical_expr}),
+                       SUM({compressed_expr})
+                FROM files
+                GROUP BY cat
+                ORDER BY SUM(size) DESC
+                """
+            ).fetchall()
+            total_scanned, total_physical, total_saved, compression_missing = conn.execute(
+                f"""
+                SELECT
+                    SUM(size),
+                    SUM({physical_expr}),
+                    SUM({compressed_expr}),
+                    SUM({compression_missing_expr})
+                FROM files
+                """
+            ).fetchone()
+            total_scanned = total_scanned or 0
+            total_physical = total_physical or 0
+            total_saved = total_saved or 0
+            compression_missing = compression_missing or 0
+        finally:
+            conn.close()
     except sqlite3.Error as err:
         print(json.dumps(enrich_refresh_metadata({"error": f"Could not read storage cache: {err}", "data": []}, None)))
         return 0

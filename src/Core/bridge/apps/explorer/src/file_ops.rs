@@ -33,6 +33,14 @@ enum EventFormat {
     Jsonl,
 }
 
+struct FileOpRequest {
+    mode: OperationMode,
+    destination: PathBuf,
+    policy: ConflictPolicy,
+    rename: String,
+    sources: Vec<PathBuf>,
+}
+
 pub fn run(args: &[String]) -> Result<(), String> {
     let (format, normalized_args) = parse_event_format(args);
     match run_inner(&normalized_args, format) {
@@ -49,15 +57,12 @@ fn parse_event_format(args: &[String]) -> (EventFormat, Vec<String>) {
 }
 
 fn run_inner(args: &[String], format: EventFormat) -> Result<(), String> {
-    if args.len() < 5 {
-        return Err("usage: explorer_backend file-op <copy|move|cut> <destination> <merge|overwrite|skip|rename|keep-both> <rename> <paths...>".into());
-    }
-
-    let mode = parse_file_op_mode(&args[0])?;
-    let destination = Path::new(&args[1]);
-    let policy = parse_conflict_policy(&args[2])?;
-    let rename = args[3].trim();
-    let sources: Vec<PathBuf> = args[4..].iter().map(PathBuf::from).collect();
+    let request = parse_file_op_request(args)?;
+    let mode = request.mode;
+    let destination = request.destination.as_path();
+    let policy = request.policy;
+    let rename = request.rename.as_str();
+    let sources = request.sources;
 
     validate_rename_policy(policy, rename, sources.len())?;
 
@@ -124,6 +129,52 @@ fn run_inner(args: &[String], format: EventFormat) -> Result<(), String> {
 
     emit_file_op_done(format, mode, destination, completed, sources.len());
     Ok(())
+}
+
+fn file_op_usage() -> &'static str {
+    "usage: explorer_backend file-op <copy|move|cut> <destination> <merge|overwrite|skip|rename|keep-both> [--rename <name>] <paths...>"
+}
+
+fn parse_file_op_request(args: &[String]) -> Result<FileOpRequest, String> {
+    if args.len() < 4 {
+        return Err(file_op_usage().into());
+    }
+
+    let mode = parse_file_op_mode(&args[0])?;
+    let destination = PathBuf::from(&args[1]);
+    let policy = parse_conflict_policy(&args[2])?;
+    let mut rename = String::new();
+    let mut source_start = 3usize;
+
+    if args[3] == "--rename" {
+        if args.len() < 6 {
+            return Err(file_op_usage().into());
+        }
+        rename = args[4].trim().to_string();
+        source_start = 5;
+    } else if policy == ConflictPolicy::Rename {
+        if args.len() < 5 {
+            return Err(file_op_usage().into());
+        }
+        rename = args[3].trim().to_string();
+        source_start = 4;
+    } else if args[3].is_empty() && args.len() >= 5 {
+        // Backward compatibility with the legacy positional rename placeholder.
+        source_start = 4;
+    }
+
+    let sources: Vec<PathBuf> = args[source_start..].iter().map(PathBuf::from).collect();
+    if sources.is_empty() {
+        return Err(file_op_usage().into());
+    }
+
+    Ok(FileOpRequest {
+        mode,
+        destination,
+        policy,
+        rename,
+        sources,
+    })
 }
 
 fn parse_file_op_mode(mode: &str) -> Result<OperationMode, String> {
@@ -953,6 +1004,72 @@ mod tests {
         assert!(validate_rename_policy(ConflictPolicy::Rename, "../escape.txt", 1).is_err());
         assert!(validate_rename_policy(ConflictPolicy::Rename, "/tmp/escape.txt", 1).is_err());
         assert!(validate_rename_policy(ConflictPolicy::Rename, "safe.txt", 1).is_ok());
+    }
+
+    #[test]
+    fn non_rename_policy_accepts_paths_without_placeholder() {
+        let root = std::env::temp_dir().join(format!(
+            "astrea-file-op-multi-source-new-cli-test-{}",
+            unix_millis()
+        ));
+        let source_dir = root.join("src");
+        let dest = root.join("dest");
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::create_dir_all(&dest).unwrap();
+        let first = source_dir.join("first.txt");
+        let second = source_dir.join("second.txt");
+        fs::write(&first, "first").unwrap();
+        fs::write(&second, "second").unwrap();
+
+        run_inner(
+            &vec![
+                "move".into(),
+                dest.to_string_lossy().into_owned(),
+                "keep-both".into(),
+                first.to_string_lossy().into_owned(),
+                second.to_string_lossy().into_owned(),
+            ],
+            EventFormat::Jsonl,
+        )
+        .unwrap();
+
+        assert!(!first.exists());
+        assert!(!second.exists());
+        assert_eq!(fs::read_to_string(dest.join("first.txt")).unwrap(), "first");
+        assert_eq!(fs::read_to_string(dest.join("second.txt")).unwrap(), "second");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn non_rename_policy_keeps_legacy_empty_placeholder_compatibility() {
+        let args = vec![
+            "copy".into(),
+            "/tmp".into(),
+            "keep-both".into(),
+            "".into(),
+            "/tmp/a.txt".into(),
+            "/tmp/b.txt".into(),
+        ];
+        let request = parse_file_op_request(&args).unwrap();
+        assert_eq!(request.sources.len(), 2);
+        assert_eq!(request.rename, "");
+        assert_eq!(request.sources[0], PathBuf::from("/tmp/a.txt"));
+        assert_eq!(request.sources[1], PathBuf::from("/tmp/b.txt"));
+    }
+
+    #[test]
+    fn rename_policy_accepts_named_flag() {
+        let args = vec![
+            "copy".into(),
+            "/tmp".into(),
+            "rename".into(),
+            "--rename".into(),
+            "safe.txt".into(),
+            "/tmp/source.txt".into(),
+        ];
+        let request = parse_file_op_request(&args).unwrap();
+        assert_eq!(request.rename, "safe.txt");
+        assert_eq!(request.sources, vec![PathBuf::from("/tmp/source.txt")]);
     }
 
     #[cfg(unix)]

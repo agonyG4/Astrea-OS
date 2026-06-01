@@ -34,11 +34,11 @@ Item {
         Text {
             text: root.sectionTitle
             color: root.textPrimary
-            font.family: Theme.fontFamily
-            font.pixelSize: 18
-            font.weight: Theme.fontWeightDemiBold
+            font.family: "SF Pro Display"
+            font.pixelSize: 24
+            font.weight: Font.DemiBold
             Layout.fillWidth: true
-            Layout.bottomMargin: 18
+            Layout.bottomMargin: 20
             elide: Text.ElideRight
         }
 
@@ -132,7 +132,7 @@ Item {
                                             visible: (row.modelData.iconKey || "") === ""
                                             text: row.modelData.sym || ""
                                             color: root.textSecondary
-                                            font.family: Theme.iconFontFamily
+                                            font.family: "JetBrainsMono Nerd Font"
                                             font.pixelSize: Theme.fontSizeNormal
                                         }
                                     }
@@ -145,9 +145,9 @@ Item {
                                         Text {
                                             text: row.modelData.label || ""
                                             color: root.textPrimary
-                                            font.family: Theme.fontFamily
+                                            font.family: "SF Pro Display"
                                             font.pixelSize: 13
-                                            font.weight: Theme.fontWeightMedium
+                                            font.weight: Font.DemiBold
                                             Layout.fillWidth: true
                                             elide: Text.ElideRight
                                         }

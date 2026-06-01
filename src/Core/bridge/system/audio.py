@@ -29,21 +29,17 @@ def _load_astrea_shared():
 
 ASTREA_SHARED = _load_astrea_shared()
 
-# ── Runtime/config paths ──────────────────────────────────────────────────────
-ASTREA_ROOT = ASTREA_SHARED.astrea_root()
-WP_CONF_DIR = ASTREA_SHARED.xdg_config_home() / "wireplumber/wireplumber.conf.d"
-PIPEWIRE_CONF_DIR = ASTREA_SHARED.xdg_config_home() / "pipewire/pipewire.conf.d"
-WP_CONF = WP_CONF_DIR / "50-astrea-audio.conf"
-SPATIAL_ENGINE_TEMPLATE = ASTREA_ROOT / "System/config/pipewire/astrea-audio-engine.conf"
-SPATIAL_ENGINE_CONF = PIPEWIRE_CONF_DIR / "50-astrea-audio-engine.conf"
-ALIASES_CONF = ASTREA_ROOT / "System/config/audio-aliases.json"
-HIDDEN_OUTPUTS_CONF = ASTREA_ROOT / "System/config/audio-hidden-outputs.json"
+# ── WirePlumber config path ───────────────────────────────────────────────────
+WP_CONF = Path.home() / ".config/wireplumber/wireplumber.conf.d/50-astrea-audio.conf"
+ALIASES_CONF = Path.home() / ".local/share/Astrea/System/config/audio-aliases.json"
+HIDDEN_OUTPUTS_CONF = Path.home() / ".local/share/Astrea/System/config/audio-hidden-outputs.json"
 SPATIAL_SINK = "effect_input.virtual-surround-7.1-astrea"
 SPATIAL_OUTPUT_STREAM = "effect_output.virtual-surround-7.1-astrea"
 LEGACY_SPATIAL_SINK = "effect_input.virtual-surround-7.1-hesuvi"
 LEGACY_SPATIAL_OUTPUT_STREAM = "effect_output.virtual-surround-7.1-hesuvi"
 SPATIAL_SINKS = (SPATIAL_SINK, LEGACY_SPATIAL_SINK)
 SPATIAL_OUTPUT_STREAMS = (SPATIAL_OUTPUT_STREAM, LEGACY_SPATIAL_OUTPUT_STREAM)
+SHARED_AUDIO_STATUS = ASTREA_SHARED.xdg_state_home() / "Astrea" / "status" / "audio.json"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def run(cmd: list, timeout: float = 4.0) -> str:
@@ -93,6 +89,27 @@ def atomic_write_json(path: Path, payload, *, indent: int | None = 2, sort_keys:
 
 def atomic_write_text(path: Path, text: str) -> None:
     ASTREA_SHARED.atomic_write_text(path, text)
+
+
+def audio_status_payload() -> dict:
+    raw = run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"], timeout=2.5)
+    muted = "[MUTED]" in raw
+    level = 0
+    for token in raw.replace("[MUTED]", "").split():
+        try:
+            level = round(float(token) * 100)
+            break
+        except ValueError:
+            continue
+    return {
+        "ok": bool(raw.strip()),
+        "level": max(0, min(150, level)),
+        "muted": muted,
+    }
+
+
+def publish_audio_status() -> None:
+    atomic_write_json(SHARED_AUDIO_STATUS, audio_status_payload(), indent=None, sort_keys=True)
 
 
 def get_aliases():
@@ -162,7 +179,7 @@ def save_alias(name, custom_name):
 
 def update_wp_aliases_file():
     aliases = get_aliases()
-    conf = WP_CONF_DIR / "51-astrea-aliases.conf"
+    conf = Path.home() / ".config/wireplumber/wireplumber.conf.d/51-astrea-aliases.conf"
     if not aliases:
         if conf.exists():
             conf.unlink()
@@ -217,7 +234,7 @@ def get_sinks() -> list:
             "index":       s.get("index"),
             "name":        name,
             "description": desc,
-            "virtual":     props.get("node.virtual") == "true" or _is_spatial_sink_name(name),
+            "virtual":     props.get("node.virtual") == "true" or name == SPATIAL_SINK,
             "default":     False,
         })
     return result
@@ -1099,8 +1116,6 @@ def apply_config(cfg: dict):
             target = cfg.get("target_sink")
             if target:
                 move_spatial_target(str(target))
-            else:
-                ensure_spatial_engine_config()
             run(["pactl", "set-default-sink", current_spatial_sink()])
         else:
             target = str(cfg.get("target_sink") or current_spatial_target() or first_physical_sink())
@@ -1151,40 +1166,12 @@ def first_physical_sink() -> str:
 
 def move_spatial_target(target_sink: str) -> None:
     target_sink = validate_wp_string(target_sink, field="target sink")
-    ensure_spatial_engine_config(target_sink)
     inputs = get_sink_inputs()
     spatial_output = _spatial_output_input(inputs)
     if not spatial_output:
         eprint("[spatial] output stream not found")
         return
     run(["pactl", "move-sink-input", str(spatial_output.get("index")), target_sink])
-
-
-
-def spatial_hrir_path() -> Path:
-    return ASTREA_ROOT / "audio/hrir.wav"
-
-
-def render_spatial_engine_config(target_sink: str = "") -> str:
-    template = SPATIAL_ENGINE_TEMPLATE.read_text(encoding="utf-8")
-    target_sink = str(target_sink or "").strip()
-    if target_sink:
-        target_line = f"target.object  = {wp_quote(target_sink)}"
-    else:
-        target_line = "# target.object omitted until a physical sink is selected"
-    return (
-        template.replace("@ASTREA_HRIR_PATH@", str(spatial_hrir_path()))
-                .replace("@ASTREA_TARGET_OBJECT_LINE@", target_line)
-    )
-
-
-def ensure_spatial_engine_config(target_sink: str = "") -> bool:
-    if not SPATIAL_ENGINE_TEMPLATE.exists():
-        return False
-    if not target_sink:
-        target_sink = current_spatial_target() or first_physical_sink()
-    atomic_write_text(SPATIAL_ENGINE_CONF, render_spatial_engine_config(target_sink))
-    return True
 
 def _write_wp_conf(cfg: dict):
     sample_rate = int(cfg.get("sample_rate", 48000))
@@ -1232,11 +1219,6 @@ def main():
             "outputs": [],
             "apps":  [],
             "spatial": {"available": False, "enabled": False, "sink": SPATIAL_SINK, "target_sink": ""},
-            "spatial_config": {
-                "template": str(SPATIAL_ENGINE_TEMPLATE),
-                "generated": str(SPATIAL_ENGINE_CONF),
-                "hrir": str(spatial_hrir_path()),
-            },
             "wp":    {"sample_rate": 48000, "buffer_size": 1024},
         }
         try:
@@ -1265,6 +1247,7 @@ def main():
             out["wp"] = get_wp_config()
         except Exception as e:
             eprint(f"[wp] {e}")
+        publish_audio_status()
         print(json.dumps(out, ensure_ascii=False))
 
     elif mode == "apps":
@@ -1274,13 +1257,6 @@ def main():
         except Exception as e:
             eprint(f"[apps] {e}")
         print(json.dumps(out, ensure_ascii=False))
-
-    elif mode == "generate-spatial-config":
-        target = sys.argv[2] if len(sys.argv) > 2 else ""
-        if not ensure_spatial_engine_config(target):
-            eprint(f"spatial template not found: {SPATIAL_ENGINE_TEMPLATE}")
-            sys.exit(1)
-        print(str(SPATIAL_ENGINE_CONF))
 
     elif mode == "apply":
         if len(sys.argv) < 3:
@@ -1292,6 +1268,7 @@ def main():
             eprint(f"JSON inválido: {e}")
             sys.exit(1)
         apply_config(cfg)
+        publish_audio_status()
 
     else:
         eprint(f"Modo desconhecido: {mode}")

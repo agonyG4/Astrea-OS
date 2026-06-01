@@ -29,13 +29,15 @@ Current inspected source:
 - `Assets/`
   - icons, images, and shell UI assets.
   - See [[Astrea - Assets and Data]].
-- `Data/`
-  - Astrea-owned user data.
-  - See [[Astrea - Assets and Data]].
 - `System/`
   - local system scripts, config, auth and Polkit helpers, i18n catalogs, cache, and metadata.
   - Put service wrappers, local config templates, auth helpers, translations, and machine integration here.
   - See [[Astrea - System Layer]].
+- `UI/`, `Backend/`, and `Runtime/`
+  - canonical namespaces introduced over the compatibility tree.
+  - They currently point back into `Quickshell`, `Core/components`, `Core/bridge`, `System/services`, `System/scripts`, `System/config`, `System/i18n`, and `bin`.
+- `Docs/` and `Tools/structure/`
+  - local structure docs and structure maintenance helpers.
 
 ## Where To Add Things
 | Need | Add it here |
@@ -53,11 +55,14 @@ Current inspected source:
 | Weather notifications | `Apps/Weather/backend/weatherd` |
 | Shell bar/island/spotlight behavior | `Quickshell/...` |
 | App launch routing or startup burst | `System/launch`, `bin/astrea-launch`, `System/services/astrea_latencyd.py` |
+| Network, Wi-Fi, DNS, or WARP behavior | `Core/bridge/network/manager.py` plus `Apps/Settings/pages/connectivity/Internet.qml` |
+| Gamescope session, Proton flags, Windows `.exe` or `.msi` launch | `Apps/Settings/pages/gaming`, `System/scripts/astrea-gaming-settings`, `System/scripts/astrea-windows-run`, `bin/astrea-gaming`, `bin/astrea-gamescope-session` |
 | System read/write command | `Core/bridge` or `System` |
 | Shared JSON state helper | `Core/bridge/state_json.py` |
 | Translated UI strings | `System/i18n/*.json`, `System/i18n/I18n.qml`, `System/i18n/i18n.py` |
 | Persistent user config | `~/.config/AstreaOS` |
 | Runtime app state | `~/.local/state/Astrea` |
+| Durable user library data | `~/.local/share/AstreaOS` |
 
 When adding app functionality, reuse the app's current shared modules and only add the behavior needed.
 
@@ -72,7 +77,7 @@ Do not change app style while adding backend or workflow behavior.
 
 `Features/` provides reusable domain UI and behavior that can be consumed by apps. It may wrap Core components, but generic visuals should stay in Core.
 
-`Assets/` and `Data/` provide visual and user data inputs.
+`Assets/` provides shipped visual and audio inputs. Durable user-owned library data belongs outside the runtime tree under `~/.local/share/AstreaOS`.
 
 ## Important Dependency Direction
 - UI -> shared components.

@@ -27,6 +27,7 @@ APP_NAME = "Astrea"
 CPU_GOVERNOR_GLOB = "/sys/devices/system/cpu/cpufreq/policy*/scaling_governor"
 INTEL_NO_TURBO = Path("/sys/devices/system/cpu/intel_pstate/no_turbo")
 BURST_HELPER = Path("/usr/local/libexec/astrea-latency-burst-helper")
+MAX_REQUEST_BYTES = int(os.environ.get("ASTREA_LATENCYD_MAX_REQUEST_BYTES", "65536"))
 
 
 def xdg_state_home() -> Path:
@@ -337,6 +338,54 @@ def append_history(payload: dict[str, Any]) -> None:
         handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
+def read_request_lines(
+    conn: socket.socket,
+    *,
+    chunk_size: int = 8192,
+    max_bytes: int = MAX_REQUEST_BYTES,
+) -> list[bytes]:
+    data = bytearray()
+    previous_timeout = None
+    can_set_timeout = hasattr(conn, "settimeout") and hasattr(conn, "gettimeout")
+    if can_set_timeout:
+        previous_timeout = conn.gettimeout()
+        conn.settimeout(0.5)
+    try:
+        while True:
+            try:
+                chunk = conn.recv(chunk_size)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            data.extend(chunk)
+            if len(data) > max_bytes:
+                raise ValueError(f"request too large: {len(data)} bytes")
+    finally:
+        if can_set_timeout:
+            conn.settimeout(previous_timeout)
+    return [line for line in bytes(data).splitlines() if line.strip()]
+
+
+def handle_connection(daemon: "LatencyDaemon", conn: socket.socket) -> None:
+    try:
+        lines = read_request_lines(conn)
+    except Exception as exc:
+        daemon.record("error", {"raw": ""}, [str(exc)])
+        return
+
+    for line in lines:
+        try:
+            payload = json.loads(line.decode("utf-8"))
+            daemon.handle_payload(payload)
+        except Exception as exc:
+            daemon.record(
+                "error",
+                {"raw": line.decode("utf-8", "replace")},
+                [str(exc)],
+            )
+
+
 @dataclass
 class Boost:
     reason: str
@@ -557,17 +606,7 @@ def serve() -> int:
                 if key.fileobj is server:
                     conn, _addr = server.accept()
                     with conn:
-                        data = conn.recv(8192)
-                    for line in data.splitlines():
-                        try:
-                            payload = json.loads(line.decode("utf-8"))
-                            daemon.handle_payload(payload)
-                        except Exception as exc:
-                            daemon.record(
-                                "error",
-                                {"raw": line.decode("utf-8", "replace")},
-                                [str(exc)],
-                            )
+                        handle_connection(daemon, conn)
             daemon.prune_expired()
     finally:
         if daemon.active:
