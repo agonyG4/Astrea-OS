@@ -10,6 +10,9 @@ use std::time::UNIX_EPOCH;
 use crate::json;
 use crate::thumbnails;
 
+const SEARCH_MAX_DEPTH: usize = 8;
+const SEARCH_MAX_RESULTS: usize = 2_000;
+
 #[derive(Clone)]
 pub struct Entry {
     pub name: String,
@@ -77,7 +80,7 @@ pub fn run_search(args: &[String]) -> Result<(), String> {
             .collect()
     } else {
         let mut local_entries = Vec::new();
-        search_dir_recursive(dir, show_hidden, &query, &mut local_entries)?;
+        search_dir_recursive(dir, show_hidden, &query, 0, &mut local_entries)?;
         local_entries
     };
     sort_entries_in_place(&mut entries, sort_field, sort_asc, folders_first);
@@ -186,20 +189,39 @@ fn search_dir_recursive(
     dir: &Path,
     show_hidden: bool,
     query: &str,
+    depth: usize,
     out: &mut Vec<Entry>,
 ) -> Result<(), String> {
+    if depth > SEARCH_MAX_DEPTH || out.len() >= SEARCH_MAX_RESULTS {
+        return Ok(());
+    }
+
     let iter = match fs::read_dir(dir) {
         Ok(iter) => iter,
         Err(_) => return Ok(()),
     };
 
     for item in iter.filter_map(|r| r.ok()) {
+        if out.len() >= SEARCH_MAX_RESULTS {
+            break;
+        }
+
         let path = item.path();
-        let meta = match item.metadata() {
+        let file_type = match item.file_type() {
+            Ok(file_type) => file_type,
+            Err(_) => continue,
+        };
+        let meta_result = if file_type.is_symlink() {
+            fs::metadata(&path)
+        } else {
+            item.metadata()
+        };
+        let meta = match meta_result {
             Ok(meta) => meta,
             Err(_) => continue,
         };
         let is_dir = meta.is_dir();
+        let should_descend = file_type.is_dir();
         let name = item.file_name().to_string_lossy().into_owned();
         let is_hidden = name.starts_with('.');
 
@@ -211,8 +233,8 @@ fn search_dir_recursive(
             out.push(entry_from_parts(name, &path, meta, is_dir, is_hidden));
         }
 
-        if is_dir {
-            let _ = search_dir_recursive(&path, show_hidden, query, out);
+        if should_descend && depth < SEARCH_MAX_DEPTH {
+            let _ = search_dir_recursive(&path, show_hidden, query, depth + 1, out);
         }
     }
 
@@ -448,9 +470,22 @@ fn filesystem_type_is_remote(fs_type: &str) -> bool {
     }
     matches!(
         fs.as_str(),
-        "sshfs" | "fuse.sshfs" | "davfs" | "davfs2" | "fuse.davfs" | "cifs" | "smb3"
-            | "nfs" | "nfs4" | "9p" | "fuse.gvfsd-fuse" | "gvfsd-fuse" | "mtpfs"
-            | "fuse.mtpfs" | "gphotofs" | "fuse.gphotofs"
+        "sshfs"
+            | "fuse.sshfs"
+            | "davfs"
+            | "davfs2"
+            | "fuse.davfs"
+            | "cifs"
+            | "smb3"
+            | "nfs"
+            | "nfs4"
+            | "9p"
+            | "fuse.gvfsd-fuse"
+            | "gvfsd-fuse"
+            | "mtpfs"
+            | "fuse.mtpfs"
+            | "gphotofs"
+            | "fuse.gphotofs"
     )
 }
 
@@ -485,22 +520,14 @@ mod tests {
 
     #[test]
     fn entry_json_uses_encoded_file_url() {
-        let root = std::env::temp_dir().join(format!(
-            "astrea-entry-url-test-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("astrea-entry-url-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         let path = root.join("a # b 😀.txt");
         fs::write(&path, "x").unwrap();
         let meta = fs::metadata(&path).unwrap();
-        let entry = entry_from_parts(
-            "a # b 😀.txt".to_string(),
-            &path,
-            meta,
-            false,
-            false,
-        );
+        let entry = entry_from_parts("a # b 😀.txt".to_string(), &path, meta, false, false);
         let body = entry_to_json(&entry);
         let raw_file_url = format!("\"fileUrl\":\"file://{}\"", path.to_string_lossy());
 
@@ -511,12 +538,25 @@ mod tests {
 
     #[test]
     fn rclone_and_network_filesystems_use_remote_listing_profile() {
-        for fs_type in ["fuse.rclone", "rclone", "fuse.sshfs", "davfs", "cifs", "nfs4"] {
-            assert!(filesystem_type_is_remote(fs_type), "{fs_type} should be remote");
+        for fs_type in [
+            "fuse.rclone",
+            "rclone",
+            "fuse.sshfs",
+            "davfs",
+            "cifs",
+            "nfs4",
+        ] {
+            assert!(
+                filesystem_type_is_remote(fs_type),
+                "{fs_type} should be remote"
+            );
         }
 
         for fs_type in ["ext4", "btrfs", "xfs", "tmpfs"] {
-            assert!(!filesystem_type_is_remote(fs_type), "{fs_type} should stay local");
+            assert!(
+                !filesystem_type_is_remote(fs_type),
+                "{fs_type} should stay local"
+            );
         }
     }
 
@@ -560,5 +600,46 @@ mod tests {
             Path::new("/tmp/astrea-cloud-old/file.txt"),
             "/tmp/astrea-cloud"
         ));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn recursive_search_skips_directory_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root =
+            std::env::temp_dir().join(format!("astrea-search-symlink-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("real_dir")).unwrap();
+        fs::write(root.join("real_dir/hidden_match.txt"), "x").unwrap();
+        symlink(root.join("real_dir"), root.join("dir_link")).unwrap();
+
+        let mut entries = Vec::new();
+        search_dir_recursive(&root, true, "hidden_match", 0, &mut entries).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].path.ends_with("real_dir/hidden_match.txt"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn recursive_search_keeps_directory_symlink_classification() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "astrea-search-symlink-classification-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("real_dir")).unwrap();
+        symlink(root.join("real_dir"), root.join("dir_link")).unwrap();
+
+        let mut entries = Vec::new();
+        search_dir_recursive(&root, true, "dir_link", 0, &mut entries).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].is_dir);
+        let _ = fs::remove_dir_all(root);
     }
 }

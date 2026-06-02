@@ -119,6 +119,19 @@ fn lsblk(device: Option<&str>) -> Result<String, String> {
 }
 
 fn device_by_path(path: &str) -> Result<Option<Device>, String> {
+    match lsblk(Some(path)) {
+        Ok(out) => {
+            let found = out
+                .lines()
+                .filter_map(parse_lsblk_line)
+                .find(|d| d.path == path);
+            if found.is_some() {
+                return Ok(found);
+            }
+        }
+        Err(_) => {}
+    }
+
     Ok(lsblk(None)?
         .lines()
         .filter_map(parse_lsblk_line)
