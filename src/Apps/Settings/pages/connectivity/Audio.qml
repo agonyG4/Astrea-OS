@@ -22,7 +22,7 @@ Item {
 
     readonly property string _script:
         (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Core/bridge/system/audio.py"
-    readonly property string spatialSinkName: "effect_input.virtual-surround-7.1-hesuvi"
+    readonly property string spatialSinkName: "effect_input.virtual-surround-7.1-astrea"
 
     // ── State ─────────────────────────────────────────────────────────────
     property bool   loading:      true
@@ -90,20 +90,6 @@ Item {
         if (app && app.indexes && app.indexes.length > 0)
             return app.indexes
         return app && app.index !== undefined ? [app.index] : []
-    }
-
-    function appIconSource(app) {
-        const icon = (app && app.icon) ? String(app.icon) : ""
-        const iconName = (app && app.icon_name) ? String(app.icon_name) : ""
-        if (icon.indexOf("://") >= 0)
-            return icon
-        if (icon.indexOf("/") === 0)
-            return "file://" + icon
-        if (icon.length > 0)
-            return "image://icon/" + icon
-        if (iconName.length > 0)
-            return "image://icon/" + iconName
-        return ""
     }
 
     function applyAppsSnapshot(items) {
@@ -447,14 +433,15 @@ Item {
                             }
 
                             Rectangle {
-                                width: 18; height: 18; radius: 9
-                                color: isEffectiveDefault ? root.accent : "transparent"
-                                border.width: 2
-                                border.color: isEffectiveDefault ? root.accent : Qt.rgba(1,1,1,0.3)
+                                width: 20; height: 20; radius: 10
+                                color: isEffectiveDefault ? root.accent : Qt.rgba(1, 1, 1, 0.035)
+                                border.width: 1
+                                border.color: isEffectiveDefault ? root.accent : Qt.rgba(1,1,1,0.24)
                                 Behavior on color { ColorAnimation { duration: 130 } }
+                                Behavior on border.color { ColorAnimation { duration: 130 } }
                                 Rectangle {
                                     anchors.centerIn: parent
-                                    width: 7; height: 7; radius: 4; color: "#fff"
+                                    width: 6; height: 6; radius: 3; color: "#fff"
                                     visible: isEffectiveDefault
                                 }
                             }
@@ -555,24 +542,20 @@ Item {
                                     Behavior on color       { ColorAnimation { duration: 150 } }
                                     Behavior on border.color { ColorAnimation { duration: 150 } }
 
-                                    Image {
+                                    AppIcon {
                                         id: appIcon
                                         anchors.centerIn: parent
-                                        width: 18; height: 18
-                                        source: root.appIconSource(modelData)
-                                        visible: status === Image.Ready
-                                        fillMode: Image.PreserveAspectFit
-                                        smooth: true; mipmap: true
-                                        opacity: iconRect.isMuted ? 0.35 : 1.0
-                                        Behavior on opacity { NumberAnimation { duration: 150 } }
-                                    }
-
-                                    Text {
-                                        anchors.centerIn: parent
-                                        visible: !appIcon.visible
-                                        text: "\ufa7d"
-                                        font.family: "JetBrainsMono Nerd Font"; font.pixelSize: Theme.fontSizeSmall
-                                        color: root.textSecondary
+                                        appData: modelData
+                                        iconSize: 22
+                                        iconRadius: 6
+                                        iconPadding: 2
+                                        sourcePixelSize: 96
+                                        fallbackRadius: 6
+                                        fallbackColor: Qt.rgba(1, 1, 1, 0.08)
+                                        fallbackBorderColor: "transparent"
+                                        fallbackTextColor: root.textSecondary
+                                        fallbackFontFamily: ""
+                                        fallbackFontSize: 10
                                         opacity: iconRect.isMuted ? 0.35 : 1.0
                                         Behavior on opacity { NumberAnimation { duration: 150 } }
                                     }

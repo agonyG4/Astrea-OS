@@ -1,20 +1,15 @@
 #!/usr/bin/env python3
 import sys
 import json
+import os
+import shutil
 import subprocess
 import re
 import traceback
-from pathlib import Path
+import ipaddress
 
-
-STATE_DIR = Path.home() / ".local/state/Astrea/network"
-SIM_WIFI_STATE = STATE_DIR / "wifi-sim.json"
-SIMULATED_WIFI_NETWORKS = [
-    {"ssid": "Astrea Fiber", "signal": 92, "security": "WPA2"},
-    {"ssid": "Casa 5G", "signal": 78, "security": "WPA2 WPA3"},
-    {"ssid": "Studio Guest", "signal": 61, "security": "WPA2"},
-    {"ssid": "Open Lounge", "signal": 39, "security": ""},
-]
+WARP_SERVICE = "warp-svc.service"
+WARP_TRAY_SERVICE = "warp-taskbar.service"
 
 
 # ─── helpers ────────────────────────────────────────────────────────────────
@@ -36,10 +31,11 @@ def _err(msg: str, trace: bool = False):
 
 
 def _is_valid_ip(ip: str) -> bool:
-    pattern = r"^(\d{1,3}\.){3}\d{1,3}$"
-    if not re.match(pattern, ip):
+    try:
+        ipaddress.ip_address(ip)
+        return True
+    except ValueError:
         return False
-    return all(0 <= int(p) <= 255 for p in ip.split("."))
 
 
 def _validate_dns_servers(dns_str: str) -> tuple[bool, str]:
@@ -106,41 +102,6 @@ def get_wifi_device() -> dict | None:
     return None
 
 
-def _load_simulated_wifi_ssid() -> str:
-    try:
-        data = json.loads(SIM_WIFI_STATE.read_text(encoding="utf-8"))
-        return str(data.get("ssid") or "")
-    except Exception:
-        return SIMULATED_WIFI_NETWORKS[0]["ssid"]
-
-
-def _save_simulated_wifi_ssid(ssid: str) -> None:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    SIM_WIFI_STATE.write_text(json.dumps({"ssid": ssid}), encoding="utf-8")
-
-
-def _simulated_wifi_payload() -> dict:
-    connected_ssid = _load_simulated_wifi_ssid()
-    networks = []
-    for index, network in enumerate(SIMULATED_WIFI_NETWORKS):
-        item = dict(network)
-        item["active"] = item["ssid"] == connected_ssid
-        item["simulated"] = True
-        item["requires_password"] = bool(item["security"])
-        item["index"] = index
-        networks.append(item)
-    return {
-        "success": True,
-        "available": False,
-        "simulated": True,
-        "enabled": True,
-        "device": "",
-        "state": "simulated",
-        "connected_ssid": connected_ssid,
-        "networks": networks,
-    }
-
-
 def _parse_wifi_networks(out: str) -> list[dict]:
     by_ssid: dict[str, dict] = {}
     for line in out.strip().splitlines():
@@ -160,7 +121,6 @@ def _parse_wifi_networks(out: str) -> list[dict]:
             "signal": signal,
             "security": security.strip(),
             "active": active_raw.lower() == "yes",
-            "simulated": False,
             "requires_password": bool(security.strip()),
         }
         existing = by_ssid.get(ssid)
@@ -173,17 +133,31 @@ def _parse_wifi_networks(out: str) -> list[dict]:
     return networks
 
 
-def _wifi_payload(scan: bool = False) -> dict:
+def _wifi_payload() -> dict:
     device = get_wifi_device()
     if not device:
-        return _simulated_wifi_payload()
+        return {
+            "success": True,
+            "available": False,
+            "enabled": False,
+            "device": "",
+            "state": "unavailable",
+            "connected_ssid": "",
+            "networks": [],
+        }
 
     iface = device["device"]
-    if scan:
-        try:
-            _run("nmcli", "device", "wifi", "rescan", "ifname", iface, timeout=8)
-        except Exception:
-            pass
+    wifi_enabled = _wifi_enabled()
+    if not wifi_enabled:
+        return {
+            "success": True,
+            "available": True,
+            "enabled": False,
+            "device": iface,
+            "state": device["state"],
+            "connected_ssid": "",
+            "networks": [],
+        }
 
     networks = []
     try:
@@ -199,12 +173,193 @@ def _wifi_payload(scan: bool = False) -> dict:
     return {
         "success": True,
         "available": True,
-        "simulated": False,
-        "enabled": _wifi_enabled(),
+        "enabled": wifi_enabled,
         "device": iface,
         "state": device["state"],
         "connected_ssid": active["ssid"] if active else "",
         "networks": networks,
+    }
+
+
+# ─── Cloudflare WARP helpers ────────────────────────────────────────────────
+
+def _command_exists(command: str) -> bool:
+    return shutil.which(command) is not None
+
+
+def _run_process(args: list[str], timeout: int = 5) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def _first_line(value: str) -> str:
+    return next((line.strip() for line in value.splitlines() if line.strip()), "")
+
+
+def _systemctl_state(*args: str, user: bool = False, timeout: int = 3) -> str:
+    if not _command_exists("systemctl"):
+        return "unavailable"
+
+    cmd = ["systemctl"]
+    if user:
+        cmd.append("--user")
+    cmd.extend(args)
+
+    try:
+        proc = _run_process(cmd, timeout=timeout)
+    except Exception:
+        return "unknown"
+
+    value = _first_line(proc.stdout) or _first_line(proc.stderr)
+    return value or "unknown"
+
+
+def _systemctl_action(*args: str, timeout: int = 30) -> tuple[bool, str]:
+    if not _command_exists("systemctl"):
+        return False, "systemctl not found"
+
+    cmd = ["systemctl", *args]
+    try:
+        proc = _run_process(cmd, timeout=timeout)
+        if proc.returncode == 0:
+            return True, ""
+        error = _first_line(proc.stderr) or _first_line(proc.stdout)
+    except Exception as exc:
+        error = str(exc)
+
+    if os.geteuid() == 0:
+        return False, error
+
+    for privileged_cmd in (["pkexec", *cmd], ["sudo", "-n", *cmd]):
+        if not _command_exists(privileged_cmd[0]):
+            continue
+        try:
+            proc = _run_process(privileged_cmd, timeout=timeout)
+        except Exception as exc:
+            error = str(exc)
+            continue
+        if proc.returncode == 0:
+            return True, ""
+        error = _first_line(proc.stderr) or _first_line(proc.stdout) or error
+
+    return False, error
+
+
+def _run_warp_cli(*args: str, json_output: bool = False, timeout: int = 8) -> subprocess.CompletedProcess[str]:
+    cmd = ["warp-cli", "--accept-tos", "--no-ansi", "--no-paginate"]
+    if json_output:
+        cmd.append("--json")
+    cmd.extend(args)
+    return _run_process(cmd, timeout=timeout)
+
+
+def _humanize_warp_reason(reason: str) -> str:
+    if not reason:
+        return ""
+    spaced = re.sub(r"(?<!^)(?=[A-Z])", " ", reason).strip()
+    return spaced[:1].upper() + spaced[1:] if spaced else reason
+
+
+def _parse_warp_cli_status(raw: str) -> dict:
+    text = (raw or "").strip()
+    parsed = {
+        "connected": False,
+        "status": "Unknown",
+        "reason": "",
+        "network": "",
+        "detail": "",
+    }
+
+    if not text:
+        parsed["status"] = "Unavailable"
+        return parsed
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        data = None
+
+    if isinstance(data, dict):
+        if data.get("error"):
+            parsed["status"] = "Unavailable"
+            parsed["detail"] = str(data.get("error") or "")
+            parsed["reason"] = str(data.get("code") or "")
+            return parsed
+
+        status = str(
+            data.get("status")
+            or data.get("state")
+            or data.get("connection_status")
+            or data.get("status_update")
+            or ""
+        ).strip()
+        reason = str(data.get("reason") or "").strip()
+        parsed["status"] = status or "Unknown"
+        parsed["reason"] = reason
+        parsed["network"] = "healthy" if reason == "NetworkHealthy" else _humanize_warp_reason(reason)
+        parsed["connected"] = parsed["status"].lower() == "connected"
+        return parsed
+
+    for line in text.splitlines():
+        line = line.strip()
+        lower = line.lower()
+        if lower.startswith("status update:"):
+            parsed["status"] = line.split(":", 1)[1].strip() or "Unknown"
+        elif lower.startswith("network:"):
+            parsed["network"] = line.split(":", 1)[1].strip()
+        elif not parsed["detail"]:
+            parsed["detail"] = line
+
+    parsed["connected"] = parsed["status"].lower() == "connected"
+    return parsed
+
+
+def _warp_payload() -> dict:
+    if not _command_exists("warp-cli"):
+        return {
+            "success": True,
+            "installed": False,
+            "connected": False,
+            "status": "Not installed",
+            "reason": "",
+            "network": "",
+            "detail": "warp-cli was not found",
+            "service_state": "unavailable",
+            "service_enabled": "unknown",
+            "service_active": False,
+            "tray_state": "unknown",
+        }
+
+    service_state = _systemctl_state("is-active", WARP_SERVICE)
+    service_enabled = _systemctl_state("is-enabled", WARP_SERVICE)
+    tray_state = _systemctl_state("is-enabled", WARP_TRAY_SERVICE, user=True)
+
+    try:
+        proc = _run_warp_cli("status", json_output=True, timeout=8)
+        status_text = proc.stdout if proc.stdout.strip() else proc.stderr
+    except Exception as exc:
+        status_text = json.dumps({"error": str(exc)})
+
+    parsed = _parse_warp_cli_status(status_text)
+    service_active = service_state == "active"
+
+    return {
+        "success": True,
+        "installed": True,
+        "connected": bool(parsed["connected"]),
+        "status": parsed["status"],
+        "reason": parsed["reason"],
+        "network": parsed["network"],
+        "detail": parsed["detail"],
+        "service_state": service_state,
+        "service_enabled": service_enabled,
+        "service_active": service_active,
+        "tray_state": tray_state,
     }
 
 
@@ -327,20 +482,13 @@ def cmd_set_dns(conn_name: str, dns_servers: str):
 
 
 def cmd_wifi_status():
-    _out(_wifi_payload(scan=False))
-
-
-def cmd_wifi_scan():
-    _out(_wifi_payload(scan=True))
+    _out(_wifi_payload())
 
 
 def cmd_wifi_connect(ssid: str, password: str = ""):
     device = get_wifi_device()
     if not device:
-        _save_simulated_wifi_ssid(ssid)
-        payload = _simulated_wifi_payload()
-        payload.update({"success": True, "message": "Simulated Wi-Fi connection updated."})
-        _out(payload)
+        _out({"success": False, "error": "No Wi-Fi adapter detected"})
         return
 
     args = ["nmcli", "device", "wifi", "connect", ssid, "ifname", device["device"]]
@@ -348,7 +496,7 @@ def cmd_wifi_connect(ssid: str, password: str = ""):
         args.extend(["password", password])
     try:
         _run(*args, timeout=20)
-        _out(_wifi_payload(scan=False))
+        _out(_wifi_payload())
     except subprocess.CalledProcessError as e:
         _out({"success": False, "error": f"nmcli error (exit {e.returncode})"})
     except Exception as e:
@@ -358,19 +506,101 @@ def cmd_wifi_connect(ssid: str, password: str = ""):
 def cmd_wifi_disconnect():
     device = get_wifi_device()
     if not device:
-        _save_simulated_wifi_ssid("")
-        payload = _simulated_wifi_payload()
-        payload.update({"success": True, "message": "Simulated Wi-Fi disconnected."})
-        _out(payload)
+        _out({"success": False, "error": "No Wi-Fi adapter detected"})
         return
 
     try:
         _run("nmcli", "device", "disconnect", device["device"], timeout=10)
-        _out(_wifi_payload(scan=False))
+        _out(_wifi_payload())
     except subprocess.CalledProcessError as e:
         _out({"success": False, "error": f"nmcli error (exit {e.returncode})"})
     except Exception as e:
         _out({"success": False, "error": str(e), "trace": traceback.format_exc()})
+
+
+def cmd_wifi_set_enabled(enabled: str):
+    target = enabled.strip().lower()
+    if target not in ("on", "off", "true", "false", "1", "0", "yes", "no"):
+        _out({"success": False, "error": "Expected on or off"})
+        return
+
+    device = get_wifi_device()
+    if not device:
+        _out({"success": False, "error": "No Wi-Fi adapter detected"})
+        return
+
+    radio = "on" if target in ("on", "true", "1", "yes") else "off"
+    try:
+        _run("nmcli", "radio", "wifi", radio, timeout=10)
+        _out(_wifi_payload())
+    except subprocess.CalledProcessError as e:
+        _out({"success": False, "error": f"nmcli error (exit {e.returncode})"})
+    except Exception as e:
+        _out({"success": False, "error": str(e), "trace": traceback.format_exc()})
+
+
+def cmd_warp_status():
+    _out(_warp_payload())
+
+
+def cmd_warp_set_enabled(enabled: str):
+    target = enabled.strip().lower()
+    if target not in ("on", "off", "true", "false", "1", "0", "yes", "no"):
+        payload = _warp_payload()
+        payload["success"] = False
+        payload["error"] = "Expected on or off"
+        _out(payload)
+        return
+
+    turn_on = target in ("on", "true", "1", "yes")
+    success = True
+    error = ""
+
+    if turn_on:
+        ok, error = _systemctl_action("start", WARP_SERVICE, timeout=45)
+        success = success and ok
+        if ok:
+            try:
+                proc = _run_warp_cli("connect", timeout=15)
+                if proc.returncode != 0:
+                    success = False
+                    error = _first_line(proc.stderr) or _first_line(proc.stdout) or error
+            except Exception as exc:
+                success = False
+                error = str(exc)
+    else:
+        try:
+            _run_warp_cli("disconnect", timeout=10)
+        except Exception:
+            pass
+        ok, error = _systemctl_action("stop", WARP_SERVICE, timeout=45)
+        success = success and ok
+
+    payload = _warp_payload()
+    payload["success"] = success
+    if error:
+        payload["error"] = error
+    _out(payload)
+
+
+def cmd_warp_restart():
+    ok, error = _systemctl_action("restart", WARP_SERVICE, timeout=45)
+    success = ok
+    if ok:
+        try:
+            proc = _run_warp_cli("connect", timeout=15)
+            if proc.returncode != 0:
+                success = False
+                error = _first_line(proc.stderr) or _first_line(proc.stdout) or error
+        except Exception as exc:
+            success = False
+            error = str(exc)
+
+    payload = _warp_payload()
+    payload["success"] = success
+    if error:
+        payload["error"] = error
+    _out(payload)
 
 
 # ─── entry point ─────────────────────────────────────────────────────────────
@@ -380,10 +610,20 @@ COMMANDS = {
     "dns_info": (cmd_dns_info, 0),
     "set_dns":  (cmd_set_dns,  2),
     "wifi_status":     (cmd_wifi_status,     0),
-    "wifi_scan":       (cmd_wifi_scan,       0),
-    "wifi_connect":    (cmd_wifi_connect,    2),
+    "wifi_connect":    (cmd_wifi_connect,    1, 2),
     "wifi_disconnect": (cmd_wifi_disconnect, 0),
+    "wifi_set_enabled": (cmd_wifi_set_enabled, 1),
+    "warp_status": (cmd_warp_status, 0),
+    "warp_set_enabled": (cmd_warp_set_enabled, 1),
+    "warp_restart": (cmd_warp_restart, 0),
 }
+
+def command_arg_bounds(cmd: str) -> tuple[int, int]:
+    entry = COMMANDS[cmd]
+    required = int(entry[1])
+    maximum = int(entry[2]) if len(entry) > 2 else required
+    return required, maximum
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
@@ -395,9 +635,15 @@ if __name__ == "__main__":
         _err(f"Unknown command '{cmd}'. Available: " + ", ".join(COMMANDS))
         sys.exit(1)
 
-    fn, n_args = COMMANDS[cmd]
-    if len(sys.argv) - 2 < n_args:
-        _err(f"'{cmd}' requires {n_args} argument(s), got {len(sys.argv) - 2}")
+    entry = COMMANDS[cmd]
+    fn = entry[0]
+    min_args, max_args = command_arg_bounds(cmd)
+    got_args = len(sys.argv) - 2
+    if got_args < min_args or got_args > max_args:
+        if min_args == max_args:
+            _err(f"'{cmd}' requires {min_args} argument(s), got {got_args}")
+        else:
+            _err(f"'{cmd}' requires {min_args}-{max_args} argument(s), got {got_args}")
         sys.exit(1)
 
-    fn(*sys.argv[2:2 + n_args])
+    fn(*sys.argv[2:2 + max_args])

@@ -7,6 +7,7 @@ import configparser
 import json
 import os
 import pwd
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +18,8 @@ SDDM_CONF = Path("/etc/sddm.conf")
 SDDM_CONF_DIR = Path("/etc/sddm.conf.d")
 ASTREA_SDDM_AUTOLOGIN = SDDM_CONF_DIR / "zzzz-astrea-autologin.conf"
 PROFILE_HELPER = Path("/usr/local/libexec/astrea-user-profile-helper")
+USER_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+SESSION_RE = re.compile(r"^[A-Za-z0-9_.@+-]+\.desktop$")
 
 
 def emit(payload: dict[str, object]) -> None:
@@ -30,6 +33,38 @@ def current_user() -> str:
     return pwd.getpwuid(os.getuid()).pw_name
 
 
+def validate_user(user: str) -> str:
+    user = (user or "").strip()
+    if not USER_RE.fullmatch(user):
+        raise ValueError("usuario invalido")
+    try:
+        pwd.getpwnam(user)
+    except KeyError as exc:
+        raise ValueError(f"usuario desconhecido: {user}") from exc
+    return user
+
+
+def validate_session_name(session: str) -> str:
+    session = (session or "").strip()
+    if not SESSION_RE.fullmatch(session):
+        raise ValueError("sessao invalida")
+    session_dirs = [Path("/usr/share/wayland-sessions"), Path("/usr/share/xsessions")]
+    if not any((directory / session).is_file() for directory in session_dirs):
+        raise ValueError(f"sessao nao encontrada: {session}")
+    return session
+
+
+def validate_display_name(name: str) -> str:
+    trimmed = " ".join(str(name or "").split()).strip()
+    if not trimmed:
+        raise ValueError("display name vazio")
+    if len(trimmed) > 128:
+        raise ValueError("display name muito longo")
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in trimmed):
+        raise ValueError("display name contem caracteres de controle")
+    return trimmed
+
+
 def read_ini(path: Path) -> configparser.ConfigParser:
     parser = configparser.ConfigParser(interpolation=None)
     parser.optionxform = str
@@ -39,7 +74,7 @@ def read_ini(path: Path) -> configparser.ConfigParser:
 
 
 def accounts_file(user: str) -> Path:
-    return ACCOUNTS_USERS_DIR / user
+    return ACCOUNTS_USERS_DIR / validate_user(user)
 
 
 def display_name(user: str) -> str:
@@ -80,6 +115,7 @@ def preferred_session() -> str:
 
 
 def state(user: str) -> dict[str, object]:
+    user = validate_user(user)
     autologin = effective_sddm_autologin()
     autologin_user = autologin.get("user", "")
     return {
@@ -99,18 +135,19 @@ def pkexec_helper(args: list[str]) -> None:
             f"profile helper nao instalado: execute {Path(__file__).resolve().parents[3] / 'System/services/install-user-profile-helper.sh'}"
         )
     command = ["pkexec", str(PROFILE_HELPER), *args]
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, timeout=60)
 
 
 def set_display_name(user: str, name: str) -> None:
-    trimmed = " ".join(name.split()).strip()
-    if not trimmed:
-        raise ValueError("display name vazio")
+    user = validate_user(user)
+    trimmed = validate_display_name(name)
     pkexec_helper(["write-display-name", "--user", user, "--name", trimmed])
     emit(state(user))
 
 
 def write_display_name(user: str, name: str) -> None:
+    user = validate_user(user)
+    name = validate_display_name(name)
     path = accounts_file(user)
     path.parent.mkdir(parents=True, exist_ok=True)
     parser = read_ini(path)
@@ -122,7 +159,8 @@ def write_display_name(user: str, name: str) -> None:
 
 
 def set_sddm_autologin(user: str, enabled: bool) -> None:
-    session = preferred_session()
+    user = validate_user(user)
+    session = validate_session_name(preferred_session())
     pkexec_helper([
         "write-sddm-autologin",
         "--user",
@@ -136,6 +174,8 @@ def set_sddm_autologin(user: str, enabled: bool) -> None:
 
 
 def write_sddm_autologin(user: str, enabled: bool, session: str) -> None:
+    user = validate_user(user)
+    session = validate_session_name(session)
     ASTREA_SDDM_AUTOLOGIN.parent.mkdir(parents=True, exist_ok=True)
     if enabled:
         body = (

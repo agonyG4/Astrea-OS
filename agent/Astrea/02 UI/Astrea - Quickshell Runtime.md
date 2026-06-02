@@ -23,13 +23,39 @@ It composes:
 `Quickshell/shell.qml`
 
 The shell creates:
+- one `Runtime.ComponentSettings`
+- one `Runtime.ShellRuntime`
+- one `Runtime.ComponentServiceManager`
 - one `MusicMonitor`
 - conditional `DesktopIcons`
-- one `Bar` per screen
-- one `Island` per screen
-- resident `Spotlight`
-- resident `AltTab`
-- resident `Notifications`
+- one `Bar` per screen when topbar is enabled
+- one `Island` per screen when island is enabled
+- resident `Spotlight`, `AltTab`, and `Notifications` when enabled
+
+## Component Toggles
+`Quickshell/runtime/ComponentSettings.qml` reads:
+- `~/.config/AstreaOS/ui/components.json`
+
+Defaults are enabled for:
+- desktop
+- topbar
+- island
+- spotlight
+- alttab
+- notifications
+
+`Apps/Settings/pages/system/Components.qml` edits the same file through [[Astrea - State JSON Bridge]].
+
+`Quickshell/runtime/ComponentServiceManager.qml` reconciles side effects:
+- starts or stops `astrea-status.service` depending on topbar and game mode state
+- kills desktop icon indexing helpers when desktop icons are disabled
+- kills music monitoring helpers when both topbar and island are disabled
+- kills `notification_daemon.py` when notifications are disabled
+
+## Game Mode
+`Quickshell/runtime/GameModeManager.qml` checks selected user services and exposes `gameModeActive`.
+
+The shell passes this to Desktop Icons, Island, Spotlight, and ComponentServiceManager so expensive or distracting runtime work can pause while game mode is active.
 
 ## Shared State
 `MusicMonitor` is created once in `shell.qml` and passed into:

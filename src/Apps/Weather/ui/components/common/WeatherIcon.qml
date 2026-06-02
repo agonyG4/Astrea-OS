@@ -22,10 +22,12 @@ Item {
     Image {
         anchors.fill: parent
         source: "../../../assets/icons/weather/" + root.iconFile(root.condition, root.isoTime)
+        sourceSize: Qt.size(root.iconSize * 2, root.iconSize * 2)
         fillMode: Image.PreserveAspectFit
-        smooth: false
-        mipmap: true
+        smooth: true
+        mipmap: false
         asynchronous: true
+        retainWhileLoading: true
     }
 
     function isNight(value) {

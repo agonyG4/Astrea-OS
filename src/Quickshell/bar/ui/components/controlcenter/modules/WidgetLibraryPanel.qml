@@ -33,6 +33,7 @@ Rectangle {
         clip: true
         contentWidth: width
         contentHeight: contentColumn.implicitHeight
+        boundsBehavior: Flickable.StopAtBounds
 
         Column {
             id: contentColumn
@@ -69,9 +70,9 @@ Rectangle {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         height: 50
-        color: Qt.rgba(1, 1, 1, 0.025)
+        color: Theme.surface
         border.width: 1
-        border.color: Qt.rgba(1, 1, 1, 0.08)
+        border.color: Theme.border
 
         Rectangle {
             id: doneButton
@@ -83,6 +84,10 @@ Rectangle {
             height: 30
             radius: height / 2
             color: doneArea.containsMouse ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.82) : Theme.accent
+            border.width: 1
+            border.color: Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.42)
+
+            Behavior on color { ColorAnimation { duration: Theme.animationHover } }
 
             Text {
                 anchors.centerIn: parent

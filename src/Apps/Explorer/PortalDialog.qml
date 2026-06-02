@@ -11,7 +11,7 @@ ApplicationWindow {
     width: 1080
     height: 720
     color: "transparent"
-    title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.portal_dialog.title.bench_file_dialog"]) || "Bench File Dialog")
+    title: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.portal_dialog.title.astrea_file_dialog"]) || "Astrea File Dialog")
 
     property var options: ({})
     property string resultFile: ""
@@ -67,6 +67,7 @@ ApplicationWindow {
         dialog.selectedName = options.currentName || ""
         dialog.nameFilters = options.filters || []
         dialog.initialViewMode = options.viewMode || "icon"
+        dialog.allowMultiple = Boolean(options.multiple)
         // Delay opening the popup until the top-level window is established.
         Qt.callLater(function() {
             dialog.openDialog()
@@ -98,6 +99,17 @@ ApplicationWindow {
                 accepted: true,
                 filePath: filePath,
                 fileUrl: fileUrl
+            })
+        }
+
+        onFilesChosen: function(files) {
+            var selected = files || []
+            var first = selected.length > 0 ? selected[0] : {}
+            root.emitResultOnce({
+                accepted: true,
+                files: selected,
+                filePath: first.filePath || "",
+                fileUrl: first.fileUrl || ""
             })
         }
 

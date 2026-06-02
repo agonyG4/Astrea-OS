@@ -20,6 +20,14 @@ Explorer Quick Look is disabled and should not depend on an external Bench check
 - `~/.local/state/Astrea/weather/settings.json`
 - `~/.local/state/Astrea/weather/alerts-seen.json`
 - `~/.local/state/Astrea/weather/current.json`
+- `~/.config/AstreaOS/ui/components.json`
+- `~/.config/AstreaOS/gaming/gamescope.json`
+- `~/.config/AstreaOS/gaming/proton.json`
+- `~/.config/AstreaOS/gaming/compatibility.json`
+- `~/.config/environment.d/gamescope-session-plus.conf`
+- `~/.local/share/AstreaOS/user/wallpapers`
+- `~/.local/share/AstreaOS/windows-prefixes/shared/proton`
+- `~/.local/state/AstreaOS/windows-prefixes/logs`
 - `~/.cache/weather`
 - `~/.config/wireplumber`
 - `~/.config/hypr`
@@ -39,6 +47,8 @@ Explorer Quick Look is disabled and should not depend on an external Bench check
 - Bluetooth / `bluetoothctl`
 - DBus / `gdbus`
 - XDG Desktop Portal / `xdg-desktop-portal`
+- NetworkManager / `nmcli`
+- Cloudflare WARP / `warp-cli`
 - systemd user units
 - Cargo for rebuilding Rust helpers
 - `gio` for desktop launch fallback through `astrea-launch`
@@ -50,6 +60,12 @@ Explorer Quick Look is disabled and should not depend on an external Bench check
 - ImageMagick `magick` or `convert`
 - `ffmpeg`
 - Python GI / GTK / Polkit bindings
+- Gamescope
+- Steam / Proton compatibility tools
+- Wine
+- umu
+- GameMode
+- MangoHud
 
 ## Risk Boundary
-Astrea is not fully self-contained because StorageSense can still use an optional Bench scanner source and launch burst behavior depends on a privileged helper outside the runtime tree.
+Astrea is not fully self-contained because StorageSense can still use an optional Bench scanner source, launch burst behavior depends on a privileged helper outside the runtime tree, and gaming/network integrations depend on optional host tools.

@@ -121,6 +121,50 @@ Document:
 - state/log paths
 - manual recovery command if useful
 
+## Network Or Internet Settings Change
+Read:
+1. [[Astrea - Settings App]]
+2. [[Astrea - Network Bridge]]
+3. [[Astrea - External Dependencies]]
+
+Edit:
+- `Apps/Settings/pages/connectivity/Internet.qml` for UI and presentation
+- `Core/bridge/network/manager.py` for stats, DNS, Wi-Fi, and WARP behavior
+
+Validate:
+- `python3 -m py_compile /home/agony/.local/share/Astrea/Core/bridge/network/manager.py`
+- run the changed bridge command directly
+- `qmllint /home/agony/.local/share/Astrea/Apps/Settings/pages/connectivity/Internet.qml` for QML edits
+
+Document:
+- new bridge command names
+- JSON fields consumed by QML
+- new external commands or services
+- new config/state paths
+
+## Gaming Or Windows Compatibility Change
+Read:
+1. [[Astrea - Settings App]]
+2. [[Astrea - Gaming and Compatibility]]
+3. [[Astrea - External Dependencies]]
+
+Edit:
+- `Apps/Settings/pages/gaming/*.qml` for UI controls
+- `System/scripts/astrea-gaming-settings` for saved Gamescope/Proton/Compatibility config
+- `System/scripts/astrea-windows-run` for `.exe` and `.msi` launch behavior
+- `bin/astrea-gaming` or `bin/astrea-gamescope-session` only when wrapper behavior changes
+
+Validate:
+- `python3 -m py_compile /home/agony/.local/share/Astrea/System/scripts/astrea-gaming-settings`
+- `python3 -m py_compile /home/agony/.local/share/Astrea/System/scripts/astrea-windows-run`
+- `/home/agony/.local/share/Astrea/System/scripts/astrea-gaming-settings get`
+- `qmllint` on touched gaming pages
+
+Document:
+- saved config paths under `~/.config/AstreaOS/gaming`
+- generated launchers or environment files
+- optional dependencies such as Gamescope, Proton, Wine, umu, GameMode, and MangoHud
+
 ## Notification Change
 Read:
 1. [[Astrea - Notifications]]

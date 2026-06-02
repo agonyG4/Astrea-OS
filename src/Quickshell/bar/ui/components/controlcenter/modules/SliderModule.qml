@@ -1,5 +1,6 @@
 import QtQuick
 import "../../../.."
+import "../../../../../AstreaI18n" as AstreaI18n
 
 Rectangle {
     id: sliderCard
@@ -7,12 +8,14 @@ Rectangle {
     property var control: null
     property string moduleKind: "volume"
     readonly property bool isVolume: moduleKind === "volume"
-    readonly property string title: isVolume ? "Som" : "Tela"
+    readonly property string title: isVolume
+        ? AstreaI18n.I18n.tr("quickshell.bar.ui.components.controlcenter.module.sound", "Sound")
+        : AstreaI18n.I18n.tr("quickshell.bar.ui.components.controlcenter.module.display", "Display")
     readonly property string leftIcon: isVolume && control ? control.volumeIcon() : "󰃞"
     readonly property string rightIcon: isVolume && control && control.masterMuted ? "󰝟" : (isVolume ? "󰕾" : "󰃠")
     readonly property int value: isVolume && control ? control.masterVol : (control ? control.brightness : 0)
     readonly property bool muted: isVolume && control ? control.masterMuted : false
-    readonly property string valueText: muted ? "Mudo" : value + "%"
+    readonly property string valueText: muted ? AstreaI18n.I18n.tr("quickshell.bar.ui.components.controlcenter.status.muted", "Muted") : value + "%"
 
     signal valueChangedByUser(int value)
     signal wheelChangedByUser(int delta)
@@ -20,9 +23,14 @@ Rectangle {
 
     height: 68
     radius: Theme.radiusLarge
-    color: Theme.background
+    color: sliderMouse.containsMouse ? Theme.shellHover : Theme.surface
     border.width: 1
-    border.color: Theme.border
+    border.color: sliderCard.muted
+        ? Qt.rgba(Theme.shellIconMuted.r, Theme.shellIconMuted.g, Theme.shellIconMuted.b, 0.38)
+        : (sliderMouse.containsMouse ? Theme.barBorderHover : Theme.border)
+
+    Behavior on color { ColorAnimation { duration: Theme.animationHover } }
+    Behavior on border.color { ColorAnimation { duration: Theme.animationHover } }
 
     onValueChangedByUser: value => {
         if (!control)
@@ -65,17 +73,29 @@ Rectangle {
         font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption; weight: Font.DemiBold }
     }
 
-    Text {
-        id: sliderLeftIcon
+    Rectangle {
+        id: sliderLeftIconShell
         anchors.left: parent.left
         anchors.bottom: parent.bottom
         anchors.leftMargin: Theme.spacingLarge
-        anchors.bottomMargin: Theme.spacingLarge
-        text: sliderCard.leftIcon
-        color: sliderCard.muted ? Theme.shellIconMuted : Theme.shellIconMain
-        font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+        anchors.bottomMargin: 9
+        width: 28
+        height: 28
+        radius: height / 2
+        color: sliderCard.muted ? Theme.background : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.13)
+        border.width: 1
+        border.color: sliderCard.muted ? Theme.border : Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.22)
+
+        Text {
+            id: sliderLeftIcon
+            anchors.centerIn: parent
+            text: sliderCard.leftIcon
+            color: sliderCard.muted ? Theme.shellIconMuted : Theme.shellIconMain
+            font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIcon }
+        }
 
         MouseArea {
+            id: iconMouse
             anchors.fill: parent
             anchors.margins: -8
             hoverEnabled: true
@@ -86,9 +106,9 @@ Rectangle {
 
     Item {
         id: sliderArea
-        anchors.left: sliderLeftIcon.right
+        anchors.left: sliderLeftIconShell.right
         anchors.right: sliderRightIcon.left
-        anchors.verticalCenter: sliderLeftIcon.verticalCenter
+        anchors.verticalCenter: sliderLeftIconShell.verticalCenter
         anchors.leftMargin: Theme.spacingLarge
         anchors.rightMargin: Theme.spacingLarge
         height: 24
@@ -166,6 +186,6 @@ Rectangle {
         anchors.bottomMargin: Theme.spacingLarge
         text: sliderCard.rightIcon
         color: sliderCard.muted ? Theme.shellIconMuted : Theme.shellIconMain
-        font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+        font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIcon }
     }
 }

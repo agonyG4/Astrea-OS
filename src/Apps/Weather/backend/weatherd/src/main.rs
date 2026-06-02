@@ -2,9 +2,7 @@ use std::env;
 use std::process;
 use std::thread;
 use std::time::Duration;
-use weather_core::{
-    DEFAULT_CITY, DEFAULT_INTERVAL_SECONDS, check_and_notify, fetch_weather_json, load_settings,
-};
+use weather_core::{DEFAULT_INTERVAL_SECONDS, check_and_notify, fetch_weather_json, load_settings};
 
 fn has_flag(args: &[String], flag: &str) -> bool {
     args.iter().any(|arg| arg == flag)
@@ -19,11 +17,7 @@ fn flag_value(args: &[String], flag: &str) -> Option<String> {
 
 fn run_once(force: bool, dry_run: bool) -> Result<(), String> {
     let settings = load_settings();
-    let city = if settings.city.trim().is_empty() {
-        DEFAULT_CITY.to_string()
-    } else {
-        settings.city
-    };
+    let city = settings.city;
     let data = fetch_weather_json(&city, force)?;
     let result = check_and_notify(&data, dry_run);
     eprintln!(

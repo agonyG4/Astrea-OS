@@ -36,7 +36,7 @@ yes:Casa 5G:74:WPA2 WPA3
         self.assertTrue(networks[0]["active"])
         self.assertEqual(networks[1]["signal"], 92)
 
-    def test_wifi_payload_falls_back_to_simulation_without_wifi_device(self):
+    def test_wifi_payload_reports_unavailable_without_wifi_device(self):
         manager = load_module()
         with tempfile.TemporaryDirectory() as tmpdir:
             manager.STATE_DIR = Path(tmpdir)
@@ -45,10 +45,39 @@ yes:Casa 5G:74:WPA2 WPA3
                 payload = manager._wifi_payload()
 
         self.assertTrue(payload["success"])
-        self.assertTrue(payload["simulated"])
         self.assertFalse(payload["available"])
-        self.assertGreaterEqual(len(payload["networks"]), 3)
-        self.assertTrue(any(item["active"] for item in payload["networks"]))
+        self.assertFalse(payload["enabled"])
+        self.assertEqual(payload["device"], "")
+        self.assertEqual(payload["state"], "unavailable")
+        self.assertEqual(payload["connected_ssid"], "")
+        self.assertEqual(payload["networks"], [])
+
+    def test_wifi_connect_accepts_open_network_without_password_argument(self):
+        manager = load_module()
+        self.assertEqual(manager.command_arg_bounds("wifi_connect"), (1, 2))
+
+    def test_parse_warp_cli_status_text_connected_network(self):
+        manager = load_module()
+        parsed = manager._parse_warp_cli_status("Status update: Connected\nNetwork: healthy\n")
+        self.assertTrue(parsed["connected"])
+        self.assertEqual(parsed["status"], "Connected")
+        self.assertEqual(parsed["network"], "healthy")
+
+    def test_warp_payload_reports_missing_client(self):
+        manager = load_module()
+        with mock.patch.object(manager, "_command_exists", return_value=False):
+            payload = manager._warp_payload()
+
+        self.assertTrue(payload["success"])
+        self.assertFalse(payload["installed"])
+        self.assertFalse(payload["connected"])
+        self.assertEqual(payload["status"], "Not installed")
+
+    def test_warp_commands_have_expected_argument_bounds(self):
+        manager = load_module()
+        self.assertEqual(manager.command_arg_bounds("warp_status"), (0, 0))
+        self.assertEqual(manager.command_arg_bounds("warp_set_enabled"), (1, 1))
+        self.assertEqual(manager.command_arg_bounds("warp_restart"), (0, 0))
 
 
 if __name__ == "__main__":

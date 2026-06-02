@@ -5,6 +5,7 @@ import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import "AstreaComponents" as Astrea
+import "AstreaI18n" as AstreaI18n
 
 ApplicationWindow {
     id: window
@@ -18,7 +19,7 @@ ApplicationWindow {
     minimumHeight: 560
     maximumWidth: 1400
     maximumHeight: 800
-    title: "Wallpapers"
+    title: t("apps.wallpapers.title", "Wallpapers")
     color: "transparent"
     flags: Qt.Window | Qt.FramelessWindowHint
     font.family: Astrea.Theme.fontFamily
@@ -43,6 +44,10 @@ ApplicationWindow {
     property int selectedIndex: -1
     property var selectedItem: selectedIndex >= 0 && selectedIndex < wallpaperModel.count ? wallpaperModel.get(selectedIndex) : null
 
+    function t(key, fallback, params) {
+        return AstreaI18n.I18n.tr(key, fallback, params)
+    }
+
     function fileUrl(path, version) {
         if (!path)
             return ""
@@ -58,7 +63,7 @@ ApplicationWindow {
         try {
             return JSON.parse(raw || "{}")
         } catch (err) {
-            errorText = label + " parse failed"
+            errorText = t("apps.wallpapers.error.parse_failed", "{label} parse failed", { label: label })
             console.log("Wallpapers", label, err, raw)
             return null
         }
@@ -68,7 +73,7 @@ ApplicationWindow {
         if (selectionSlug !== undefined)
             selectionAfterLoad = selectionSlug
         errorText = ""
-        statusText = "Loading..."
+        statusText = t("apps.wallpapers.status.loading", "Loading...")
         runProcess(listProc)
     }
 
@@ -107,7 +112,7 @@ ApplicationWindow {
         applyProc.scope = scope
         applyProc.sourcePath = selectedItem.wallpaperPath
         applyProc.wallpaperName = selectedItem.name
-        statusText = scope === "lockscreen" ? "Applying to lockscreen..." : "Applying wallpaper..."
+        statusText = scope === "lockscreen" ? t("apps.wallpapers.status.applying_lockscreen", "Applying to lockscreen...") : t("apps.wallpapers.status.applying_wallpaper", "Applying wallpaper...")
         runProcess(applyProc)
     }
 
@@ -121,7 +126,7 @@ ApplicationWindow {
         pendingSlug = selectedItem.slug
         renameProc.slug = selectedItem.slug
         renameProc.wallpaperName = nextName
-        statusText = "Renaming..."
+        statusText = t("apps.wallpapers.status.renaming", "Renaming...")
         runProcess(renameProc)
     }
 
@@ -138,14 +143,14 @@ ApplicationWindow {
         if (!pendingSlug)
             return
         deleteProc.slug = pendingSlug
-        statusText = "Removing..."
+        statusText = t("apps.wallpapers.status.removing", "Removing...")
         runProcess(deleteProc)
     }
 
     function importWallpaper() {
         errorText = ""
         pendingImportPath = ""
-        statusText = "Choose an image..."
+        statusText = t("apps.wallpapers.status.choose_image", "Choose an image...")
         runProcess(importPickerProc)
     }
 
@@ -153,8 +158,8 @@ ApplicationWindow {
         if (!pendingImportPath)
             return
         addProc.sourcePath = pendingImportPath
-        addProc.wallpaperName = name.trim() || "Wallpaper"
-        statusText = "Importing..."
+        addProc.wallpaperName = name.trim() || t("apps.wallpapers.fallback.wallpaper", "Wallpaper")
+        statusText = t("apps.wallpapers.status.importing", "Importing...")
         runProcess(addProc)
     }
 
@@ -183,7 +188,7 @@ ApplicationWindow {
                 for (const item of payload.user) {
                     wallpaperModel.append({
                         slug: item.slug || "",
-                        name: item.name || item.slug || "Wallpaper",
+                        name: item.name || item.slug || t("apps.wallpapers.fallback.wallpaper", "Wallpaper"),
                         wallpaperPath: item.wallpaperPath || "",
                         thumbPath: item.thumbPath || item.wallpaperPath || "",
                         thumbMtime: item.thumbMtime || 0,
@@ -198,7 +203,7 @@ ApplicationWindow {
             } else if (wallpaperModel.count > 0 && grid.currentIndex < 0) {
                 grid.currentIndex = 0
             }
-            statusText = wallpaperModel.count + " wallpapers"
+            statusText = t("apps.wallpapers.status.wallpaper_count", "{count} wallpapers", { count: wallpaperModel.count })
             listProc.output = ""
         }
     }
@@ -247,10 +252,10 @@ ApplicationWindow {
             "--src", sourcePath,
             "--name", wallpaperName
         ]
-        stdout: SplitParser { onRead: data => statusText = data.trim() ? "Applied" : statusText }
+        stdout: SplitParser { onRead: data => statusText = data.trim() ? t("apps.wallpapers.status.applied", "Applied") : statusText }
         stderr: SplitParser { onRead: data => window.errorText = data.trim() }
         onExited: code => {
-            statusText = code === 0 ? "Applied" : ""
+            statusText = code === 0 ? t("apps.wallpapers.status.applied", "Applied") : ""
             if (code === 0)
                 window.refreshActiveStates()
         }
@@ -259,7 +264,7 @@ ApplicationWindow {
     Process {
         id: importPickerProc
         running: false
-        command: ["zenity", "--file-selection", "--title=Import Wallpaper",
+        command: ["zenity", "--file-selection", "--title=" + window.t("apps.wallpapers.text.import_wallpaper", "Import wallpaper"),
                   "--file-filter=Images | *.jpg *.jpeg *.png *.webp *.bmp *.tiff"]
         stdout: SplitParser { onRead: data => window.pendingImportPath = data.trim() }
         stderr: SplitParser { onRead: data => window.errorText = data.trim() }
@@ -291,7 +296,7 @@ ApplicationWindow {
             if (code === 0) {
                 const payload = window.parseJson(addProc.output, "import")
                 nextSlug = payload && payload.item ? payload.item.slug || "" : ""
-                statusText = "Imported"
+                statusText = t("apps.wallpapers.status.imported", "Imported")
                 pendingImportPath = ""
             } else {
                 statusText = ""
@@ -314,7 +319,7 @@ ApplicationWindow {
         stderr: SplitParser { onRead: data => window.errorText = data.trim() }
         onExited: code => {
             const oldSlug = pendingSlug
-            statusText = code === 0 ? "Renamed" : ""
+            statusText = code === 0 ? t("apps.wallpapers.status.renamed", "Renamed") : ""
             loadWallpapers(oldSlug)
         }
     }
@@ -326,7 +331,7 @@ ApplicationWindow {
         command: ["python3", window.wallpaperManager, "delete-user", "--slug", slug]
         stderr: SplitParser { onRead: data => window.errorText = data.trim() }
         onExited: code => {
-            statusText = code === 0 ? "Removed" : ""
+            statusText = code === 0 ? t("apps.wallpapers.status.removed", "Removed") : ""
             if (code === 0)
                 pendingSlug = ""
             loadWallpapers()
@@ -432,7 +437,7 @@ ApplicationWindow {
 
                     Text {
                         width: parent.width
-                        text: "Wallpapers"
+                        text: window.t("apps.wallpapers.title", "Wallpapers")
                         color: Astrea.Theme.textPrimary
                         font.family: Astrea.Theme.fontFamily
                         font.pixelSize: Astrea.Theme.fontSizeLarge
@@ -443,7 +448,7 @@ ApplicationWindow {
 
                     Text {
                         width: parent.width
-                        text: window.statusText || "Managed library"
+                        text: window.statusText || window.t("apps.wallpapers.text.managed_library", "Managed library")
                         color: Astrea.Theme.textSecondary
                         font.family: Astrea.Theme.fontFamily
                         font.pixelSize: Astrea.Theme.fontSizeSmall
@@ -463,7 +468,7 @@ ApplicationWindow {
 
                 Astrea.NavItem {
                     width: parent.width
-                    label: window.sidebarCollapsed ? "" : "Wallpapers"
+                    label: window.sidebarCollapsed ? "" : window.t("apps.wallpapers.title", "Wallpapers")
                     iconKey: "wallpaper"
                     selected: true
                 }
@@ -483,7 +488,7 @@ ApplicationWindow {
                         spacing: Astrea.Theme.spacingTiny
 
                         Text {
-                            text: "Wallpapers"
+                            text: window.t("apps.wallpapers.title", "Wallpapers")
                             color: Astrea.Theme.textPrimary
                             font.family: Astrea.Theme.fontFamily
                             font.pixelSize: Astrea.Theme.fontSizeHeader
@@ -493,7 +498,7 @@ ApplicationWindow {
 
                         Text {
                             Layout.fillWidth: true
-                            text: window.errorText || window.statusText || "Manage wallpapers added to Astrea"
+                            text: window.errorText || window.statusText || window.t("apps.wallpapers.text.manage_added_wallpapers", "Manage wallpapers added to Astrea")
                             color: window.errorText ? Astrea.Theme.errorColor : Astrea.Theme.textSecondary
                             font.family: Astrea.Theme.fontFamily
                             font.pixelSize: Astrea.Theme.fontSizeNormal
@@ -502,7 +507,7 @@ ApplicationWindow {
                     }
 
                     Astrea.Button {
-                        text: "Import"
+                        text: window.t("apps.wallpapers.action.import", "Import")
                         primary: true
                         onClicked: window.importWallpaper()
                     }
@@ -608,7 +613,7 @@ ApplicationWindow {
                                                     Text {
                                                         id: wallpaperBadgeText
                                                         anchors.centerIn: parent
-                                                        text: "Current"
+                                                        text: window.t("apps.wallpapers.badge.current", "Current")
                                                         color: Astrea.Theme.accentForeground
                                                         font.family: Astrea.Theme.fontFamily
                                                         font.pixelSize: Astrea.Theme.fontSizeSmall
@@ -628,7 +633,7 @@ ApplicationWindow {
                                                     Text {
                                                         id: lockscreenBadgeText
                                                         anchors.centerIn: parent
-                                                        text: "Lockscreen"
+                                                        text: window.t("apps.wallpapers.badge.lockscreen", "Lockscreen")
                                                         color: "#ffffff"
                                                         font.family: Astrea.Theme.fontFamily
                                                         font.pixelSize: Astrea.Theme.fontSizeSmall
@@ -664,7 +669,7 @@ ApplicationWindow {
                         Text {
                             anchors.centerIn: parent
                             visible: wallpaperModel.count === 0
-                            text: "No added wallpapers"
+                            text: window.t("apps.wallpapers.text.no_added_wallpapers", "No added wallpapers")
                             color: Astrea.Theme.textSecondary
                             font.family: Astrea.Theme.fontFamily
                             font.pixelSize: Astrea.Theme.fontSizeLarge
@@ -704,7 +709,7 @@ ApplicationWindow {
                             Text {
                                 anchors.centerIn: parent
                                 visible: !window.selectedItem
-                                text: "No selection"
+                                text: window.t("apps.wallpapers.text.no_selection", "No selection")
                                 color: Astrea.Theme.textSecondary
                                 font.family: Astrea.Theme.fontFamily
                                 font.pixelSize: Astrea.Theme.fontSizeNormal
@@ -713,7 +718,7 @@ ApplicationWindow {
 
                         Text {
                             Layout.fillWidth: true
-                            text: window.selectedItem ? window.selectedItem.slug : "No selection"
+                            text: window.selectedItem ? window.selectedItem.slug : window.t("apps.wallpapers.text.no_selection", "No selection")
                             color: Astrea.Theme.textSecondary
                             font.family: Astrea.Theme.fontFamily
                             font.pixelSize: Astrea.Theme.fontSizeSmall
@@ -735,7 +740,7 @@ ApplicationWindow {
                                 Text {
                                     id: detailWallpaperBadge
                                     anchors.centerIn: parent
-                                    text: "Current wallpaper"
+                                    text: window.t("apps.wallpapers.badge.current_wallpaper", "Current wallpaper")
                                     color: Astrea.Theme.accentForeground
                                     font.family: Astrea.Theme.fontFamily
                                     font.pixelSize: Astrea.Theme.fontSizeSmall
@@ -755,7 +760,7 @@ ApplicationWindow {
                                 Text {
                                     id: detailLockscreenBadge
                                     anchors.centerIn: parent
-                                    text: "Lockscreen"
+                                    text: window.t("apps.wallpapers.badge.lockscreen", "Lockscreen")
                                     color: Astrea.Theme.textPrimary
                                     font.family: Astrea.Theme.fontFamily
                                     font.pixelSize: Astrea.Theme.fontSizeSmall
@@ -800,14 +805,14 @@ ApplicationWindow {
 
                             Astrea.Button {
                                 Layout.fillWidth: true
-                                text: "Rename"
+                                text: window.t("apps.wallpapers.action.rename", "Rename")
                                 enabled: !!window.selectedItem
                                 onClicked: window.renameSelected()
                             }
 
                             Astrea.Button {
                                 Layout.fillWidth: true
-                                text: "Delete"
+                                text: window.t("apps.wallpapers.action.delete", "Delete")
                                 danger: true
                                 enabled: !!window.selectedItem
                                 onClicked: window.requestDeleteSelected()
@@ -822,7 +827,7 @@ ApplicationWindow {
 
                         Astrea.Button {
                             Layout.fillWidth: true
-                            text: "Set as wallpaper"
+                            text: window.t("apps.wallpapers.action.set_as_wallpaper", "Set as wallpaper")
                             primary: true
                             enabled: !!window.selectedItem
                             onClicked: window.applyTo("wallpaper")
@@ -830,7 +835,7 @@ ApplicationWindow {
 
                         Astrea.Button {
                             Layout.fillWidth: true
-                            text: "Set as lockscreen"
+                            text: window.t("apps.wallpapers.action.set_as_lockscreen", "Set as lockscreen")
                             enabled: !!window.selectedItem
                             onClicked: window.applyTo("lockscreen")
                         }
@@ -874,7 +879,7 @@ ApplicationWindow {
 
             Text {
                 Layout.fillWidth: true
-                text: "Import wallpaper"
+                text: window.t("apps.wallpapers.text.import_wallpaper", "Import wallpaper")
                 color: Astrea.Theme.textPrimary
                 font.family: Astrea.Theme.fontFamily
                 font.pixelSize: Astrea.Theme.fontSizeTitle
@@ -923,7 +928,7 @@ ApplicationWindow {
                     Text {
                         anchors.fill: parent
                         verticalAlignment: Text.AlignVCenter
-                        text: "Wallpaper name"
+                        text: window.t("apps.wallpapers.placeholder.wallpaper_name", "Wallpaper name")
                         color: Astrea.Theme.textSecondary
                         font: importNameInput.font
                         visible: !importNameInput.text && !importNameInput.activeFocus
@@ -937,7 +942,7 @@ ApplicationWindow {
 
                 Astrea.Button {
                     Layout.fillWidth: true
-                    text: "Cancel"
+                    text: window.t("apps.wallpapers.action.cancel", "Cancel")
                     onClicked: {
                         importNameInput.text = ""
                         importNameDialog.close()
@@ -946,7 +951,7 @@ ApplicationWindow {
 
                 Astrea.Button {
                     Layout.fillWidth: true
-                    text: "Import"
+                    text: window.t("apps.wallpapers.action.import", "Import")
                     primary: true
                     onClicked: {
                         importNameDialog.close()
@@ -981,7 +986,9 @@ ApplicationWindow {
 
             Text {
                 Layout.fillWidth: true
-                text: "Delete " + window.pendingName + "?"
+                text: window.t("apps.wallpapers.text.delete_named_wallpaper", "Delete {name}?", {
+                    name: window.pendingName
+                })
                 color: Astrea.Theme.textPrimary
                 font.family: Astrea.Theme.fontFamily
                 font.pixelSize: Astrea.Theme.fontSizeTitle
@@ -991,7 +998,7 @@ ApplicationWindow {
 
             Text {
                 Layout.fillWidth: true
-                text: "This removes it from the managed wallpaper library."
+                text: window.t("apps.wallpapers.text.delete_help", "This removes it from the managed wallpaper library.")
                 color: Astrea.Theme.textSecondary
                 font.family: Astrea.Theme.fontFamily
                 font.pixelSize: Astrea.Theme.fontSizeNormal
@@ -1004,13 +1011,13 @@ ApplicationWindow {
 
                 Astrea.Button {
                     Layout.fillWidth: true
-                    text: "Cancel"
+                    text: window.t("apps.wallpapers.action.cancel", "Cancel")
                     onClicked: confirmDelete.close()
                 }
 
                 Astrea.Button {
                     Layout.fillWidth: true
-                    text: "Delete"
+                    text: window.t("apps.wallpapers.action.delete", "Delete")
                     danger: true
                     primary: true
                     onClicked: {

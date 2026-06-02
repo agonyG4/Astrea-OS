@@ -25,30 +25,12 @@ QtObject {
     property string searchQuery: ""
     property string searchRootPath: ""
     property string activeRequestMode: "list"
+    property bool remoteDirectoryActive: false
+    property string remoteDirectoryReason: ""
     property ListModel fileModel: ListModel {}
     property int fileModelRevision: 0
     property bool fileModelFilling: false
     property string watchedDirectoryPath: ""
-    property string _pendingParseMode: ""
-    property WorkerScript jsonWorker: WorkerScript {
-        id: jsonWorker
-        source: "JsonWorker.js"
-        onMessage: function(msg) {
-            if (!msg.ok) {
-                navigation.fileModel.clear()
-                navigation.loadError = navigation._pendingParseMode === "search"
-                    ? "Erro ao pesquisar" : "Erro ao carregar diretório"
-                navigation.loadingDir = false
-                app.previewsEnabled = false
-                return
-            }
-            navigation.replaceFileModel(msg.items)
-            navigation.loadError = ""
-            navigation.loadingDir = false
-            if (navigation.loadError === "")
-                app.previewsEnabled = true
-        }
-    }
 
     function initialize() {
         var requestedPath = Quickshell.env("ASTREA_EXPLORER_START_PATH") || ""
@@ -234,7 +216,7 @@ QtObject {
     }
 
     function startDirectoryWatch(path) {
-        if (!path || app.isRecentPath(path) || searchActive) {
+        if (!path || app.isRecentPath(path) || searchActive || remoteDirectoryActive || remotePathReason(path) !== "") {
             stopDirectoryWatch()
             return
         }
@@ -282,6 +264,8 @@ QtObject {
             searchRootPath = currentPath
 
         searchActive = true
+        updateRemoteStateFromItems([])
+        stopDirectoryWatch()
         loadingDir = true
         loadError = ""
         app.previewsEnabled = false
@@ -318,6 +302,8 @@ QtObject {
         if (!currentPath)
             return
 
+        updateRemoteStateFromItems([])
+
         if (searchActive) {
             stopDirectoryWatch()
             submitSearch(searchQuery)
@@ -326,6 +312,8 @@ QtObject {
 
         if (app.isRecentPath(currentPath)) {
             stopDirectoryWatch()
+            remoteDirectoryActive = false
+            remoteDirectoryReason = ""
             loadingDir = false
             loadError = ""
             app.previewsEnabled = true
@@ -342,7 +330,10 @@ QtObject {
         activeRequestMode = "list"
         activeDirectoryRequestPath = currentPath
         app.activePreviewRefreshPath = ""
-        startDirectoryWatch(currentPath)
+        if (remoteDirectoryActive)
+            stopDirectoryWatch()
+        else
+            startDirectoryWatch(currentPath)
         fileModel.clear()
         searchProcess.running = false
         dirListProcess.command = [
@@ -392,7 +383,7 @@ QtObject {
             _allItems = []
             fileModelFilling = false
             fileModelRevision++
-            if (loadError === "" && app.previewsEnabled && !app.isPortalDialog && !searchActive)
+            if (loadError === "" && app.previewsEnabled && !remoteDirectoryActive && !app.isPortalDialog && !searchActive)
                 app.warmCurrentDirectoryThumbnails()
         }
     }
@@ -403,7 +394,7 @@ QtObject {
     }
 
     function updateFileModelMetadata(items) {
-        if (!items || items.length === 0 || fileModel.count === 0)
+        if (remoteDirectoryActive || !items || items.length === 0 || fileModel.count === 0)
             return
 
         var filtered = []
@@ -508,6 +499,65 @@ QtObject {
         return false
     }
 
+    function normalizedPath(path) {
+        var text = String(path || "")
+        if (text.length > 1)
+            text = text.replace(/\/+$/, "")
+        return text
+    }
+
+    function pathHasPrefix(path, prefix) {
+        var cleanPath = normalizedPath(path)
+        var cleanPrefix = normalizedPath(prefix)
+        return cleanPath === cleanPrefix || cleanPath.indexOf(cleanPrefix + "/") === 0
+    }
+
+    function remotePathReason(path) {
+        var cleanPath = normalizedPath(path)
+        if (!cleanPath || app.isRecentPath(cleanPath))
+            return ""
+
+        var networkRoot = normalizedPath(app.networkRootPath || "")
+        if (networkRoot && pathHasPrefix(cleanPath, networkRoot))
+            return "gvfs"
+
+        var prefixes = String(Quickshell.env("ASTREA_EXPLORER_REMOTE_PREFIXES") || "").split(":")
+        for (var i = 0; i < prefixes.length; i++) {
+            var prefix = normalizedPath(prefixes[i])
+            if (prefix && pathHasPrefix(cleanPath, prefix))
+                return "remote-prefix"
+        }
+
+        var parts = cleanPath.toLowerCase().split("/")
+        for (var j = 0; j < parts.length; j++) {
+            if (parts[j] === "rclone" || parts[j].indexOf("rclone-") === 0 || parts[j].indexOf("rclone_") === 0)
+                return "rclone"
+        }
+
+        return ""
+    }
+
+    function updateRemoteStateFromItems(items) {
+        var reason = remotePathReason(currentPath)
+        var active = reason !== ""
+
+        for (var i = 0; items && i < items.length; i++) {
+            var item = items[i]
+            if (item && item.fileRemote) {
+                active = true
+                reason = item.fileFilesystem || reason || "remote"
+                break
+            }
+        }
+
+        remoteDirectoryActive = active
+        remoteDirectoryReason = active ? reason : ""
+        if (remoteDirectoryActive) {
+            app.previewsEnabled = false
+            stopDirectoryWatch()
+        }
+    }
+
     property Process dirListProcess: Process {
         id: dirListProcess
         command: []
@@ -519,14 +569,16 @@ QtObject {
                     return
 
                 try {
-                    navigation.replaceFileModel(JSON.parse(this.text))
+                    var items = JSON.parse(this.text)
+                    navigation.updateRemoteStateFromItems(items)
+                    navigation.replaceFileModel(items)
                     navigation.loadError = ""
                 } catch (error) {
                     navigation.fileModel.clear()
                     navigation.loadError = "Erro ao carregar diretório"
                 }
                 navigation.loadingDir = false
-                if (navigation.loadError === "")
+                if (navigation.loadError === "" && !navigation.remoteDirectoryActive)
                     app.previewsEnabled = true
                 // if (navigation.loadError === "" && app.previewsEnabled && !app.isPortalDialog && !navigation.searchActive)
                     // app.warmCurrentDirectoryThumbnails()
@@ -555,14 +607,16 @@ QtObject {
                     return
 
                 try {
-                    navigation.replaceFileModel(JSON.parse(this.text))
+                    var items = JSON.parse(this.text)
+                    navigation.updateRemoteStateFromItems(items)
+                    navigation.replaceFileModel(items)
                     navigation.loadError = ""
                 } catch (error) {
                     navigation.fileModel.clear()
                     navigation.loadError = "Erro ao pesquisar"
                 }
                 navigation.loadingDir = false
-                if (navigation.loadError === "")
+                if (navigation.loadError === "" && !navigation.remoteDirectoryActive)
                     app.previewsEnabled = true
                 // if (navigation.loadError === "" && app.previewsEnabled && !app.isPortalDialog && !navigation.searchActive)
                     // app.warmCurrentDirectoryThumbnails()
@@ -587,6 +641,7 @@ QtObject {
             if (!navigation.currentPath
                     || navigation.currentPath !== navigation.watchedDirectoryPath
                     || navigation.searchActive
+                    || navigation.remoteDirectoryActive
                     || app.isRecentPath(navigation.currentPath))
                 return
             if (navigation.loadingDir) {
@@ -609,6 +664,7 @@ QtObject {
         onExited: function() {
             if (navigation.watchedDirectoryPath === navigation.currentPath
                     && !navigation.searchActive
+                    && !navigation.remoteDirectoryActive
                     && !app.isRecentPath(navigation.currentPath))
                 directoryWatchRestartTimer.restart()
         }
@@ -622,6 +678,7 @@ QtObject {
                     && navigation.watchedDirectoryPath === navigation.currentPath
                     && !navigation.directoryWatchProcess.running
                     && !navigation.searchActive
+                    && !navigation.remoteDirectoryActive
                     && !app.isRecentPath(navigation.currentPath))
                 navigation.startDirectoryWatch(navigation.currentPath)
         }

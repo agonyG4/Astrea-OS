@@ -43,6 +43,7 @@ The About app uses this bridge as a single process instead of spawning separate 
 - [[Astrea - Weather Bridge]]
 - [[Astrea - Audio Bridge]]
 - [[Astrea - Display Bridge]]
+- [[Astrea - Network Bridge]]
 - [[Astrea - Wallpaper Bridge]]
 
 ## Pattern

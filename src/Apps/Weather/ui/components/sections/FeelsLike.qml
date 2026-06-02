@@ -48,13 +48,13 @@ ColumnLayout {
                     if (!weatherData) return ""
                     var diff = weatherData.feels_like - weatherData.temp
                     if (diff < 0) {
-                        if (weatherData.wind > 15) return "O vento está baixando a sensação térmica."
-                        return "Está um pouco mais frio que a temperatura real."
+                        if (weatherData.wind > 15) return AstreaI18n.I18n.tr("apps.weather.ui.components.sections.feels_like.message.wind_cooling", "The wind is lowering the feels-like temperature.")
+                        return AstreaI18n.I18n.tr("apps.weather.ui.components.sections.feels_like.message.cooler", "It feels a little cooler than the actual temperature.")
                     } else if (diff > 0) {
-                        if (weatherData.humidity > 70) return "A umidade está aumentando a sensação térmica."
-                        return "Está um pouco mais quente que a temperatura real."
+                        if (weatherData.humidity > 70) return AstreaI18n.I18n.tr("apps.weather.ui.components.sections.feels_like.message.humidity_warming", "Humidity is raising the feels-like temperature.")
+                        return AstreaI18n.I18n.tr("apps.weather.ui.components.sections.feels_like.message.warmer", "It feels a little warmer than the actual temperature.")
                     }
-                    return "Igual à temperatura real."
+                    return AstreaI18n.I18n.tr("apps.weather.ui.components.sections.feels_like.message.same", "Same as the actual temperature.")
                 }
                 font.pixelSize: UI.Theme.fontSizeLarge
                 textColor: UI.Theme.textPrimary

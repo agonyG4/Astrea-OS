@@ -3,7 +3,7 @@
 Parent: [[Astrea]]
 
 ## Purpose
-Data notes describe static assets, Astrea-owned data, and external state/config locations.
+Data notes describe shipped assets, durable user library data, and external state/config locations.
 
 ## Notes
 - [[Astrea - Assets and Data]]
@@ -16,8 +16,7 @@ Data notes describe static assets, Astrea-owned data, and external state/config 
 
 ## Data Locations
 - `Assets/`
-- `Data/`
 - `~/.config/AstreaOS`
 - `~/.local/state/Astrea`
+- `~/.local/share/AstreaOS`
 - `~/.cache/weather`
-

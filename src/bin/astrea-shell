@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -d "$script_dir/../Quickshell" && -d "$script_dir/../System" ]]; then
+    default_root="$(realpath -- "$script_dir/..")"
+else
+    default_root="$HOME/.local/share/Astrea"
+fi
+
+export ASTREA_ROOT="${ASTREA_ROOT:-$default_root}"
+exec quickshell -p "$ASTREA_ROOT/Quickshell/shell.qml"

@@ -113,6 +113,31 @@ class PreviewImageTests(unittest.TestCase):
         self.assertEqual(result["source"], "converted")
         self.assertTrue(result["uri"].endswith(".png"))
         self.assertEqual(calls[0][0][0], "magick")
+        self.assertIn("timeout", calls[0][1])
+
+    def test_preview_conversion_publishes_cache_atomically(self):
+        final_paths = []
+
+        def fake_runner(command, **_kwargs):
+            output = Path(command[-1].removeprefix("png:"))
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_bytes(b"png")
+            final_paths.append(output)
+            return subprocess.CompletedProcess(command, 0)
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            path = root / "photo.webp"
+            path.write_bytes(b"webp")
+            cache = root / "cache"
+            expected_name = helper.preview_cache_path(path, cache).name
+
+            result = helper.preview_image(path, runner=fake_runner, cache_dir=cache)
+            published = Path(result["uri"].removeprefix("file://"))
+
+        self.assertEqual(result["ok"], True)
+        self.assertNotEqual(final_paths[0], published)
+        self.assertEqual(published.name, expected_name)
 
     def test_preview_conversion_uses_high_quality_display_resampling(self):
         calls = []

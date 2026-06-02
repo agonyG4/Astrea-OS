@@ -3,7 +3,9 @@
 import importlib.util
 import io
 import json
+import os
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -63,7 +65,7 @@ class StorageAutoRefreshTest(unittest.TestCase):
             )
 
             with mock.patch.object(storage, "CACHE_DB", cache_db), \
-                    mock.patch.object(storage.subprocess, "run", return_value=completed), \
+                    mock.patch.object(storage.subprocess, "run", return_value=completed) as run, \
                     mock.patch.object(storage, "compsize_stats", return_value={"exact": False}), \
                     mock.patch.object(storage, "refresh_status", return_value={"running": False}), \
                     mock.patch.object(storage, "start_auto_refresh", return_value=True) as start:
@@ -75,6 +77,7 @@ class StorageAutoRefreshTest(unittest.TestCase):
             self.assertTrue(payload["refresh_started"])
             self.assertTrue(payload["cache_stale"])
             self.assertFalse(payload["cache_exists"])
+            self.assertIn("timeout", run.call_args.kwargs)
 
     def test_json_does_not_start_duplicate_refresh_when_already_running(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -198,6 +201,21 @@ prealloc   100%       23M          23M          25M
         self.assertEqual(stats["by_algorithm"]["none"]["disk_usage"], 486_000_000_000)
         self.assertTrue(stats["exact"])
 
+    def test_parse_compsize_human_output_accepts_trailing_byte_suffix(self):
+        output = """
+Processed 3 files.
+Type       Perc     Disk Usage   Uncompressed Referenced
+TOTAL       75%      1.5GB        2GB          2GB
+zstd        75%      1.5GB        2GB          2GB
+"""
+
+        stats = storage.parse_compsize_output(output)
+
+        self.assertEqual(stats["compressed_total"], 2_000_000_000)
+        self.assertEqual(stats["zstd_disk_usage"], 1_500_000_000)
+        self.assertEqual(stats["zstd_saved"], 500_000_000)
+        self.assertTrue(stats["exact"])
+
     def test_default_compsize_paths_skips_home_under_root_same_tree(self):
         with mock.patch.object(storage, "COMPSIZE_PATHS", [Path("/"), Path("/home")]), \
                 mock.patch.object(storage, "is_separate_mount_or_subvolume", return_value=False):
@@ -211,6 +229,68 @@ prealloc   100%       23M          23M          25M
             paths = storage.default_compsize_paths()
 
         self.assertEqual(paths, [Path("/"), Path("/home")])
+
+    def test_compsize_stats_uses_stale_exact_cache_when_live_scan_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "storage-compsize.json"
+            cache_path.write_text(json.dumps({
+                "exact": True,
+                "compressed_total": 149_000_000_000,
+                "zstd_disk_usage": 47_300_000_000,
+                "zstd_saved": 101_700_000_000,
+                "source": "manual-compsize",
+                "updated_at": time.time() - storage.COMPSIZE_CACHE_AFTER_SECONDS - 60,
+            }), encoding="utf-8")
+            failed = storage.subprocess.CompletedProcess(
+                ["compsize", "-b", "-x", "/"],
+                1,
+                stdout="",
+                stderr="/root: Permission denied",
+            )
+
+            with mock.patch.object(storage, "COMPSIZE_CACHE", cache_path), \
+                    mock.patch.object(storage.shutil, "which", return_value="/usr/bin/compsize"), \
+                    mock.patch.object(storage.subprocess, "run", return_value=failed):
+                stats = storage.compsize_stats([Path("/")])
+
+        self.assertTrue(stats["exact"])
+        self.assertTrue(stats["stale"])
+        self.assertEqual(stats["zstd_disk_usage"], 47_300_000_000)
+        self.assertEqual(stats["error"], "/root: Permission denied")
+
+    def test_background_refresh_recreates_stale_lock_before_scan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state_dir = Path(tmp)
+            lock_path = state_dir / "storage-refresh.lock"
+            lock_path.write_text("stale", encoding="utf-8")
+
+            def fake_run(*_args, **_kwargs):
+                self.assertTrue(lock_path.exists())
+                self.assertEqual(lock_path.read_text(encoding="utf-8"), str(os.getpid()))
+                completed = storage.subprocess.CompletedProcess(["scan"], 0)
+                completed.stderr = ""
+                return completed
+
+            with mock.patch.object(storage, "STATE_DIR", state_dir), \
+                    mock.patch.object(storage, "REFRESH_STATUS", state_dir / "storage-refresh.json"), \
+                    mock.patch.object(storage, "REFRESH_LOCK", lock_path), \
+                    mock.patch.object(storage, "REFRESH_LOG", state_dir / "storage-refresh.log"), \
+                    mock.patch.object(storage, "refresh_running", return_value=False), \
+                    mock.patch.object(storage.subprocess, "run", side_effect=fake_run):
+                code = storage.run_refresh_background(Path("/tmp/sense.py"), "stale-cache")
+
+        self.assertEqual(code, 0)
+
+    def test_write_json_uses_unique_temp_file_and_preserves_stale_tmp(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            stale_tmp = Path(tmp) / "state.json.tmp"
+            stale_tmp.write_text("stale", encoding="utf-8")
+
+            storage.write_json(path, {"ok": True})
+
+            self.assertEqual(json.loads(path.read_text(encoding="utf-8")), {"ok": True})
+            self.assertEqual(stale_tmp.read_text(encoding="utf-8"), "stale")
 
 
 if __name__ == "__main__":

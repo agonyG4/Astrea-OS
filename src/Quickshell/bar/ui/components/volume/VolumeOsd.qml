@@ -15,8 +15,21 @@ PanelWindow {
     readonly property int surfacePadding: 4
     readonly property int trackWidth: 178
     readonly property int trackHeight: 5
+    readonly property int iosCompactTrackWidth: 10
+    readonly property int iosExpandedTrackWidth: 26
+    readonly property int iosWidthAnimationDuration: 270
+    readonly property int iosFastFillWindowMs: 180
+    readonly property int iosTrackWidth: iosWide ? iosExpandedTrackWidth : iosCompactTrackWidth
+    readonly property int iosSurfaceWidth: Math.max(iosCompactTrackWidth, iosExpandedTrackWidth)
+    readonly property int iosTrackHeight: 196
+    readonly property int iosPaddingX: 10
+    readonly property int iosPaddingY: 24
     readonly property string themePath: (Quickshell.env("HOME") || "") + "/.config/AstreaOS/ui/theme.json"
+    readonly property bool iosStyle: audioOsdStyle === 1
     readonly property real normalizedLevel: muted ? 0 : Math.min(level, 100) / 100
+    readonly property int iosFillHeight: normalizedLevel <= 0
+        ? 0
+        : Math.max(iosTrackWidth, Math.round(iosTrackHeight * normalizedLevel))
     readonly property color themeSurface: {
         if (shellStyle === 0 || shellStyle === 2)
             return themeMode === 1 ? Qt.rgba(1, 1, 1, 0.06) : Qt.rgba(0, 0, 0, 0.06)
@@ -30,6 +43,13 @@ PanelWindow {
     property color accentColor: accentHex
     property int shellStyle: 1
     property int themeMode: 0
+    property int audioOsdStyle: 0
+    property int lastShowAt: 0
+    property int fillAnimationDuration: 70
+    property bool hiding: false
+    property bool iosWide: false
+    property int iosVisibleChangeCount: 0
+    property real iosSlideOffset: -implicitWidth
 
     function applyThemeText(text) {
         try {
@@ -40,41 +60,109 @@ PanelWindow {
                 shellStyle = Math.max(0, Math.min(2, cfg.shell_style))
             if (typeof cfg.theme_mode === "number")
                 themeMode = cfg.theme_mode === 1 ? 1 : 0
+            if (typeof cfg.audio_osd_style === "number")
+                audioOsdStyle = Math.max(0, Math.min(1, cfg.audio_osd_style))
         } catch (error) {}
     }
 
     function showVolume(value, isMuted) {
-        disappearAnim.stop()
-        appearAnim.stop()
-        themeFile.reload()
+        const now = Date.now()
+        const wasVisible = shown || hiding
+        const fastChange = shown && lastShowAt > 0 && now - lastShowAt < iosFastFillWindowMs
+        fillAnimationDuration = fastChange ? 36 : 70
+        lastShowAt = now
         level = Math.max(0, Math.min(150, Math.round(value)))
         muted = isMuted
         hideTimer.restart()
-        shown = true
-        appearAnim.restart()
+        if (iosStyle) {
+            iosVisibleChangeCount = wasVisible ? iosVisibleChangeCount + 1 : 1
+            iosWide = iosVisibleChangeCount === 1
+            iosHideAnimation.stop()
+            iosShowAnimation.stop()
+            hiding = false
+            if (!wasVisible) {
+                iosSlideOffset = -implicitWidth
+            }
+            shown = true
+            if (wasVisible) {
+                iosSlideOffset = 0
+            } else {
+                iosShowAnimation.restart()
+            }
+        } else {
+            hiding = false
+            shown = true
+        }
+    }
+
+    function hideOsd() {
+        if (iosStyle && shown) {
+            iosShowAnimation.stop()
+            shown = false
+            hiding = true
+            iosHideAnimation.restart()
+            return
+        }
+
+        shown = false
+        hiding = false
+        iosVisibleChangeCount = 0
+        iosWide = false
     }
 
     property bool shown: false
 
-    visible: shown
+    visible: shown || hiding
     color: "transparent"
     anchors.left: true
     anchors.bottom: true
-    implicitWidth: indicatorWidth + surfacePadding * 2
-    implicitHeight: indicatorHeight + surfacePadding * 2
+    implicitWidth: iosStyle ? iosSurfaceWidth + iosPaddingX * 2 : indicatorWidth + surfacePadding * 2
+    implicitHeight: iosStyle ? iosTrackHeight + iosPaddingY * 2 : indicatorHeight + surfacePadding * 2
 
     WlrLayershell.namespace: "volume-osd"
     WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
     WlrLayershell.exclusiveZone: -1
-    WlrLayershell.margins.left: Math.round(((screen ? screen.width : 1920) - implicitWidth) / 2)
-    WlrLayershell.margins.bottom: 58
+    WlrLayershell.margins.left: iosStyle ? 0 : Math.round(((screen ? screen.width : 1920) - implicitWidth) / 2)
+    WlrLayershell.margins.bottom: iosStyle ? Math.round(((screen ? screen.height : 1080) - implicitHeight) / 2) : 58
 
     Timer {
         id: hideTimer
         interval: 1150
         repeat: false
-        onTriggered: disappearAnim.restart()
+        onTriggered: osd.hideOsd()
+    }
+
+    NumberAnimation {
+        id: iosShowAnimation
+        target: osd
+        property: "iosSlideOffset"
+        from: -osd.implicitWidth
+        to: 0
+        duration: 240
+        easing.type: Easing.OutCubic
+    }
+
+    SequentialAnimation {
+        id: iosHideAnimation
+
+        NumberAnimation {
+            target: osd
+            property: "iosSlideOffset"
+            to: -osd.implicitWidth
+            duration: 220
+            easing.type: Easing.InCubic
+        }
+
+        ScriptAction {
+            script: {
+                if (!osd.shown) {
+                    osd.hiding = false
+                    osd.iosWide = false
+                    osd.iosVisibleChangeCount = 0
+                }
+            }
+        }
     }
 
     FileView {
@@ -91,12 +179,11 @@ PanelWindow {
     Rectangle {
         id: pill
 
+        visible: !osd.iosStyle
         anchors.fill: parent
         anchors.margins: osd.surfacePadding
         radius: height / 2
         antialiasing: true
-        opacity: 0
-        scale: 0.96
         color: "transparent"
         border.width: 0
 
@@ -107,6 +194,7 @@ PanelWindow {
             antialiasing: true
             layer.enabled: true
             layer.samples: 4
+            layer.smooth: true
 
             readonly property real inset: 0.5
             readonly property real r: Math.max(0, (height - inset * 2) / 2)
@@ -162,10 +250,9 @@ PanelWindow {
                 ? (osd.muted ? Qt.rgba(0, 0, 0, 0.34) : Qt.rgba(0, 0, 0, 0.68))
                 : (osd.muted ? Theme.shellIconMuted : Theme.shellIconMain)
             font {
-                family: Theme.fontFamily
+                family: Theme.iconFontFamily
                 pixelSize: 18
             }
-            Behavior on color { ColorAnimation { duration: Theme.animationFast } }
         }
 
         Rectangle {
@@ -181,7 +268,6 @@ PanelWindow {
             color: osd.muted
                 ? Qt.rgba(Theme.shellSeparator.r, Theme.shellSeparator.g, Theme.shellSeparator.b, 0.60)
                 : Theme.shellSeparator
-            Behavior on color { ColorAnimation { duration: Theme.animationFast } }
 
             Rectangle {
                 id: fill
@@ -198,30 +284,62 @@ PanelWindow {
 
                 Behavior on width {
                     NumberAnimation {
-                        duration: Theme.animationNormal
+                        duration: osd.fillAnimationDuration
                         easing.type: Easing.OutCubic
                     }
                 }
-                Behavior on color { ColorAnimation { duration: Theme.animationFast } }
             }
         }
     }
 
-    ParallelAnimation {
-        id: appearAnim
-        ScriptAction {
-            script: {
-                pill.opacity = Math.max(pill.opacity, 0.01)
-                pill.scale = 0.96
+    Item {
+        id: iosIndicator
+
+        visible: osd.iosStyle
+        anchors.fill: parent
+        transform: Translate {
+            x: osd.iosSlideOffset
+        }
+
+        Rectangle {
+            id: iosTrack
+
+            x: osd.iosPaddingX
+            y: Math.round((parent.height - height) / 2)
+            width: osd.iosTrackWidth
+            height: osd.iosTrackHeight
+            radius: width / 2
+            antialiasing: true
+            clip: true
+            color: Theme.background
+            border.width: 1
+            border.color: Theme.border
+
+            Behavior on width {
+                NumberAnimation {
+                    duration: osd.iosWidthAnimationDuration
+                    easing.type: Easing.OutCubic
+                }
+            }
+
+            Rectangle {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: osd.iosFillHeight
+                radius: parent.radius
+                antialiasing: true
+                color: osd.muted
+                    ? Qt.rgba(1, 1, 1, 0.32)
+                    : osd.accentColor
+
+                Behavior on height {
+                    NumberAnimation {
+                        duration: osd.fillAnimationDuration
+                        easing.type: Easing.OutCubic
+                    }
+                }
             }
         }
-        NumberAnimation { target: pill; property: "opacity"; to: 1; duration: 110; easing.type: Easing.OutCubic }
-        NumberAnimation { target: pill; property: "scale"; to: 1; duration: Theme.animationFast; easing.type: Easing.OutCubic }
-    }
-
-    SequentialAnimation {
-        id: disappearAnim
-        NumberAnimation { target: pill; property: "opacity"; to: 0; duration: 180; easing.type: Easing.OutCubic }
-        ScriptAction { script: osd.shown = false }
     }
 }

@@ -72,6 +72,22 @@ class WallpaperManagerTests(unittest.TestCase):
             self.assertEqual(payload["activeBlurPath"], str(blurred))
             self.assertTrue(payload["activeBlurExists"])
 
+    def test_add_user_wallpaper_failure_does_not_publish_partial_folder(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            manager = load_manager(root)
+            source = root / "source.jpg"
+            Image.new("RGB", (32, 32), (20, 20, 20)).save(source)
+
+            def fail_thumb(_src, _dest):
+                raise RuntimeError("thumb failed")
+
+            manager.ensure_thumb = fail_thumb
+            with self.assertRaises(RuntimeError):
+                manager.add_user_wallpaper(str(source), "Broken Import")
+
+            self.assertEqual(list(manager.USER_WALLPAPER_DIR.glob("Broken_Import*")), [])
+
 
 if __name__ == "__main__":
     unittest.main()

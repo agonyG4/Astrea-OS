@@ -7,8 +7,7 @@ QtObject {
     property bool active: true
     property int pollInterval: active ? 10000 : 5000
     readonly property var throttledServices: [
-        "astrea-weatherd.service",
-        "astrea-status.service"
+        "astrea-weatherd.service"
     ]
 
     property string _statusBuffer: ""

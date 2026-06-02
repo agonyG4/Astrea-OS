@@ -34,7 +34,7 @@ SystemComponents.TopbarPopup {
                     anchors.verticalCenter: parent.verticalCenter
                     text:  modelData.icon
                     color: Qt.rgba(1, 1, 1, 0.40)
-                    font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIconLarge }
+                    font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIconLarge }
                 }
                 Column {
                     Text { text: modelData.label; color: Theme.shellTextSecondary; font { family: Theme.fontFamily; pixelSize: Theme.fontSizeExtraSmall } }

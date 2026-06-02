@@ -1,31 +1,51 @@
 import QtQuick
 import ".." as Components
 
-Rectangle {
+Item {
     id: toggle
-    width: 36
-    height: 20
-    radius: Components.Theme.controlRadius
+    implicitWidth: 48
+    implicitHeight: 32
+    width: implicitWidth
+    height: implicitHeight
     property bool checked: false
-    property bool visualChecked: checked
     signal toggled(bool targetChecked)
 
-    onCheckedChanged: visualChecked = checked
-    onEnabledChanged: if (enabled) visualChecked = checked
-
-    color: visualChecked ? Components.Theme.accent : Qt.rgba(1, 1, 1, 0.18)
     opacity: enabled ? 1.0 : 0.55
-    Behavior on color { ColorAnimation { duration: 80 } }
     Behavior on opacity { NumberAnimation { duration: Components.Theme.animationMicro } }
 
     Rectangle {
+        id: track
+        width: 36
+        height: 20
+        radius: Components.Theme.controlRadius
+        anchors.centerIn: parent
+        color: toggle.checked ? Components.Theme.accent : Qt.rgba(1, 1, 1, 0.18)
+        Behavior on color { ColorAnimation { duration: 140; easing.type: Easing.OutCubic } }
+    }
+
+    Rectangle {
+        id: knobShadow
+        width: knob.width
+        height: knob.height
+        radius: height / 2
+        color: Qt.rgba(0, 0, 0, 0.22)
+        anchors.verticalCenter: track.verticalCenter
+        anchors.verticalCenterOffset: 1
+        x: knob.x
+        opacity: toggle.enabled ? 1.0 : 0.0
+        Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
+        Behavior on opacity { NumberAnimation { duration: Components.Theme.animationMicro } }
+    }
+
+    Rectangle {
+        id: knob
         width: 14
         height: 14
         radius: height / 2
         color: "#ffffff"
-        anchors.verticalCenter: parent.verticalCenter
-        x: toggle.visualChecked ? parent.width - width - 3 : 3
-        Behavior on x { NumberAnimation { duration: 80; easing.type: Easing.OutCubic } }
+        anchors.verticalCenter: track.verticalCenter
+        x: track.x + (toggle.checked ? track.width - width - 3 : 3)
+        Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
     }
 
     MouseArea {
@@ -33,9 +53,7 @@ Rectangle {
         enabled: toggle.enabled
         cursorShape: Qt.PointingHandCursor
         onClicked: {
-            const target = !toggle.visualChecked
-            toggle.visualChecked = target
-            toggle.toggled(target)
+            toggle.toggled(!toggle.checked)
         }
     }
 }

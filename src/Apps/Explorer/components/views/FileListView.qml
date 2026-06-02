@@ -113,7 +113,7 @@ Item {
     }
 
     function handleDroppedUrls(drop, destinationPath) {
-        DragDropSupport.handleDroppedUrls(AppState, drop, destinationPath)
+        return DragDropSupport.handleDroppedUrls(AppState, drop, destinationPath)
     }
 
     function dragPathsForItem(itemName, itemPath) {
@@ -401,7 +401,7 @@ Item {
                 if (mouse.button === Qt.RightButton) {
                     mouse.accepted = true
                     root.resetActivationCandidate()
-                    root.Window.window.focusFileSurface()
+                    ViewShared.focusFileSurface(root)
                     AppState.clearSelection()
                     const pt = mapToItem(contextMenu, mouse.x, mouse.y)
                     contextMenu.openAt(pt.x + 6, pt.y + 6,
@@ -546,7 +546,10 @@ Item {
                                 source: AppState.portalIconSource(itemIconName, root.iconFrameSize)
                                 width: root.iconFrameSize; height: root.iconFrameSize
                                 fillMode: Image.PreserveAspectFit
-                                asynchronous: true; smooth: true
+                                asynchronous: true
+                                cache: true
+                                retainWhileLoading: true
+                                smooth: true
                                 sourceSize: Qt.size(root.iconFrameSize, root.iconFrameSize)
                             }
 
@@ -655,7 +658,7 @@ Item {
                     if (mouse.button === Qt.RightButton) {
                         mouse.accepted = true
                         row.dragging = false
-                        root.Window.window.focusFileSurface()
+                        ViewShared.focusFileSurface(root)
                         AppState.handleSelection(
                             itemName, itemSourceIndex,
                             Boolean(mouse.modifiers & Qt.ControlModifier),
@@ -680,7 +683,7 @@ Item {
                 onClicked: function(mouse) {
                     row.dragging = false
                     if (mouse.button === Qt.LeftButton) {
-                        root.Window.window.focusFileSurface()
+                        ViewShared.focusFileSurface(root)
                         root.handlePrimaryItemClick(itemPath, itemIsDir, itemUrl, itemName, itemSourceIndex, mouse.modifiers)
                         return
                     }

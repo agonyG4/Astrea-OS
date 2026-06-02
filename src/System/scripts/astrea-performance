@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -17,7 +19,112 @@ DEFAULT_CONFIG = {
     "reduce_effects": False,
     "limit_background_tasks": False,
     "show_status_badges": True,
+    "scx_scheduler": "bpfland",
+    "scx_mode": "gaming",
 }
+
+SCX_MODES = [
+    {
+        "id": "auto",
+        "label": "Auto",
+        "description": "Uses the scheduler's default policy and lets scx_loader pick the safest mode.",
+    },
+    {
+        "id": "gaming",
+        "label": "Gaming",
+        "description": "Prioritizes frame pacing and interactive response during games.",
+    },
+    {
+        "id": "lowlatency",
+        "label": "Low latency",
+        "description": "Favours quick wakeups for audio, capture, and latency-sensitive work.",
+    },
+    {
+        "id": "powersave",
+        "label": "Power save",
+        "description": "Reduces power draw, heat, and fan noise when raw throughput matters less.",
+    },
+    {
+        "id": "server",
+        "label": "Server",
+        "description": "Favours throughput and steady parallel work over desktop snappiness.",
+    },
+]
+
+SCX_CATALOG = [
+    {
+        "id": "bpfland",
+        "label": "Bpfland",
+        "best_for": "Gaming, desktop, multimedia",
+        "description": "General interactive scheduler with cache-aware task placement. Best default for this desktop.",
+    },
+    {
+        "id": "lavd",
+        "label": "LAVD",
+        "best_for": "Gaming, latency-sensitive work",
+        "description": "Latency-aware virtual deadline scheduler. Strong choice for games and real-time-ish desktop work.",
+    },
+    {
+        "id": "flash",
+        "label": "Flash",
+        "best_for": "Desktop responsiveness",
+        "description": "A snappy general-purpose scheduler that tends to feel immediate under mixed desktop load.",
+    },
+    {
+        "id": "rusty",
+        "label": "Rusty",
+        "best_for": "Complex CPU topology, balanced systems",
+        "description": "Hybrid userspace/BPF scheduler with domain load balancing. Good for larger or asymmetrical CPUs.",
+    },
+    {
+        "id": "p2dq",
+        "label": "P2DQ",
+        "best_for": "Throughput with selectable modes",
+        "description": "Parallel queue scheduler with profiles for gaming, latency, power saving, and server workloads.",
+    },
+    {
+        "id": "rustland",
+        "label": "Rustland",
+        "best_for": "Experimental desktop scheduling",
+        "description": "Userspace-heavy scheduler. Useful for experimentation; can behave well under compile-plus-game loads.",
+    },
+    {
+        "id": "beerland",
+        "label": "Beerland",
+        "best_for": "Cache-heavy workloads",
+        "description": "Prioritizes locality and scalability. Good when keeping work near warm caches matters.",
+    },
+    {
+        "id": "cosmos",
+        "label": "Cosmos",
+        "best_for": "General experiments",
+        "description": "sched-ext scheduler available on this system; use when testing alternatives to Bpfland/LAVD.",
+    },
+    {
+        "id": "flow",
+        "label": "Flow",
+        "best_for": "Latency experiments",
+        "description": "Latency-focused scheduler family. Useful for comparing against Bpfland on stutter-sensitive workloads.",
+    },
+    {
+        "id": "pandemonium",
+        "label": "Pandemonium",
+        "best_for": "Advanced experimentation",
+        "description": "Experimental sched-ext policy for comparing non-default behavior. Keep Bpfland/LAVD as the normal desktop picks.",
+    },
+    {
+        "id": "cake",
+        "label": "Cake",
+        "best_for": "Tiered task behavior",
+        "description": "Tier/classification-oriented scheduler. Best treated as an advanced profile.",
+    },
+    {
+        "id": "tickless",
+        "label": "Tickless",
+        "best_for": "HPC, virtualization, server",
+        "description": "Server-oriented and experimental for desktop use; meant for low OS-noise workloads.",
+    },
+]
 
 
 def config_path() -> Path:
@@ -39,13 +146,37 @@ def atomic_write(path: Path, payload: dict) -> None:
 def load_config() -> dict:
     path = config_path()
     if not path.exists():
-        atomic_write(path, DEFAULT_CONFIG)
-        return dict(DEFAULT_CONFIG)
+        cfg = normalize_config(DEFAULT_CONFIG)
+        atomic_write(path, cfg)
+        return cfg
     try:
         data = json.loads(path.read_text(encoding="utf-8") or "{}")
     except (OSError, json.JSONDecodeError):
         data = {}
-    return {**DEFAULT_CONFIG, **data, "auto_apply": True}
+    cfg = normalize_config(data)
+    atomic_write(path, cfg)
+    return cfg
+
+
+def normalize_config(data: dict) -> dict:
+    cfg = {**DEFAULT_CONFIG, **(data or {})}
+    if cfg.get("profile") not in {"power-saver", "balanced", "performance"}:
+        cfg["profile"] = DEFAULT_CONFIG["profile"]
+    if cfg.get("scx_scheduler") not in {item["id"] for item in SCX_CATALOG}:
+        cfg["scx_scheduler"] = DEFAULT_CONFIG["scx_scheduler"]
+    if cfg.get("scx_mode") not in {item["id"] for item in SCX_MODES}:
+        cfg["scx_mode"] = DEFAULT_CONFIG["scx_mode"]
+    for key in (
+        "auto_apply",
+        "prefer_gamemode",
+        "launch_boost",
+        "reduce_effects",
+        "limit_background_tasks",
+        "show_status_badges",
+    ):
+        cfg[key] = bool(cfg.get(key))
+    cfg["auto_apply"] = True
+    return cfg
 
 
 def command_available(name: str) -> bool:
@@ -56,6 +187,106 @@ def run(args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False
     )
+
+
+def scheduler_catalog() -> list[dict]:
+    return [dict(item) for item in SCX_CATALOG]
+
+
+def scheduler_modes() -> list[dict]:
+    return [dict(item) for item in SCX_MODES]
+
+
+def parse_scxctl_get(output: str) -> dict:
+    text = (output or "").strip()
+    result = {
+        "active": False,
+        "scheduler": "",
+        "scheduler_label": "",
+        "mode": "",
+        "mode_label": "",
+        "raw": text,
+    }
+    match = re.search(r"running\s+([A-Za-z0-9_-]+)\s+in\s+(.+?)\s+mode", text, re.IGNORECASE)
+    if not match:
+        return result
+    scheduler_label = match.group(1).strip()
+    mode_label = match.group(2).strip()
+    result.update(
+        {
+            "active": True,
+            "scheduler": scheduler_label.lower(),
+            "scheduler_label": scheduler_label,
+            "mode": re.sub(r"[^a-z0-9]+", "", mode_label.lower()),
+            "mode_label": mode_label,
+        }
+    )
+    return result
+
+
+def parse_scxctl_list(output: str) -> list[str]:
+    text = (output or "").strip()
+    if not text:
+        return []
+    _, _, tail = text.partition(":")
+    raw = tail.strip() if tail else text
+    try:
+        parsed = ast.literal_eval(raw)
+    except (SyntaxError, ValueError):
+        parsed = []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item).lower() for item in parsed if str(item).strip()]
+
+
+def available_scx_binaries() -> list[str]:
+    found = []
+    for item in SCX_CATALOG:
+        if command_available(f"scx_{item['id']}"):
+            found.append(item["id"])
+    return found
+
+
+def scx_status() -> dict:
+    has_scxctl = command_available("scxctl")
+    supported = available_scx_binaries()
+    current = {
+        "active": False,
+        "scheduler": "",
+        "scheduler_label": "",
+        "mode": "",
+        "mode_label": "",
+        "raw": "",
+    }
+    error = ""
+
+    if has_scxctl:
+        proc = run(["scxctl", "get"])
+        if proc.returncode == 0:
+            current = parse_scxctl_get(proc.stdout)
+        else:
+            error = (proc.stderr or proc.stdout or "").strip()
+
+        list_proc = run(["scxctl", "list"])
+        if list_proc.returncode == 0:
+            listed = parse_scxctl_list(list_proc.stdout)
+            if listed:
+                supported = listed
+
+    service_state = "unknown"
+    if command_available("systemctl"):
+        service_proc = run(["systemctl", "is-active", "scx_loader.service"])
+        service_state = (service_proc.stdout or service_proc.stderr or "unknown").strip()
+
+    return {
+        "scxctl": has_scxctl,
+        "service": service_state,
+        "current": current,
+        "supported": supported,
+        "catalog": scheduler_catalog(),
+        "modes": scheduler_modes(),
+        "error": error,
+    }
 
 
 def status() -> dict:
@@ -74,7 +305,36 @@ def status() -> dict:
         "gamemode": has_gamemode,
         "gamemode_active": gamemode_active,
         "profile": profile,
+        "scx": scx_status(),
     }
+
+
+def set_scheduler(scheduler: str, mode: str) -> int:
+    scheduler = scheduler.strip().lower()
+    mode = mode.strip().lower()
+    if scheduler not in {item["id"] for item in SCX_CATALOG}:
+        print(f"Unsupported scheduler: {scheduler}", file=__import__("sys").stderr)
+        return 2
+    if mode not in {item["id"] for item in SCX_MODES}:
+        print(f"Unsupported scheduler mode: {mode}", file=__import__("sys").stderr)
+        return 2
+
+    config = load_config()
+    config["scx_scheduler"] = scheduler
+    config["scx_mode"] = mode
+    atomic_write(config_path(), config)
+
+    if not command_available("scxctl"):
+        print(json.dumps({"ok": False, "error": "scxctl not installed"}, ensure_ascii=False))
+        return 1
+
+    proc = run(["scxctl", "switch", "--sched", scheduler, "--mode", mode])
+    if proc.returncode != 0:
+        print((proc.stderr or proc.stdout or "scxctl failed").strip(), file=__import__("sys").stderr)
+        return proc.returncode
+
+    print(json.dumps({"ok": True, "scheduler": scheduler, "mode": mode}, ensure_ascii=False))
+    return 0
 
 
 def main() -> int:
@@ -86,6 +346,9 @@ def main() -> int:
     set_parser.add_argument(
         "profile", choices=["power-saver", "balanced", "performance"]
     )
+    set_scheduler_parser = sub.add_parser("set-scheduler")
+    set_scheduler_parser.add_argument("scheduler", choices=[item["id"] for item in SCX_CATALOG])
+    set_scheduler_parser.add_argument("mode", choices=[item["id"] for item in SCX_MODES])
     save_parser = sub.add_parser("save")
     save_parser.add_argument("json_data")
     args = parser.parse_args()
@@ -110,8 +373,10 @@ def main() -> int:
                 return proc.returncode
         print(json.dumps({"ok": True, "profile": args.profile}, ensure_ascii=False))
         return 0
+    if args.command == "set-scheduler":
+        return set_scheduler(args.scheduler, args.mode)
     if args.command == "save":
-        config = {**DEFAULT_CONFIG, **json.loads(args.json_data), "auto_apply": True}
+        config = normalize_config(json.loads(args.json_data))
         atomic_write(config_path(), config)
         print(json.dumps({"ok": True}, ensure_ascii=False))
         return 0

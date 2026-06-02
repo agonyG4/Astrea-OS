@@ -1,3 +1,4 @@
 ClipboardProxy     1.0 ClipboardProxy.qml
 DesktopContextMenu 1.0 DesktopContextMenu.qml
 DesktopIconTile    1.0 DesktopIconTile.qml
+DesktopSurface     1.0 DesktopSurface.qml

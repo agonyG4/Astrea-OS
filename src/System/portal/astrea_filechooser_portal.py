@@ -134,6 +134,19 @@ def file_uri(path):
     return "file://" + quote(path)
 
 
+def sanitize_save_file_name(value):
+    name = decode_null_terminated_bytes(value).strip()
+    if not name:
+        return ""
+    if name in (".", ".."):
+        raise ValueError("invalid save file name")
+    if os.path.isabs(name) or "/" in name or "\\" in name:
+        raise ValueError("invalid save file name")
+    if "\x00" in name or any(ord(ch) < 32 or ord(ch) == 127 for ch in name):
+        raise ValueError("invalid save file name")
+    return name
+
+
 def parse_result_from_text(output):
     for line in reversed(output.splitlines()):
         if RESULT_PREFIX in line:
@@ -216,6 +229,7 @@ def run_dialog(mode, title, options):
             "acceptLabel": str(options.get("accept_label", "")),
             "currentName": current_name,
             "filters": parse_filters(options.get("filters")),
+            "multiple": option_to_bool(options.get("multiple", False)),
         }
     )
     env["ASTREA_FILE_DIALOG_OPTIONS"] = dialog_options
@@ -315,15 +329,27 @@ def run_dialog(mode, title, options):
 
 
 def build_results_from_selection(selection):
-    uri = file_uri(selection["filePath"])
-    return dbus.Dictionary({"uris": dbus.Array([uri], signature="s")}, signature="sv")
+    files = selection.get("files") or []
+    uris = []
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        path = str(item.get("filePath", "")).strip()
+        if path:
+            uris.append(file_uri(path))
+
+    if not uris:
+        uri = file_uri(selection["filePath"])
+        uris.append(uri)
+
+    return dbus.Dictionary({"uris": dbus.Array(uris, signature="s")}, signature="sv")
 
 
 def build_results_for_save_files(folder_selection, files):
     folder = folder_selection["filePath"]
     uris = []
     for raw_name in files:
-        name = decode_null_terminated_bytes(raw_name)
+        name = sanitize_save_file_name(raw_name)
         if not name:
             continue
         uris.append(file_uri(os.path.join(folder, name)))

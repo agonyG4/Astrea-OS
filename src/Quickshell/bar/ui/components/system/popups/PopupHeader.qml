@@ -49,7 +49,7 @@ Item {
             text: control.icon
             color: control.iconColor
             font {
-                family: Theme.fontFamily
+                family: Theme.iconFontFamily
                 pixelSize: control.iconSize
             }
         }

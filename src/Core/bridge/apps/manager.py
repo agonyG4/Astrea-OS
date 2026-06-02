@@ -4,6 +4,7 @@ import argparse
 import configparser
 import importlib.util
 import json
+import os
 import shutil
 import shlex
 import stat
@@ -89,6 +90,25 @@ def desktop_entry(path: Path) -> configparser.SectionProxy | None:
     return parser["Desktop Entry"] if "Desktop Entry" in parser else None
 
 
+def path_is_inside(path: Path, parent: Path) -> bool:
+    try:
+        path.expanduser().resolve().relative_to(parent.expanduser().resolve())
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def user_launcher_dirs() -> list[Path]:
+    dirs = list(application_dirs())
+    home = Path.home()
+    user_dirs = [path for path in dirs if path_is_inside(path, home)]
+    return (user_dirs or dirs) + [xdg_desktop_dir()]
+
+
+def is_user_launcher_file(path: Path) -> bool:
+    return path.is_file() and any(path_is_inside(path, directory) for directory in user_launcher_dirs())
+
+
 def flatpak_app_id(app: dict) -> str:
     entry = desktop_entry(Path(app.get("desktop_file", "")))
     if entry:
@@ -111,6 +131,20 @@ def flatpak_app_id(app: dict) -> str:
 
 def command_output(command: list[str], *, timeout: float = 3.0) -> str:
     return subprocess.check_output(command, stderr=subprocess.DEVNULL, text=True, timeout=timeout).strip()
+
+
+def atomic_copy2(source: Path, target: Path, *, mode_bits: int | None = None) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+    tmp.unlink(missing_ok=True)
+    try:
+        shutil.copy2(source, tmp)
+        if mode_bits is not None:
+            tmp.chmod(tmp.stat().st_mode | mode_bits)
+        os.replace(tmp, target)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def format_bytes(size: int | None) -> str:
@@ -212,34 +246,107 @@ def steam_game_size(app: dict) -> dict | None:
     return None
 
 
+GENERIC_EXEC_WRAPPERS = {
+    "gamemoderun",
+    "mangohud",
+    "nohup",
+    "prime-run",
+    "setsid",
+}
+SHELL_COMMANDS = {"bash", "dash", "fish", "sh", "zsh"}
+
+
+def strip_desktop_exec_codes(tokens: list[str]) -> list[str]:
+    return [token for token in tokens if not token.startswith("%")]
+
+
+def resolve_command_path(command: str) -> Path | None:
+    if not command:
+        return None
+    path = Path(command).expanduser() if "/" in command else Path(shutil.which(command) or "")
+    return path if str(path) else None
+
+
+def executable_candidates_from_tokens(tokens: list[str]) -> list[Path]:
+    tokens = strip_desktop_exec_codes(tokens)
+    if not tokens:
+        return []
+
+    first = tokens[0]
+    first_name = Path(first).name
+
+    if first_name == "env":
+        rest = tokens[1:]
+        while rest:
+            token = rest[0]
+            if "=" in token:
+                rest = rest[1:]
+                continue
+            if token == "--":
+                rest = rest[1:]
+                continue
+            if token.startswith("-"):
+                rest = rest[1:]
+                if token in {"-u", "--unset"} and rest:
+                    rest = rest[1:]
+                continue
+            break
+        return executable_candidates_from_tokens(rest)
+
+    if first_name in SHELL_COMMANDS and "-c" in tokens:
+        index = tokens.index("-c")
+        if index + 1 < len(tokens):
+            command = tokens[index + 1].strip()
+            if command.startswith("exec "):
+                command = command[5:].strip()
+            try:
+                return executable_candidates_from_tokens(shlex.split(command))
+            except ValueError:
+                return []
+        return []
+
+    if first_name in GENERIC_EXEC_WRAPPERS:
+        return executable_candidates_from_tokens(tokens[1:])
+
+    resolved = resolve_command_path(first)
+    return [resolved] if resolved else []
+
+
 def executable_path(app: dict) -> Path | None:
     try:
         tokens = shlex.split(app.get("exec", ""))
     except ValueError:
         return None
-    if not tokens:
-        return None
-    first = tokens[0]
-    if first == "env" or first.endswith("/env"):
-        for token in tokens[1:]:
-            if "=" in token:
-                continue
-            first = token
-            break
-    resolved = Path(first).expanduser() if "/" in first else Path(shutil.which(first) or "")
-    return resolved if str(resolved) else None
+    candidates = executable_candidates_from_tokens(tokens)
+    return candidates[0] if candidates else None
 
 
 def pacman_owner(path: Path) -> str:
     try:
+        output = command_output(["pacman", "-Qoq", str(path)], timeout=3)
+    except Exception:
+        output = ""
+    for line in output.splitlines():
+        package = line.strip()
+        if package:
+            return package
+
+    try:
         output = command_output(["pacman", "-Qo", str(path)], timeout=3)
     except Exception:
         return ""
+
     marker = " is owned by "
-    if marker not in output:
-        return ""
-    owned = output.split(marker, 1)[1].strip()
-    return owned.rsplit(" ", 1)[0]
+    if marker in output:
+        owned = output.split(marker, 1)[1].strip()
+        return owned.split(" ", 1)[0]
+
+    markers = [" pertence a ", " é possuído por "]
+    for localized_marker in markers:
+        if localized_marker in output:
+            owned = output.split(localized_marker, 1)[1].strip()
+            return owned.split(" ", 1)[0]
+    return ""
 
 
 def pacman_installed_size(package: str) -> str:
@@ -324,13 +431,27 @@ def package_owner(app: dict) -> str:
     if owner:
         return owner
 
-    exe = executable_path(app)
-    if exe and exe.exists():
-        return pacman_owner(exe)
+    try:
+        tokens = shlex.split(app.get("exec", ""))
+    except ValueError:
+        tokens = []
+    for exe in executable_candidates_from_tokens(tokens):
+        if exe.exists():
+            owner = pacman_owner(exe)
+            if owner:
+                return owner
     return ""
 
 
 def uninstall_info(app: dict, fp_id: str = "") -> dict:
+    desktop_file = Path(app.get("desktop_file", "")).expanduser()
+    if app.get("source") == "user" and desktop_file.is_file() and not is_user_launcher_file(desktop_file):
+        return {
+            "can": False,
+            "method": "desktop-file",
+            "label": "Remover da lista",
+            "reason": "Este launcher não está em uma pasta de aplicativos do usuário.",
+        }
     return build_uninstall_info(
         app,
         flatpak_id=fp_id or flatpak_app_id(app),
@@ -424,7 +545,7 @@ def set_permission(app: dict, permission: str, blocked: bool) -> dict:
     else:
         raise ValueError(f"Permissão desconhecida: {permission}")
 
-    subprocess.run(["flatpak", "override", "--user", option, fp_id], check=True)
+    subprocess.run(["flatpak", "override", "--user", option, fp_id], check=True, timeout=20)
     state = "bloqueado" if blocked else "liberado"
     return {"ok": True, "message": f"{permission} {state} para {app.get('name', fp_id)}", "app": app_details(app)["app"]}
 
@@ -432,7 +553,12 @@ def set_permission(app: dict, permission: str, blocked: bool) -> dict:
 def refresh_desktop_index() -> None:
     script = Path.home() / ".local/share/Astrea/Quickshell/desktop/app_index.py"
     if script.is_file():
-        subprocess.run(["python3", str(script), "--json", "--write"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["python3", str(script), "--json", "--write"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
 
 
 def create_desktop_shortcut(source: Path, desktop_dir: Path | None = None) -> dict:
@@ -443,8 +569,7 @@ def create_desktop_shortcut(source: Path, desktop_dir: Path | None = None) -> di
     desktop_dir = desktop_dir or xdg_desktop_dir()
     desktop_dir.mkdir(parents=True, exist_ok=True)
     target = desktop_dir / source.name
-    shutil.copy2(source, target)
-    target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    atomic_copy2(source, target, mode_bits=stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     refresh_desktop_index()
     return {"ok": True, "message": "Atalho criado na area de trabalho", "target": str(target)}
 
@@ -474,10 +599,12 @@ def uninstall_app(app: dict) -> dict:
             command.append("--user")
         command.append(fp_id)
         try:
-            subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=120)
         except subprocess.CalledProcessError as exc:
             detail = (exc.stderr or "").strip()
             raise RuntimeError(detail or f"Falha ao desinstalar Flatpak {fp_id}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"Tempo esgotado ao desinstalar Flatpak {fp_id}") from exc
         refresh_desktop_index()
         return {"ok": True, "message": "App Flatpak desinstalado", "target": fp_id}
 
@@ -487,17 +614,19 @@ def uninstall_app(app: dict) -> dict:
             raise PermissionError("Não foi possível identificar o pacote Pacman deste app.")
         command = ["pkexec", "pacman", "-Rns", "--noconfirm", package]
         try:
-            subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, timeout=180)
         except subprocess.CalledProcessError as exc:
             detail = (exc.stderr or "").strip()
             raise RuntimeError(detail or f"Falha ao desinstalar pacote {package}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"Tempo esgotado ao desinstalar pacote {package}") from exc
         except FileNotFoundError as exc:
             raise RuntimeError("pkexec não está disponível para pedir autenticação.") from exc
         refresh_desktop_index()
         return {"ok": True, "message": f"Pacote {package} desinstalado", "target": package}
 
     desktop_file = Path(app["desktop_file"]).expanduser()
-    if info.get("method") == "desktop-file" and desktop_file.is_file():
+    if info.get("method") == "desktop-file" and is_user_launcher_file(desktop_file):
         desktop_file.unlink()
         refresh_desktop_index()
         return {"ok": True, "message": "Launcher removido da lista de aplicativos", "target": str(desktop_file)}

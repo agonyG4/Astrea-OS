@@ -1,6 +1,6 @@
 use std::fs;
-use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::io::{self, Read, Write};
+use std::path::{Component, Path, PathBuf};
 use std::process;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -33,6 +33,14 @@ enum EventFormat {
     Jsonl,
 }
 
+struct FileOpRequest {
+    mode: OperationMode,
+    destination: PathBuf,
+    policy: ConflictPolicy,
+    rename: String,
+    sources: Vec<PathBuf>,
+}
+
 pub fn run(args: &[String]) -> Result<(), String> {
     let (format, normalized_args) = parse_event_format(args);
     match run_inner(&normalized_args, format) {
@@ -49,15 +57,12 @@ fn parse_event_format(args: &[String]) -> (EventFormat, Vec<String>) {
 }
 
 fn run_inner(args: &[String], format: EventFormat) -> Result<(), String> {
-    if args.len() < 5 {
-        return Err("usage: explorer_backend file-op <copy|move|cut> <destination> <merge|overwrite|skip|rename|keep-both> <rename> <paths...>".into());
-    }
-
-    let mode = parse_file_op_mode(&args[0])?;
-    let destination = Path::new(&args[1]);
-    let policy = parse_conflict_policy(&args[2])?;
-    let rename = args[3].trim();
-    let sources: Vec<PathBuf> = args[4..].iter().map(PathBuf::from).collect();
+    let request = parse_file_op_request(args)?;
+    let mode = request.mode;
+    let destination = request.destination.as_path();
+    let policy = request.policy;
+    let rename = request.rename.as_str();
+    let sources = request.sources;
 
     validate_rename_policy(policy, rename, sources.len())?;
 
@@ -99,7 +104,15 @@ fn run_inner(args: &[String], format: EventFormat) -> Result<(), String> {
             fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
         }
 
-        if let Err(err) = run_operation(mode, source, &target, policy == ConflictPolicy::Overwrite) {
+        if let Err(err) = run_operation_with_progress(
+            format,
+            mode,
+            source,
+            &target,
+            policy == ConflictPolicy::Overwrite,
+            completed,
+            sources.len(),
+        ) {
             emit_file_op_error(
                 format,
                 classify_error_code(&err),
@@ -116,6 +129,52 @@ fn run_inner(args: &[String], format: EventFormat) -> Result<(), String> {
 
     emit_file_op_done(format, mode, destination, completed, sources.len());
     Ok(())
+}
+
+fn file_op_usage() -> &'static str {
+    "usage: explorer_backend file-op <copy|move|cut> <destination> <merge|overwrite|skip|rename|keep-both> [--rename <name>] <paths...>"
+}
+
+fn parse_file_op_request(args: &[String]) -> Result<FileOpRequest, String> {
+    if args.len() < 4 {
+        return Err(file_op_usage().into());
+    }
+
+    let mode = parse_file_op_mode(&args[0])?;
+    let destination = PathBuf::from(&args[1]);
+    let policy = parse_conflict_policy(&args[2])?;
+    let mut rename = String::new();
+    let mut source_start = 3usize;
+
+    if args[3] == "--rename" {
+        if args.len() < 6 {
+            return Err(file_op_usage().into());
+        }
+        rename = args[4].trim().to_string();
+        source_start = 5;
+    } else if policy == ConflictPolicy::Rename {
+        if args.len() < 5 {
+            return Err(file_op_usage().into());
+        }
+        rename = args[3].trim().to_string();
+        source_start = 4;
+    } else if args[3].is_empty() && args.len() >= 5 {
+        // Backward compatibility with the legacy positional rename placeholder.
+        source_start = 4;
+    }
+
+    let sources: Vec<PathBuf> = args[source_start..].iter().map(PathBuf::from).collect();
+    if sources.is_empty() {
+        return Err(file_op_usage().into());
+    }
+
+    Ok(FileOpRequest {
+        mode,
+        destination,
+        policy,
+        rename,
+        sources,
+    })
 }
 
 fn parse_file_op_mode(mode: &str) -> Result<OperationMode, String> {
@@ -148,7 +207,15 @@ fn validate_rename_policy(
                 .into(),
         );
     }
+    if policy == ConflictPolicy::Rename && !is_safe_child_name(rename) {
+        return Err(format!("invalid renamed target: {rename}"));
+    }
     Ok(())
+}
+
+fn is_safe_child_name(name: &str) -> bool {
+    let mut components = Path::new(name).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
 }
 
 fn run_operation(
@@ -163,6 +230,33 @@ fn run_operation(
     }
 }
 
+fn run_operation_with_progress(
+    format: EventFormat,
+    mode: OperationMode,
+    source: &Path,
+    target: &Path,
+    overwrite: bool,
+    completed: usize,
+    total: usize,
+) -> Result<(), String> {
+    if mode == OperationMode::Copy {
+        if let Ok(meta) = fs::symlink_metadata(source) {
+            if meta.is_file() {
+                return copy_regular_file_with_progress(
+                    source,
+                    target,
+                    overwrite,
+                    format,
+                    mode,
+                    completed,
+                    total,
+                );
+            }
+        }
+    }
+    run_operation(mode, source, target, overwrite)
+}
+
 fn clamped_percent(done: usize, total: usize) -> usize {
     let raw = if total == 0 { 100 } else { done.saturating_mul(100) / total };
     raw.clamp(0, 100)
@@ -170,6 +264,17 @@ fn clamped_percent(done: usize, total: usize) -> usize {
 
 fn emit_file_op_progress(format: EventFormat, mode: OperationMode, done: usize, total: usize, source: &Path) {
     let percent = clamped_percent(done, total);
+    emit_file_op_progress_percent(format, mode, done, total, percent, source)
+}
+
+fn emit_file_op_progress_percent(
+    format: EventFormat,
+    mode: OperationMode,
+    done: usize,
+    total: usize,
+    percent: usize,
+    source: &Path,
+) {
     let name = source
         .file_name()
         .and_then(|v| v.to_str())
@@ -330,7 +435,7 @@ fn resolve_conflict_target(
     target: &Path,
     policy: ConflictPolicy,
 ) -> Result<Option<PathBuf>, String> {
-    if !target.exists() {
+    if !path_exists_or_symlink(target) {
         return Ok(Some(target.to_path_buf()));
     }
 
@@ -346,7 +451,7 @@ fn resolve_conflict_target(
 }
 
 fn unique_path(path: &Path) -> PathBuf {
-    if !path.exists() {
+    if !path_exists_or_symlink(path) {
         return path.to_path_buf();
     }
 
@@ -366,7 +471,7 @@ fn unique_path(path: &Path) -> PathBuf {
             format!("{stem} {n}.{extension}")
         };
         let candidate = parent.join(name);
-        if !candidate.exists() {
+        if !path_exists_or_symlink(&candidate) {
             return candidate;
         }
     }
@@ -389,6 +494,10 @@ fn same_path(a: &Path, b: &Path) -> bool {
         (Ok(a), Ok(b)) => a == b,
         _ => false,
     }
+}
+
+fn path_exists_or_symlink(path: &Path) -> bool {
+    path.exists() || path.is_symlink()
 }
 
 fn remove_existing(path: &Path) -> Result<(), String> {
@@ -537,7 +646,10 @@ fn copy_path(source: &Path, target: &Path, overwrite: bool) -> Result<(), String
 }
 
 fn copy_file(source: &Path, target: &Path, overwrite: bool) -> Result<(), String> {
-    if overwrite && target.exists() {
+    if path_exists_or_symlink(target) {
+        if !overwrite {
+            return Err(format!("target already exists: {}", target.display()));
+        }
         if target.is_file() || target.is_symlink() {
             return copy_file_via_temp(source, target);
         }
@@ -545,7 +657,9 @@ fn copy_file(source: &Path, target: &Path, overwrite: bool) -> Result<(), String
     }
     fs::copy(source, target)
         .map(|_| ())
-        .map_err(|e| format!("copy {} to {}: {e}", source.display(), target.display()))
+        .map_err(|e| format!("copy {} to {}: {e}", source.display(), target.display()))?;
+    preserve_file_times(source, target)?;
+    Ok(())
 }
 
 fn copy_file_via_temp(source: &Path, target: &Path) -> Result<(), String> {
@@ -570,6 +684,10 @@ fn copy_file_via_temp(source: &Path, target: &Path) -> Result<(), String> {
             temp.display()
         ));
     }
+    if let Err(err) = preserve_file_times(source, &temp) {
+        let _ = fs::remove_file(&temp);
+        return Err(err);
+    }
 
     if let Err(err) = fs::rename(&temp, target) {
         let _ = fs::remove_file(&temp);
@@ -579,6 +697,95 @@ fn copy_file_via_temp(source: &Path, target: &Path) -> Result<(), String> {
             temp.display()
         ));
     }
+    Ok(())
+}
+
+fn copy_regular_file_with_progress(
+    source: &Path,
+    target: &Path,
+    overwrite: bool,
+    format: EventFormat,
+    mode: OperationMode,
+    completed: usize,
+    total: usize,
+) -> Result<(), String> {
+    if path_exists_or_symlink(target) && !overwrite {
+        return Err(format!("target already exists: {}", target.display()));
+    }
+    let staged = hidden_sibling(target, "copy")?;
+    if let Err(err) = copy_file_stream_with_progress(
+        source,
+        &staged,
+        format,
+        mode,
+        completed,
+        total,
+    ) {
+        let _ = remove_existing_if_present(&staged);
+        return Err(err);
+    }
+    if path_exists_or_symlink(target) {
+        publish_staged_path(&staged, target)
+    } else {
+        match fs::rename(&staged, target) {
+            Ok(()) => Ok(()),
+            Err(err) => {
+                let _ = remove_existing_if_present(&staged);
+                Err(format!(
+                    "publish temporary {} to {}: {err}",
+                    staged.display(),
+                    target.display()
+                ))
+            }
+        }
+    }
+}
+
+fn copy_file_stream_with_progress(
+    source: &Path,
+    target: &Path,
+    format: EventFormat,
+    mode: OperationMode,
+    completed: usize,
+    total: usize,
+) -> Result<(), String> {
+    let meta =
+        fs::metadata(source).map_err(|e| format!("metadata {}: {e}", source.display()))?;
+    let total_bytes = meta.len();
+    let mut input = fs::File::open(source)
+        .map_err(|e| format!("open {}: {e}", source.display()))?;
+    let mut output = fs::File::create(target)
+        .map_err(|e| format!("create {}: {e}", target.display()))?;
+    let _ = output.set_permissions(meta.permissions());
+    let mut copied = 0u64;
+    let mut last_percent = 0usize;
+    let mut buffer = vec![0u8; 1024 * 1024];
+
+    loop {
+        let read = input
+            .read(&mut buffer)
+            .map_err(|e| format!("read {}: {e}", source.display()))?;
+        if read == 0 {
+            break;
+        }
+        output
+            .write_all(&buffer[..read])
+            .map_err(|e| format!("write {}: {e}", target.display()))?;
+        copied = copied.saturating_add(read as u64);
+        let percent = if total_bytes == 0 {
+            99
+        } else {
+            ((copied.saturating_mul(100) / total_bytes).min(99)) as usize
+        };
+        if percent > last_percent {
+            emit_file_op_progress_percent(format, mode, completed, total, percent, source);
+            last_percent = percent;
+        }
+    }
+    output
+        .sync_all()
+        .map_err(|e| format!("flush {}: {e}", target.display()))?;
+    preserve_file_times(source, target)?;
     Ok(())
 }
 
@@ -599,6 +806,61 @@ fn copy_symlink(source: &Path, target: &Path) -> Result<(), String> {
     }
 }
 
+#[cfg(unix)]
+fn preserve_file_times(source: &Path, target: &Path) -> Result<(), String> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::MetadataExt;
+
+    #[repr(C)]
+    struct Timespec {
+        tv_sec: i64,
+        tv_nsec: i64,
+    }
+
+    unsafe extern "C" {
+        fn utimensat(
+            dirfd: i32,
+            pathname: *const std::os::raw::c_char,
+            times: *const Timespec,
+            flags: i32,
+        ) -> i32;
+    }
+
+    const AT_FDCWD: i32 = -100;
+
+    let meta =
+        fs::metadata(source).map_err(|e| format!("metadata {}: {e}", source.display()))?;
+    let path = CString::new(target.as_os_str().as_bytes())
+        .map_err(|_| format!("target path contains NUL: {}", target.display()))?;
+    let times = [
+        Timespec {
+            tv_sec: meta.atime(),
+            tv_nsec: meta.atime_nsec(),
+        },
+        Timespec {
+            tv_sec: meta.mtime(),
+            tv_nsec: meta.mtime_nsec(),
+        },
+    ];
+    let rc = unsafe { utimensat(AT_FDCWD, path.as_ptr(), times.as_ptr(), 0) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(format!(
+            "preserve timestamps {} -> {}: {}",
+            source.display(),
+            target.display(),
+            io::Error::last_os_error()
+        ))
+    }
+}
+
+#[cfg(not(unix))]
+fn preserve_file_times(_source: &Path, _target: &Path) -> Result<(), String> {
+    Ok(())
+}
+
 fn copy_dir_recursive(source: &Path, target: &Path) -> Result<(), String> {
     if is_self_or_descendant_target(source, target) {
         return Err(format!(
@@ -616,7 +878,7 @@ fn copy_dir_recursive(source: &Path, target: &Path) -> Result<(), String> {
         let entry = entry.map_err(|e| format!("read {}: {e}", source.display()))?;
         let child_source = entry.path();
         let child_target = target.join(entry.file_name());
-        if child_target.exists() {
+        if path_exists_or_symlink(&child_target) {
             // Recursive directory conflict handling remains non-atomic for nested entries.
             remove_existing(&child_target)?;
         }
@@ -735,6 +997,176 @@ mod tests {
         assert_eq!(classify_error_code("already exists"), "already_exists");
         assert_eq!(classify_error_code("invalid source path"), "invalid_path");
         assert_eq!(classify_error_code("something else"), "operation_failed");
+    }
+
+    #[test]
+    fn rename_policy_rejects_paths_outside_destination() {
+        assert!(validate_rename_policy(ConflictPolicy::Rename, "../escape.txt", 1).is_err());
+        assert!(validate_rename_policy(ConflictPolicy::Rename, "/tmp/escape.txt", 1).is_err());
+        assert!(validate_rename_policy(ConflictPolicy::Rename, "safe.txt", 1).is_ok());
+    }
+
+    #[test]
+    fn non_rename_policy_accepts_paths_without_placeholder() {
+        let root = std::env::temp_dir().join(format!(
+            "astrea-file-op-multi-source-new-cli-test-{}",
+            unix_millis()
+        ));
+        let source_dir = root.join("src");
+        let dest = root.join("dest");
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::create_dir_all(&dest).unwrap();
+        let first = source_dir.join("first.txt");
+        let second = source_dir.join("second.txt");
+        fs::write(&first, "first").unwrap();
+        fs::write(&second, "second").unwrap();
+
+        run_inner(
+            &vec![
+                "move".into(),
+                dest.to_string_lossy().into_owned(),
+                "keep-both".into(),
+                first.to_string_lossy().into_owned(),
+                second.to_string_lossy().into_owned(),
+            ],
+            EventFormat::Jsonl,
+        )
+        .unwrap();
+
+        assert!(!first.exists());
+        assert!(!second.exists());
+        assert_eq!(fs::read_to_string(dest.join("first.txt")).unwrap(), "first");
+        assert_eq!(fs::read_to_string(dest.join("second.txt")).unwrap(), "second");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn non_rename_policy_keeps_legacy_empty_placeholder_compatibility() {
+        let args = vec![
+            "copy".into(),
+            "/tmp".into(),
+            "keep-both".into(),
+            "".into(),
+            "/tmp/a.txt".into(),
+            "/tmp/b.txt".into(),
+        ];
+        let request = parse_file_op_request(&args).unwrap();
+        assert_eq!(request.sources.len(), 2);
+        assert_eq!(request.rename, "");
+        assert_eq!(request.sources[0], PathBuf::from("/tmp/a.txt"));
+        assert_eq!(request.sources[1], PathBuf::from("/tmp/b.txt"));
+    }
+
+    #[test]
+    fn rename_policy_accepts_named_flag() {
+        let args = vec![
+            "copy".into(),
+            "/tmp".into(),
+            "rename".into(),
+            "--rename".into(),
+            "safe.txt".into(),
+            "/tmp/source.txt".into(),
+        ];
+        let request = parse_file_op_request(&args).unwrap();
+        assert_eq!(request.rename, "safe.txt");
+        assert_eq!(request.sources, vec![PathBuf::from("/tmp/source.txt")]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn keep_both_does_not_follow_broken_destination_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "astrea-file-op-broken-link-test-{}",
+            unix_millis()
+        ));
+        let source_dir = root.join("src");
+        let dest = root.join("dest");
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::create_dir_all(&dest).unwrap();
+        let source = source_dir.join("victim.txt");
+        fs::write(&source, "new").unwrap();
+        let outside = root.join("outside.txt");
+        symlink(&outside, dest.join("victim.txt")).unwrap();
+
+        run_inner(
+            &vec![
+                "copy".into(),
+                dest.to_string_lossy().into_owned(),
+                "keep-both".into(),
+                "".into(),
+                source.to_string_lossy().into_owned(),
+            ],
+            EventFormat::Jsonl,
+        )
+        .unwrap();
+
+        assert!(!outside.exists());
+        assert!(dest.join("victim.txt").is_symlink());
+        assert_eq!(fs::read_to_string(dest.join("victim 2.txt")).unwrap(), "new");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skip_policy_treats_broken_destination_symlink_as_existing() {
+        use std::os::unix::fs::symlink;
+
+        let root = std::env::temp_dir().join(format!(
+            "astrea-file-op-skip-broken-link-test-{}",
+            unix_millis()
+        ));
+        let source_dir = root.join("src");
+        let dest = root.join("dest");
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::create_dir_all(&dest).unwrap();
+        let source = source_dir.join("victim.txt");
+        fs::write(&source, "new").unwrap();
+        let outside = root.join("outside.txt");
+        symlink(&outside, dest.join("victim.txt")).unwrap();
+
+        run_inner(
+            &vec![
+                "copy".into(),
+                dest.to_string_lossy().into_owned(),
+                "skip".into(),
+                "".into(),
+                source.to_string_lossy().into_owned(),
+            ],
+            EventFormat::Jsonl,
+        )
+        .unwrap();
+
+        assert!(!outside.exists());
+        assert!(dest.join("victim.txt").is_symlink());
+        assert!(!dest.join("victim 2.txt").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn copy_preserves_source_modified_time() {
+        let root = std::env::temp_dir().join(format!(
+            "astrea-file-op-mtime-test-{}",
+            unix_millis()
+        ));
+        let source_dir = root.join("src");
+        let dest = root.join("dest");
+        fs::create_dir_all(&source_dir).unwrap();
+        fs::create_dir_all(&dest).unwrap();
+        let source = source_dir.join("file.txt");
+        fs::write(&source, "new").unwrap();
+        let _ = std::process::Command::new("touch")
+            .args(["-d", "2020-01-02 03:04:05"])
+            .arg(&source)
+            .status();
+
+        copy_path(&source, &dest.join("file.txt"), false).unwrap();
+
+        let src_modified = fs::metadata(&source).unwrap().modified().unwrap();
+        let dst_modified = fs::metadata(dest.join("file.txt")).unwrap().modified().unwrap();
+        assert_eq!(src_modified, dst_modified);
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

@@ -5,11 +5,17 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::entries;
+use crate::json;
 
 pub fn run_warm(args: &[String]) -> Result<(), String> {
     let (dir, show_hidden, sort_field, sort_asc, folders_first) = entries::parse_list_args(args)?;
     let offset = args.get(5).and_then(|v| v.parse().ok()).unwrap_or(0usize);
     let limit = args.get(6).and_then(|v| v.parse().ok()).unwrap_or(24usize);
+
+    if entries::path_uses_remote_listing(dir) {
+        println!("0");
+        return Ok(());
+    }
 
     let cache = cache_dir()?;
     fs::create_dir_all(&cache).map_err(|e| format!("cache dir: {e}"))?;
@@ -49,17 +55,17 @@ pub fn preview_url(path: &Path, is_dir: bool, modified_ms: i64) -> String {
     }
 
     if is_svg(path) {
-        return format!("file://{}", path.to_string_lossy());
+        return json::file_url(path);
     }
 
     if let Ok(p) = cache_dir().map(|d| d.join(format!("{}.png", cache_key(path, modified_ms)))) {
         if p.exists() {
-            return format!("file://{}", p.to_string_lossy());
+            return json::file_url(&p);
         }
     }
 
     if media_type == "image" {
-        return format!("file://{}", path.to_string_lossy());
+        return json::file_url(path);
     }
 
     String::new()
@@ -215,4 +221,28 @@ fn svg_preview_size(path: &Path) -> &'static str {
 
 fn svg_filter_blur(path: &Path) -> &'static str {
     if is_small_svg(path) { "0.85" } else { "0.92" }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn preview_url_percent_encodes_local_image_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "astrea-preview-url-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("img # one.png");
+        fs::write(&path, "x").unwrap();
+
+        let url = preview_url(&path, false, 1);
+
+        assert!(url.ends_with("img%20%23%20one.png"));
+        assert!(!url.ends_with("img # one.png"));
+        let _ = fs::remove_dir_all(root);
+    }
 }

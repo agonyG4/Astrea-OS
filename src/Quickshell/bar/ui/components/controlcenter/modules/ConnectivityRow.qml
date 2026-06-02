@@ -13,10 +13,12 @@ Rectangle {
     signal clicked()
 
     radius: Theme.radiusMedium
+    scale: rowMouse.pressed ? 0.985 : 1
     color: error ? Qt.rgba(1, 0.23, 0.19, 0.20)
-                  : (rowMouse.containsMouse ? Theme.shellSeparator : "transparent")
+                  : (rowMouse.containsMouse ? Theme.shellHover : "transparent")
 
     Behavior on color { ColorAnimation { duration: Theme.animationSubtle } }
+    Behavior on scale { NumberAnimation { duration: Theme.animationMicro; easing.type: Easing.OutCubic } }
 
     Row {
         anchors.fill: parent
@@ -30,13 +32,15 @@ Rectangle {
             radius: Theme.cornerRadiusLarge
             anchors.verticalCenter: parent.verticalCenter
             color: rowRoot.error ? Qt.rgba(1, 0.23, 0.19, 0.32)
-                                 : rowRoot.active ? Theme.accent : Theme.surface
+                                 : rowRoot.active ? Theme.accent : Theme.background
+            border.width: 1
+            border.color: rowRoot.active ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.42) : Theme.border
 
             Text {
                 anchors.centerIn: parent
                 text: rowRoot.icon
                 color: rowRoot.active && !rowRoot.error ? "#ffffff" : (rowRoot.error ? Theme.iconWarning : Theme.shellIconMain)
-                font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+                font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIcon }
                 RotationAnimation on rotation {
                     running: rowRoot.busy
                     from: 0

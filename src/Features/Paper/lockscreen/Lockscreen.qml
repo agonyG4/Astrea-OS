@@ -13,9 +13,128 @@ ShellRoot {
     readonly property string homeDir: Quickshell.env("HOME")
     readonly property string currentUser: Quickshell.env("USER")
     readonly property string astreaRoot: (Quickshell.env("ASTREA_ROOT") || (homeDir + "/.local/share/Astrea")) + ""
-    readonly property string authHelperPath: astreaRoot + "/System/auth/auth_helper"
+    readonly property string authHelperPath: "/usr/local/libexec/astrea-auth-helper"
     readonly property string avatarPath: "file:///var/lib/AccountsService/icons/" + currentUser
     readonly property string wallpaperDir: "file://" + homeDir + "/.config/AstreaOS/user/paper/lockscreen/"
+    readonly property string regionScript: astreaRoot + "/Core/bridge/system/region.py"
+    readonly property string regionSettingsPath: homeDir + "/.config/AstreaOS/system/settings.json"
+    readonly property var _countryTimeDefaults: ({
+        BR: "24h",
+        US: "12h",
+        PT: "24h",
+        GB: "24h",
+        FR: "24h",
+        ES: "24h",
+        DE: "24h",
+        IT: "24h",
+        CA: "12h",
+        JP: "24h",
+        AR: "24h",
+        CL: "24h",
+        UY: "24h"
+    })
+
+    property string timeFormat: "24h"
+    property string _regionBuf: ""
+
+    function _resolveTimeFormat(region) {
+        const selected = String((region && region.time_format) || "system").toLowerCase()
+        if (selected === "12h" || selected === "24h")
+            return selected
+        const country = String((region && region.country_code) || "BR").toUpperCase()
+        return _countryTimeDefaults[country] || "24h"
+    }
+
+    function _applyRegionPayload(payload) {
+        const nextFormat = (payload && (payload.effective_time_format || _resolveTimeFormat((payload.config || {}).region))) || "24h"
+        if (nextFormat === "12h" || nextFormat === "24h")
+            root.timeFormat = nextFormat
+        root._updateClock()
+    }
+
+    function _reloadRegionSettings() {
+        if (regionProc.running)
+            return
+        root._regionBuf = ""
+        regionProc.command = ["python3", root.regionScript, "get"]
+        regionProc.running = true
+    }
+
+    function _formatLockTime(now) {
+        const h = now.getHours()
+        const m = now.getMinutes().toString().padStart(2, "0")
+        if (root.timeFormat === "12h")
+            return `${(h % 12 || 12)}:${m}`
+        return `${h.toString().padStart(2, "0")}:${m}`
+    }
+
+    function _updateClock() {
+        if (typeof clockText !== "undefined")
+            clockText.text = root._formatLockTime(new Date())
+    }
+
+    Component.onCompleted: {
+        root._reloadRegionSettings()
+        root._updateClock()
+    }
+
+    Timer {
+        id: regionFileReloadDebounce
+        interval: 120
+        repeat: false
+        onTriggered: regionFile.reload()
+    }
+
+    Timer {
+        id: regionPollTimer
+        interval: 15000
+        repeat: true
+        running: true
+        onTriggered: root._reloadRegionSettings()
+    }
+
+    Process {
+        id: regionProc
+        running: false
+        command: []
+        stdout: SplitParser {
+            onRead: data => root._regionBuf += data
+        }
+        onExited: code => {
+            if (code === 0) {
+                try {
+                    root._applyRegionPayload(JSON.parse(root._regionBuf || "{}"))
+                } catch (error) {
+                    console.log("Astrea lockscreen region parse failed:", error)
+                }
+            }
+            root._regionBuf = ""
+        }
+    }
+
+    FileView {
+        id: regionFile
+        path: root.regionSettingsPath
+        preload: true
+        blockLoading: true
+        watchChanges: true
+        printErrors: false
+        onFileChanged: regionFileReloadDebounce.restart()
+        onLoaded: {
+            try {
+                root._applyRegionPayload({ config: JSON.parse(text() || "{}") })
+            } catch (error) {
+                console.log("Astrea lockscreen settings parse failed:", error)
+            }
+        }
+    }
+
+    Connections {
+        target: AstreaI18n.I18n
+        function onMessagesChanged() {
+            root._updateClock()
+        }
+    }
 
     PanelWindow {
         id: lockWindow
@@ -45,11 +164,16 @@ ShellRoot {
 
             Process {
                 id: authProcess
+                property string pendingPassword: ""
                 command: [root.authHelperPath, root.currentUser]
                 stdinEnabled: true
                 running: false
-                onStarted: authProcess.write(passwordField.text + "\n")
+                onStarted: {
+                    authProcess.write(authProcess.pendingPassword + "\n")
+                    authProcess.pendingPassword = ""
+                }
                 onExited: function(code) {
+                    authProcess.pendingPassword = ""
                     running = false
                     if (code === 0) {
                         unlockAnimation.start()
@@ -179,7 +303,8 @@ ShellRoot {
                     font.pixelSize: 100
                     font.weight: 400
                     font.family: "Inter"
-                    Component.onCompleted: text = Qt.formatTime(new Date(), "hh:mm")
+                    text: root._formatLockTime(new Date())
+                    Component.onCompleted: root._updateClock()
                     layer.enabled: true
                     layer.effect: MultiEffect {
                         shadowEnabled: true
@@ -193,7 +318,7 @@ ShellRoot {
                         interval: 1000
                         running: true
                         repeat: true
-                        onTriggered: clockText.text = Qt.formatTime(new Date(), "hh:mm")
+                        onTriggered: root._updateClock()
                     }
                 }
             }
@@ -207,7 +332,7 @@ ShellRoot {
                 color: "#ccffffff"
                 font.pixelSize: 13
                 font.family: "Inter"
-                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["features.paper.lockscreen.lockscreen.text.pressione_espaao_para_desbloquear"]) || "Pressione espaço para desbloquear")
+                text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["features.paper.lockscreen.lockscreen.text.click_or_press_space_to_unlock"]) || "Clique ou pressione espaço para desbloquear")
                 visible: !passwordSection.visible
                 layer.enabled: true
                 layer.effect: MultiEffect {
@@ -326,8 +451,11 @@ ShellRoot {
                         verticalAlignment: TextInput.AlignVCenter
 
                         Keys.onReturnPressed: {
-                            if (text.length > 0 && !authProcess.running)
+                            if (text.length > 0 && !authProcess.running) {
+                                authProcess.pendingPassword = text
+                                text = ""
                                 authProcess.running = true
+                            }
                         }
 
                         Keys.onPressed: function(event) {

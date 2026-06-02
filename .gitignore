@@ -17,5 +17,15 @@ Thumbs.db
 .sqlite
 .env
 
+# Local Gmail / Google OAuth credentials and tokens
+client_secret*.json
+**/client_secret*.json
+gmail_client_secret.json
+**/gmail_client_secret.json
+gmail_token.json
+**/gmail_token.json
+*.token.json
+**/*.token.json
+
 src/Quickshell/desktop/apps.js
 src/Quickshell/desktop/apps.json

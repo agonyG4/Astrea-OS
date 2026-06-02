@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -10,10 +11,69 @@ from pathlib import Path
 
 
 SUPPORTED_SUFFIXES = {".exe", ".msi"}
+PE_MACHINE_NAMES = {
+    0x014c: "i386",
+    0x8664: "x86_64",
+    0xaa64: "arm64",
+}
+DEFAULT_STARTUP_WAIT_MS = 1600
+DEFAULT_GAMESCOPE = {
+    "follow_monitor": False,
+    "width": 1920,
+    "height": 1080,
+    "refresh": 60,
+    "fullscreen": True,
+    "immediate_flips": False,
+    "hide_cursor": False,
+    "extra_args": "",
+}
+DEFAULT_PROTON = {
+    "gamemode": True,
+    "mangohud": False,
+    "gamescope": False,
+    "use_gamescope_profile": True,
+    "gamescope_width": 1920,
+    "gamescope_height": 1080,
+    "gamescope_refresh": 60,
+    "gamescope_fullscreen": True,
+    "gamescope_immediate_flips": False,
+    "gamescope_hide_cursor": False,
+    "gamescope_force_grab_cursor": False,
+    "gamescope_adaptive_sync": False,
+    "gamescope_extra_args": "",
+    "enable_nvapi": False,
+    "hide_nvidia_gpu": False,
+    "sync_mode": "default",
+    "dxvk_async": False,
+    "dxvk_hdr": False,
+    "vkd3d_dxr": False,
+    "use_wined3d": False,
+    "fsr": False,
+    "fsr_strength": 2,
+    "custom_env": "",
+    "custom_prefix": "",
+}
+DEFAULT_COMPATIBILITY = {
+    "runner": "proton",
+    "use_proton_profile": True,
+    "gamemode": True,
+    "mangohud": False,
+    "gamescope": False,
+    "extra_env": "",
+    "extra_prefix": "",
+}
 
 
 def state_home() -> Path:
     return Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+
+
+def data_home() -> Path:
+    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share"))
+
+
+def config_home() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
 
 
 def steam_root() -> Path:
@@ -21,7 +81,27 @@ def steam_root() -> Path:
 
 
 def astrea_state_dir() -> Path:
-    return state_home() / "Astrea"
+    return state_home() / "AstreaOS"
+
+
+def astrea_data_dir() -> Path:
+    return data_home() / "AstreaOS"
+
+
+def gaming_config_dir() -> Path:
+    return config_home() / "AstreaOS/gaming"
+
+
+def compatibility_path() -> Path:
+    return gaming_config_dir() / "compatibility.json"
+
+
+def proton_config_path() -> Path:
+    return gaming_config_dir() / "proton.json"
+
+
+def gamescope_config_path() -> Path:
+    return gaming_config_dir() / "gamescope.json"
 
 
 def folder_key(folder: Path) -> str:
@@ -29,24 +109,120 @@ def folder_key(folder: Path) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+def non_steam_game_id(target: Path) -> str:
+    text = str(target.resolve())
+    return "astrea-" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
 def prefix_paths(target: Path) -> tuple[Path, Path]:
-    key = folder_key(target.parent)
-    root = astrea_state_dir() / "windows-prefixes/by-folder" / key / "proton"
+    root = astrea_data_dir() / "windows-prefixes/shared/proton"
     return root, root / "pfx"
+
+
+def windows_machine(target: Path) -> str:
+    try:
+        with target.open("rb") as file:
+            header = file.read(64)
+            if len(header) < 64 or header[:2] != b"MZ":
+                return ""
+            pe_offset = int.from_bytes(header[0x3c:0x40], "little")
+            file.seek(pe_offset)
+            pe_header = file.read(6)
+    except OSError:
+        return ""
+
+    if len(pe_header) < 6 or pe_header[:4] != b"PE\0\0":
+        return ""
+    machine = int.from_bytes(pe_header[4:6], "little")
+    return PE_MACHINE_NAMES.get(machine, f"unknown-0x{machine:04x}")
+
+
+def lib32_search_dirs() -> list[Path]:
+    custom = os.environ.get("ASTREA_LIB32_DIRS")
+    if custom is not None:
+        return [Path(item) for item in custom.split(os.pathsep) if item]
+    return [
+        Path("/usr/lib32"),
+        Path("/usr/lib/i386-linux-gnu"),
+        Path("/lib/i386-linux-gnu"),
+    ]
+
+
+def has_32bit_gamemode_auto() -> bool:
+    return any((folder / "libgamemodeauto.so.0").exists() for folder in lib32_search_dirs())
+
+
+def startup_wait_seconds() -> float:
+    try:
+        value = int(str(os.environ.get("ASTREA_WINDOWS_STARTUP_WAIT_MS", DEFAULT_STARTUP_WAIT_MS)).strip())
+    except ValueError:
+        value = DEFAULT_STARTUP_WAIT_MS
+    return max(0, min(10000, value)) / 1000
+
+
+def steam_runtime_interface_dir() -> Path | None:
+    root = steam_root()
+    direct_candidates = [
+        root / "steamapps/common/SteamLinuxRuntime_sniper/pressure-vessel/bin/steam-runtime-launcher-interface-0",
+        root / "steamapps/common/SteamLinuxRuntime_4/pressure-vessel/bin/steam-runtime-launcher-interface-0",
+        root / "steamapps/common/SteamLinuxRuntime_soldier/pressure-vessel/bin/steam-runtime-launcher-interface-0",
+    ]
+    glob_patterns = [
+        "steamapps/common/SteamLinuxRuntime_sniper/*/files/bin/steam-runtime-launcher-interface-0",
+        "steamapps/common/SteamLinuxRuntime_4/*/files/bin/steam-runtime-launcher-interface-0",
+        "steamapps/common/SteamLinuxRuntime_soldier/*/files/bin/steam-runtime-launcher-interface-0",
+    ]
+    for path in direct_candidates:
+        if path.is_file() and os.access(path, os.X_OK):
+            return path.parent
+    for pattern in glob_patterns:
+        for path in sorted(root.glob(pattern), reverse=True):
+            if path.is_file() and os.access(path, os.X_OK):
+                return path.parent
+    return None
+
+
+def find_umu_run() -> str | None:
+    path = shutil.which("umu-run")
+    if path:
+        return path
+    candidates = [
+        data_home() / "lutris/runtime/umu/umu-run",
+        data_home() / "lutris/runtime/umu/umu_run.py",
+        Path("/app/share/umu/umu-run"),
+        Path("/usr/local/share/umu/umu-run"),
+        Path("/usr/share/umu/umu-run"),
+        Path("/opt/umu/umu-run"),
+    ]
+    for candidate in candidates:
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def umu_protonpath(proton: Path | None) -> str:
+    if proton and proton.is_file():
+        return str(proton.parent)
+    return "GE-Proton"
+
+
+def prepend_path(env: dict[str, str], folder: Path) -> None:
+    folder_text = str(folder)
+    entries = [item for item in env.get("PATH", "").split(os.pathsep) if item and item != folder_text]
+    env["PATH"] = os.pathsep.join([folder_text] + entries)
 
 
 def proton_candidates() -> list[Path]:
     root = steam_root()
     candidates = [
         root / "compatibilitytools.d/Proton-GE Latest/proton",
-        root / "compatibilitytools.d/GE-Proton10-34/proton",
-        Path("/usr/share/steam/compatibilitytools.d/proton-cachyos/proton"),
     ]
     compat_dir = root / "compatibilitytools.d"
     if compat_dir.is_dir():
         for path in sorted(compat_dir.glob("GE-Proton*/proton"), reverse=True):
             if path not in candidates:
                 candidates.append(path)
+    candidates.append(Path("/usr/share/steam/compatibilitytools.d/proton-cachyos/proton"))
     return candidates
 
 
@@ -57,38 +233,267 @@ def find_proton() -> Path | None:
     return None
 
 
-def build_launch(target: Path) -> tuple[list[str], dict[str, str], str, Path, Path]:
+def normalize_bool(value: object) -> bool:
+    return bool(value)
+
+
+def normalize_int(value: object, fallback: int, minimum: int, maximum: int) -> int:
+    try:
+        return max(minimum, min(maximum, int(str(value).strip())))
+    except (TypeError, ValueError):
+        return fallback
+
+
+def load_json(path: Path, default: dict) -> dict:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8") or "{}")
+    except (OSError, json.JSONDecodeError):
+        data = {}
+    cfg = {**default, **(data or {})}
+    return cfg
+
+
+def normalize_compatibility(data: dict) -> dict:
+    raw = data or {}
+    cfg = {key: raw.get(key, value) for key, value in DEFAULT_COMPATIBILITY.items()}
+    if cfg.get("runner") not in {"proton", "wine", "auto"}:
+        cfg["runner"] = DEFAULT_COMPATIBILITY["runner"]
+    for key in (
+        "use_proton_profile",
+        "gamemode",
+        "mangohud",
+        "gamescope",
+    ):
+        cfg[key] = normalize_bool(cfg.get(key))
+    cfg["extra_env"] = str(cfg.get("extra_env") or "").strip()
+    cfg["extra_prefix"] = str(cfg.get("extra_prefix") or "").strip()
+    return cfg
+
+
+def normalize_proton(data: dict) -> dict:
+    cfg = {**DEFAULT_PROTON, **(data or {})}
+    for key in (
+        "gamemode",
+        "mangohud",
+        "gamescope",
+        "use_gamescope_profile",
+        "gamescope_fullscreen",
+        "gamescope_immediate_flips",
+        "gamescope_hide_cursor",
+        "gamescope_force_grab_cursor",
+        "gamescope_adaptive_sync",
+        "enable_nvapi",
+        "hide_nvidia_gpu",
+        "dxvk_async",
+        "dxvk_hdr",
+        "vkd3d_dxr",
+        "use_wined3d",
+        "fsr",
+    ):
+        cfg[key] = normalize_bool(cfg.get(key))
+    if cfg.get("sync_mode") not in {"default", "disable-esync", "disable-fsync", "disable-both"}:
+        cfg["sync_mode"] = "default"
+    cfg["fsr_strength"] = normalize_int(cfg.get("fsr_strength"), 2, 0, 5)
+    cfg["gamescope_width"] = normalize_int(cfg.get("gamescope_width"), 1920, 640, 10000)
+    cfg["gamescope_height"] = normalize_int(cfg.get("gamescope_height"), 1080, 360, 10000)
+    cfg["gamescope_refresh"] = normalize_int(cfg.get("gamescope_refresh"), 60, 30, 1000)
+    cfg["gamescope_extra_args"] = str(cfg.get("gamescope_extra_args") or "").strip()
+    cfg["custom_env"] = str(cfg.get("custom_env") or "").strip()
+    cfg["custom_prefix"] = str(cfg.get("custom_prefix") or "").strip()
+    return cfg
+
+
+def normalize_gamescope(data: dict) -> dict:
+    cfg = {**DEFAULT_GAMESCOPE, **(data or {})}
+    for key in ("fullscreen", "immediate_flips", "hide_cursor"):
+        cfg[key] = normalize_bool(cfg.get(key))
+    cfg["width"] = normalize_int(cfg.get("width"), 1920, 640, 10000)
+    cfg["height"] = normalize_int(cfg.get("height"), 1080, 360, 10000)
+    cfg["refresh"] = normalize_int(cfg.get("refresh"), 60, 30, 1000)
+    cfg["extra_args"] = str(cfg.get("extra_args") or "").strip()
+    return cfg
+
+
+def compatibility_profile(cfg: dict) -> dict:
+    if cfg.get("use_proton_profile"):
+        return normalize_proton(load_json(proton_config_path(), DEFAULT_PROTON))
+    return normalize_proton({
+        "gamemode": cfg.get("gamemode"),
+        "mangohud": cfg.get("mangohud"),
+        "gamescope": cfg.get("gamescope"),
+        "custom_env": cfg.get("extra_env"),
+        "custom_prefix": cfg.get("extra_prefix"),
+    })
+
+
+def proton_gamescope_config(profile: dict) -> dict:
+    cfg = normalize_proton(profile)
+    if cfg.get("use_gamescope_profile"):
+        return normalize_gamescope(load_json(gamescope_config_path(), DEFAULT_GAMESCOPE))
+    extra_args = []
+    if cfg.get("gamescope_force_grab_cursor"):
+        extra_args.append("--force-grab-cursor")
+    if cfg.get("gamescope_adaptive_sync"):
+        extra_args.append("--adaptive-sync")
+    if cfg.get("gamescope_extra_args"):
+        extra_args.extend(shlex.split(cfg["gamescope_extra_args"]))
+    return normalize_gamescope({
+        "width": cfg.get("gamescope_width"),
+        "height": cfg.get("gamescope_height"),
+        "refresh": cfg.get("gamescope_refresh"),
+        "fullscreen": cfg.get("gamescope_fullscreen"),
+        "immediate_flips": cfg.get("gamescope_immediate_flips"),
+        "hide_cursor": cfg.get("gamescope_hide_cursor"),
+        "extra_args": shlex.join(extra_args),
+    })
+
+
+def compatibility_gamescope(cfg: dict) -> dict:
+    proton_profile = normalize_proton(load_json(proton_config_path(), DEFAULT_PROTON))
+    return proton_gamescope_config(proton_profile)
+
+
+def profile_env_and_prefix(profile: dict, gamescope_cfg: dict, machine: str = "") -> tuple[dict[str, str], list[str], list[str]]:
+    env: dict[str, str] = {}
+    prefix: list[str] = []
+    warnings: list[str] = []
+    mangohud_enabled = profile.get("mangohud")
+    if profile.get("gamemode") and shutil.which("gamemoderun"):
+        if machine == "i386" and not has_32bit_gamemode_auto():
+            warnings.append("GameMode skipped for 32-bit Windows app because lib32-gamemode is missing.")
+        else:
+            prefix.append(shutil.which("gamemoderun") or "gamemoderun")
+    if profile.get("gamescope") and shutil.which("gamescope"):
+        prefix += gamescope_args(gamescope_cfg, bool(mangohud_enabled))
+        mangohud_enabled = False
+    if mangohud_enabled and shutil.which("mangohud"):
+        prefix.append(shutil.which("mangohud") or "mangohud")
+    if profile.get("enable_nvapi"):
+        env["PROTON_FORCE_NVAPI"] = "1"
+        env["PROTON_HIDE_NVIDIA_GPU"] = "0"
+    elif profile.get("hide_nvidia_gpu"):
+        env["PROTON_HIDE_NVIDIA_GPU"] = "1"
+    if profile.get("sync_mode") in {"disable-esync", "disable-both"}:
+        env["PROTON_NO_ESYNC"] = "1"
+    if profile.get("sync_mode") in {"disable-fsync", "disable-both"}:
+        env["PROTON_NO_FSYNC"] = "1"
+    if profile.get("use_wined3d"):
+        env["PROTON_USE_WINED3D"] = "1"
+    if profile.get("dxvk_async"):
+        env["DXVK_ASYNC"] = "1"
+    if profile.get("dxvk_hdr"):
+        env["DXVK_HDR"] = "1"
+    if profile.get("vkd3d_dxr"):
+        env["VKD3D_CONFIG"] = "dxr"
+    if profile.get("fsr"):
+        env["WINE_FULLSCREEN_FSR"] = "1"
+        env["WINE_FULLSCREEN_FSR_STRENGTH"] = str(profile.get("fsr_strength", 2))
+    for item in shlex.split(str(profile.get("custom_env") or "")):
+        if "=" in item:
+            key, value = item.split("=", 1)
+            if key:
+                env[key] = value
+    if profile.get("custom_prefix"):
+        prefix += shlex.split(str(profile.get("custom_prefix") or ""))
+    return env, prefix, warnings
+
+
+def gamescope_args(cfg: dict, mangoapp: bool = False) -> list[str]:
+    cfg = normalize_gamescope(cfg)
+    command = [shutil.which("gamescope") or "gamescope"]
+    if cfg.get("fullscreen"):
+        command.append("-f")
+    command += ["-W", str(cfg["width"]), "-H", str(cfg["height"]), "-r", str(cfg["refresh"])]
+    if cfg.get("immediate_flips"):
+        command.append("--immediate-flips")
+    if cfg.get("hide_cursor"):
+        command += ["--hide-cursor-delay", "-1"]
+    if mangoapp:
+        command.append("--mangoapp")
+    if cfg.get("extra_args"):
+        command += shlex.split(cfg["extra_args"])
+    command.append("--")
+    return command
+
+
+def build_launch(target: Path) -> tuple[list[str], dict[str, str], str, Path, Path, dict[str, object]]:
     prefix_root, wine_prefix = prefix_paths(target)
+    machine = windows_machine(target)
+    metadata: dict[str, object] = {
+        "machine": machine,
+        "warnings": [],
+        "runtime_interface": "",
+        "umu_id": "",
+        "protonpath": "",
+    }
     env = os.environ.copy()
     env.setdefault("STEAM_COMPAT_CLIENT_INSTALL_PATH", str(steam_root()))
     env.setdefault("STEAM_COMPAT_APP_ID", "0")
     env.setdefault("PROTON_LOG_DIR", str(astrea_state_dir() / "windows-prefixes/logs"))
 
-    umu_run = shutil.which("umu-run")
+    compat = normalize_compatibility(load_json(compatibility_path(), DEFAULT_COMPATIBILITY))
+    profile = compatibility_profile(compat)
+    game_scope = compatibility_gamescope(compat)
+    profile_env, command_prefix, warnings = profile_env_and_prefix(profile, game_scope, machine)
+    metadata["warnings"] = warnings
+    env.update(profile_env)
+
+    umu_run = find_umu_run()
     proton = find_proton()
+    wine = shutil.which("wine")
+    runtime_interface = steam_runtime_interface_dir()
+    if runtime_interface:
+        prepend_path(env, runtime_interface)
+        metadata["runtime_interface"] = str(runtime_interface)
 
     suffix = target.suffix.casefold()
+    runner_preference = compat.get("runner")
+    use_wine = runner_preference == "wine" or (runner_preference == "auto" and not (umu_run or proton))
+    if use_wine:
+        if not wine:
+            raise RuntimeError("Wine not found. Install wine or switch compatibility runner to Proton.")
+        env["WINEPREFIX"] = str(wine_prefix)
+        command = [wine]
+        runner = "wine"
+        if suffix == ".msi":
+            command.extend(["msiexec", "/i", str(target)])
+        else:
+            command.append(str(target))
+        return command_prefix + command, env, runner, prefix_root, wine_prefix, metadata
+
     if umu_run:
         env["WINEPREFIX"] = str(wine_prefix)
-        env["PROTONPATH"] = str(proton.parent if proton else "GE-Proton")
-        env.setdefault("GAMEID", "astrea-" + folder_key(target.parent))
+        env["PROTONPATH"] = umu_protonpath(proton)
+        umu_id = env.get("UMU_ID") or env.get("GAMEID") or non_steam_game_id(target)
+        env.setdefault("UMU_ID", umu_id)
+        env.setdefault("GAMEID", umu_id)
+        env.setdefault("STORE", "none")
+        metadata["umu_id"] = env.get("UMU_ID", "")
+        metadata["protonpath"] = env.get("PROTONPATH", "")
         command = [umu_run]
         runner = "umu-proton-ge"
         if suffix == ".msi":
             command.extend(["msiexec", "/i", str(target)])
         else:
             command.append(str(target))
-        return command, env, runner, prefix_root, wine_prefix
+        return command_prefix + command, env, runner, prefix_root, wine_prefix, metadata
 
     if proton:
         env["STEAM_COMPAT_DATA_PATH"] = str(prefix_root)
+        env.setdefault("PROTONPATH", str(proton.parent))
+        umu_id = env.get("UMU_ID") or env.get("GAMEID") or non_steam_game_id(target)
+        env.setdefault("UMU_ID", umu_id)
+        env.setdefault("GAMEID", umu_id)
+        env.setdefault("STORE", "none")
+        metadata["umu_id"] = env.get("UMU_ID", "")
+        metadata["protonpath"] = env.get("PROTONPATH", "")
         command = [str(proton), "run"]
         runner = "proton-ge"
         if suffix == ".msi":
             command.extend(["msiexec", "/i", str(target)])
         else:
             command.append(str(target))
-        return command, env, runner, prefix_root, wine_prefix
+        return command_prefix + command, env, runner, prefix_root, wine_prefix, metadata
 
     raise RuntimeError("Proton-GE not found. Install Proton-GE Latest or umu-run.")
 
@@ -100,7 +505,7 @@ def run(target_text: str, dry_run: bool = False) -> dict[str, object]:
     if target.suffix.casefold() not in SUPPORTED_SUFFIXES:
         return {"ok": False, "error": f"unsupported Windows file: {target.name}"}
 
-    command, env, runner, prefix_root, wine_prefix = build_launch(target)
+    command, env, runner, prefix_root, wine_prefix, metadata = build_launch(target)
     log_dir = astrea_state_dir() / "windows-prefixes/logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     prefix_root.mkdir(parents=True, exist_ok=True)
@@ -115,6 +520,7 @@ def run(target_text: str, dry_run: bool = False) -> dict[str, object]:
         "wine_prefix": str(wine_prefix),
         "log": str(log_path),
         "dry_run": dry_run,
+        **metadata,
     }
     if dry_run:
         return payload
@@ -130,16 +536,37 @@ def run(target_text: str, dry_run: bool = False) -> dict[str, object]:
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
-    payload["pid"] = proc.pid
+        payload["pid"] = proc.pid
+        wait_seconds = startup_wait_seconds()
+        if wait_seconds > 0:
+            try:
+                exit_code = proc.wait(timeout=wait_seconds)
+            except subprocess.TimeoutExpired:
+                payload["status"] = "running"
+                return payload
+        else:
+            exit_code = proc.poll()
+            if exit_code is None:
+                payload["status"] = "running"
+                return payload
+
+    payload["status"] = "exited"
+    payload["exit_code"] = exit_code
+    if exit_code != 0:
+        payload["ok"] = False
+        payload["error"] = f"{runner} exited during startup with code {exit_code}"
     return payload
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Windows executables with Proton-GE for Astrea.")
-    parser.add_argument("path", help="Path to a .exe or .msi file")
+    parser.add_argument("path", nargs="?", help="Path to a .exe or .msi file")
     parser.add_argument("--dry-run", action="store_true", help="Print launch plan without starting Proton")
     parser.add_argument("--json", action="store_true", help="Print JSON output")
     args = parser.parse_args()
+
+    if not args.path:
+        parser.error("path is required")
 
     try:
         payload = run(args.path, args.dry_run)

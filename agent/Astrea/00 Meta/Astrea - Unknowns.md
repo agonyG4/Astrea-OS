@@ -11,11 +11,10 @@ The internals of these compiled executables were not inspected:
 See [[Astrea - Explorer Backend]] and [[Astrea - Audio Bridge]].
 
 ## Autostart Ownership
-The exact external autostart owner for:
-- `Quickshell/shell.qml`
-- `notification_daemon.py`
+Hyprland starts the main shell from `~/.config/hypr/system/autostart.conf` with:
+- `quickshell -p ~/.local/share/Astrea/Quickshell`
 
-was not established in this pass.
+Notification daemon ownership still needs focused verification when notification lifecycle changes. It is loaded by the resident notifications surface, but exact process lifetime can also be affected by component toggles and service cleanup.
 
 ## Runtime State Placement
 Some runtime state lives inside the Astrea tree:
@@ -26,9 +25,10 @@ Some runtime state lives inside the Astrea tree:
 Other runtime state lives under:
 - `~/.local/state/Astrea`
 - `~/.local/share/AstreaOS`
+- `~/.config/AstreaOS`
 - `~/.cache/Astrea`
 
-The intended boundary is unclear.
+The intended direction is clearer now: new user libraries should prefer `~/.local/share/AstreaOS`, user config should prefer `~/.config/AstreaOS`, and generated runtime state should prefer `~/.local/state/Astrea`. Existing in-tree shell state is transitional.
 
 ## Duplicate or Transitional Files
 Potentially duplicated/transitional areas:
@@ -56,7 +56,7 @@ The Weather bridge depends on external APIs and local cache.
 The current API payload shape was not revalidated in this documentation pass.
 
 ## Network Backend Detail
-`Core/bridge/network/manager.py` is used by Internet settings, but exact command/config behavior was not fully expanded.
+Resolved in the current snapshot: `Core/bridge/network/manager.py` owns Internet Settings stats, DNS, Wi-Fi, and WARP commands. See [[Astrea - Network Bridge]].
 
 ## Session Daemon Detail
 `Core/bridge/astrea_sessiond.py` currently exposes a heartbeat/status scaffold and health domain. The reported socket path should not be assumed to serve requests until the implementation grows a real socket loop.

@@ -43,14 +43,17 @@ Item {
         anchors.topMargin: -7
         anchors.rightMargin: -7
         z: 20
-        color: addArea.containsMouse ? Theme.accent : Qt.rgba(1, 1, 1, 0.84)
+        color: addArea.containsMouse ? Theme.accent : Theme.surface
         border.width: 1
-        border.color: Qt.rgba(0, 0, 0, 0.18)
+        border.color: addArea.containsMouse ? Qt.rgba(Theme.accent.r, Theme.accent.g, Theme.accent.b, 0.44) : Theme.border
+
+        Behavior on color { ColorAnimation { duration: Theme.animationHover } }
+        Behavior on border.color { ColorAnimation { duration: Theme.animationHover } }
 
         Text {
             anchors.centerIn: parent
             text: "+"
-            color: addArea.containsMouse ? "#ffffff" : "#2c2c2e"
+            color: addArea.containsMouse ? "#ffffff" : Theme.shellTextActive
             font { family: Theme.fontFamily; pixelSize: 16; weight: Font.DemiBold }
         }
     }

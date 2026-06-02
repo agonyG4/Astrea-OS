@@ -3,6 +3,7 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 import "components/layout" as LayoutComponents
 import "components/views" as ViewComponents
+import "AstreaComponents" as UI
 import "."
 import "AstreaI18n" as AstreaI18n
 
@@ -34,7 +35,9 @@ Dialog {
     property string initialViewMode: "icon"
     property string selectedName: ""
     property var nameFilters: []
+    property bool allowMultiple: false
     signal fileChosen(string filePath, string fileUrl)
+    signal filesChosen(var files)
 
     Shortcut {
         sequence: "Escape"
@@ -42,9 +45,9 @@ Dialog {
     }
 
     background: Rectangle {
-        radius: 14
-        color: Theme.bg
-        border.color: Theme.border
+        radius: UI.Theme.cornerRadiusLarge
+        color: UI.Theme.windowBackground
+        border.color: UI.Theme.windowBorder
         border.width: 1
     }
 
@@ -79,6 +82,47 @@ Dialog {
         return AppState.selectedItem()
     }
 
+    function selectedDialogItems(onlyFiles) {
+        var names = AppState.selectedFiles || []
+        if (names.length === 0)
+            return []
+
+        var selected = {}
+        for (var n = 0; n < names.length; n++)
+            selected[names[n]] = true
+
+        var items = []
+        for (var i = 0; i < AppState.fileModel.count; i++) {
+            var item = AppState.fileModel.get(i)
+            if (!item || !selected[item.fileName])
+                continue
+            if (onlyFiles && item.fileIsDir)
+                continue
+            items.push({
+                filePath: item.filePath,
+                fileUrl: item.fileUrl,
+                fileName: item.fileName,
+                fileIsDir: item.fileIsDir
+            })
+        }
+        return items
+    }
+
+    function selectedDialogFileItems() {
+        return selectedDialogItems(true)
+    }
+
+    function selectionSummary() {
+        if (mode === "select_folder")
+            return AppState.currentPath
+        if (allowMultiple && mode === "open_file") {
+            var files = selectedDialogFileItems()
+            if (files.length > 1)
+                return files.length + " itens selecionados"
+        }
+        return selectedName !== "" ? selectedName : "Nenhum item selecionado"
+    }
+
     function updateSelectedNameFromState() {
         var item = selectedDialogItem()
         if (mode === "save_file") {
@@ -96,6 +140,8 @@ Dialog {
             return !!AppState.currentPath
         if (mode === "save_file")
             return selectedName.trim() !== ""
+        if (allowMultiple)
+            return selectedDialogFileItems().length > 0
         return !!item && !item.fileIsDir
     }
 
@@ -118,6 +164,17 @@ Dialog {
             }
         }
 
+        if (allowMultiple) {
+            var files = selectedDialogFileItems()
+            if (files.length === 0)
+                return null
+            return {
+                files: files,
+                filePath: files[0].filePath,
+                fileUrl: files[0].fileUrl
+            }
+        }
+
         if (!item || item.fileIsDir)
             return null
 
@@ -131,7 +188,10 @@ Dialog {
         var result = buildResult()
         if (!result)
             return
-        fileChosen(result.filePath, result.fileUrl)
+        if (result.files && result.files.length > 1)
+            filesChosen(result.files)
+        else
+            fileChosen(result.filePath, result.fileUrl)
         close()
     }
 
@@ -139,7 +199,7 @@ Dialog {
         AppState.dialogActive = true
         AppState.dialogMode = mode
         AppState.dialogFilePatterns = extractPatterns(nameFilters)
-        AppState.selectedFile = ""
+        AppState.clearSelection()
         if (AppState.isPortalDialog)
             AppState.viewMode = initialViewMode === "list" ? "list" : "icon"
         if (mode !== "save_file")
@@ -157,16 +217,16 @@ Dialog {
         AppState.dialogActive = false
         AppState.dialogMode = "browse"
         AppState.dialogFilePatterns = []
-        AppState.selectedFile = ""
+        AppState.clearSelection()
     }
 
     onOpened: {
         if (mode === "save_file")
-            saveNameField.forceActiveFocus()
+            saveNameField.focusField(true)
     }
 
     onSelectedNameChanged: {
-        if (mode === "save_file" && !saveNameField.activeFocus)
+        if (mode === "save_file" && saveNameField.text !== selectedName)
             saveNameField.text = selectedName
     }
 
@@ -195,7 +255,7 @@ Dialog {
         Rectangle {
             Layout.fillWidth: true
             height: 48
-            color: Theme.toolbar
+            color: UI.Theme.cardBg
 
             RowLayout {
                 anchors.fill: parent
@@ -203,17 +263,23 @@ Dialog {
                 anchors.rightMargin: 14
                 spacing: 10
 
-                Text {
+                UI.TextLabel {
                     text: dialog.dialogTitle
-                    color: Theme.text
-                    font.pixelSize: 15
-                    font.weight: Font.DemiBold
+                    textColor: UI.Theme.textPrimary
+                    font.pixelSize: UI.Theme.fontSizeLarge
+                    font.weight: UI.Theme.fontWeightDemiBold
                 }
 
                 Item { Layout.fillWidth: true }
 
-                ToolButton {
-                    text: "✕"
+                UI.Button {
+                    text: ""
+                    iconText: "×"
+                    flat: true
+                    controlWidth: 34
+                    controlHeight: 34
+                    minWidth: 34
+                    iconSize: 20
                     onClicked: dialog.reject()
                 }
             }
@@ -232,7 +298,7 @@ Dialog {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                color: Theme.bg
+                color: UI.Theme.windowBackground
 
                 ColumnLayout {
                     anchors.fill: parent
@@ -245,26 +311,26 @@ Dialog {
                     Rectangle {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        color: Theme.bg
+                        color: UI.Theme.windowBackground
 
                         Loader {
                             anchors.fill: parent
                             sourceComponent: AppState.viewMode === "list" ? listComp : iconComp
                         }
 
-                        Text {
+                        UI.TextLabel {
                             anchors.centerIn: parent
                             text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.text.pasta_vazia"]) || "Empty folder")
-                            color: Theme.textTer
-                            font.pixelSize: 15
+                            textColor: UI.Theme.textTertiary
+                            font.pixelSize: UI.Theme.fontSizeLarge
                             visible: !AppState.loadingDir && AppState.fileModel.count === 0 && AppState.loadError === ""
                         }
 
-                        Text {
+                        UI.TextLabel {
                             anchors.centerIn: parent
                             text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.text.carregando"]) || "Loading...")
-                            color: Theme.textTer
-                            font.pixelSize: 15
+                            textColor: UI.Theme.textTertiary
+                            font.pixelSize: UI.Theme.fontSizeLarge
                             visible: AppState.loadingDir
                         }
                     }
@@ -275,7 +341,9 @@ Dialog {
         Rectangle {
             Layout.fillWidth: true
             implicitHeight: mode === "save_file" ? 92 : 58
-            color: Theme.statusBar
+            color: UI.Theme.cardBg
+            border.width: 1
+            border.color: UI.Theme.cardBorder
 
             ColumnLayout {
                 anchors.fill: parent
@@ -290,15 +358,20 @@ Dialog {
                     visible: dialog.mode === "save_file"
                     spacing: 10
 
-                    Text {
+                    UI.TextLabel {
                         text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.text.nome"]) || "Name:")
-                        color: Theme.textTer
-                        font.pixelSize: 12
+                        textColor: UI.Theme.textTertiary
+                        font.pixelSize: UI.Theme.fontSizeSmall
+                        Layout.alignment: Qt.AlignVCenter
                     }
 
-                    TextField {
+                    UI.SearchField {
                         id: saveNameField
                         Layout.fillWidth: true
+                        Layout.preferredHeight: 38
+                        showSearchIcon: false
+                        showClearButton: false
+                        controlHeight: 38
                         text: dialog.selectedName
                         placeholderText: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.placeholderText.arquivo"]) || "file")
                         onTextEdited: dialog.selectedName = text
@@ -310,23 +383,25 @@ Dialog {
                     Layout.fillWidth: true
                     spacing: 10
 
-                    Text {
+                    UI.TextLabel {
                         Layout.fillWidth: true
-                        text: dialog.mode === "select_folder"
-                              ? AppState.currentPath
-                              : (dialog.selectedName !== "" ? dialog.selectedName : "Nenhum item selecionado")
-                        color: Theme.textTer
-                        font.pixelSize: 11
+                        text: dialog.selectionSummary()
+                        textColor: UI.Theme.textTertiary
+                        font.pixelSize: UI.Theme.fontSizeSmall
                         elide: Text.ElideMiddle
                     }
 
-                    Button {
+                    UI.Button {
                         text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.file_dialog.text.cancelar"]) || "Cancel")
+                        flat: true
+                        controlHeight: 34
                         onClicked: dialog.reject()
                     }
 
-                    Button {
+                    UI.Button {
                         text: dialog.acceptLabel
+                        primary: true
+                        controlHeight: 34
                         enabled: dialog.canAccept()
                         onClicked: dialog.chooseCurrentSelection()
                     }

@@ -1,5 +1,6 @@
 import QtQuick
 import "../../bar"
+import "../../components" as ShellComponents
 
 Item {
     id: tile
@@ -75,18 +76,19 @@ Item {
         }
     }
 
-    Image {
+    ShellComponents.AppIcon {
         id: appIcon
         anchors.horizontalCenter: parent.horizontalCenter
         y: hl.y + 8
         width: desktopState ? desktopState.iconSize : 52
         height: desktopState ? desktopState.iconSize : 52
-        source: tile.appData && tile.appData.icon ? "image://icon/" + tile.appData.icon : "image://icon/application-x-executable"
-        asynchronous: true
-        cache: true
-        fillMode: Image.PreserveAspectFit
-        smooth: true
-        mipmap: true
+        entry: tile.appData
+        iconRadius: Math.max(8, Math.round(width * 0.18))
+        fallbackRadius: iconRadius
+        fallbackColor: "transparent"
+        fallbackIconName: "application-x-executable"
+        showFallbackText: false
+        sourcePixelSize: Math.max(128, Math.round(width * 3))
     }
 
     Text {

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -d "$script_dir/../Apps" && -d "$script_dir/../System" ]]; then
+    root="$(realpath -- "$script_dir/..")"
+else
+    root="${ASTREA_ROOT:-$HOME/.local/share/Astrea}"
+fi
+
+root="${ASTREA_ROOT:-$root}"
+app="$root/Apps/MediaViewer"
+target="${1:-}"
+
+if [[ -n "$target" ]]; then
+    target="$(python3 -c 'import os,sys,urllib.parse; raw=sys.argv[1]; parsed=urllib.parse.urlparse(raw); path=urllib.parse.unquote(parsed.path) if parsed.scheme == "file" else raw; print(os.path.abspath(os.path.expanduser(path)))' "$target")"
+    if [[ -d "$target" ]]; then
+        export ASTREA_MEDIA_PATH="$target"
+    else
+        export ASTREA_MEDIA_PATH="$(dirname "$target")"
+        export ASTREA_MEDIA_TARGET="$target"
+    fi
+fi
+
+export ASTREA_ROOT="$root"
+exec qs -p "$app"

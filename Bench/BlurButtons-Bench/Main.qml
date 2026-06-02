@@ -1,261 +1,136 @@
-import Quickshell
-import QtQuick 2.15
+import QtQuick
 import QtQuick.Effects
+import Quickshell
 
-FloatingWindow {
-    id: root
-
-    title: "Blur Buttons Bench"
-    implicitWidth: 900
-    implicitHeight: 560
-    minimumSize: Qt.size(520, 360)
-    visible: true
-    color: "transparent"
-
-    onVisibleChanged: {
-        if (!visible)
-            Qt.quit()
-    }
-
-    Item {
-        id: scene
-        anchors.fill: parent
+ShellRoot {
+    FloatingWindow {
+        width: 720
+        height: 420
+        color: "#15151c"
 
         Item {
-            id: backdrop
+            id: root
             anchors.fill: parent
-            layer.enabled: true
 
-            Rectangle {
+            Item {
+                id: app
                 anchors.fill: parent
-                color: "#111317"
-            }
+                layer.enabled: true
 
-            Repeater {
-                model: [
-                    { text: "TEXTO ATRAS", x: 54, y: 42, size: 88, color: "#fff0ba" },
-                    { text: "QT EFFECTS", x: 438, y: 128, size: 104, color: "#bcecff" },
-                    { text: "BLUR SIZE 3", x: 82, y: 284, size: 104, color: "#ffd6ee" },
-                    { text: "TRANSPARENTE", x: 398, y: 432, size: 82, color: "#d9ffba" }
-                ]
-
-                delegate: Text {
-                    required property int index
-                    required property var modelData
-
-                    x: modelData.x + Math.sin(drift.phase + index * 0.7) * 9
-                    y: modelData.y + Math.cos(drift.phase + index * 0.9) * 7
-                    text: modelData.text
-                    color: modelData.color
-                    opacity: 0.82
-                    font.pixelSize: modelData.size
-                    font.weight: Font.Black
-                    font.capitalization: Font.AllUppercase
+                Text {
+                    x: 36; y: 4
+                    text: "conteúdo do app atrás"
+                    color: "white"
+                    font.pixelSize: 32
+                    font.bold: true
                 }
-            }
 
-            Repeater {
-                model: 20
+                Row {
+                    x: 36; y: 50
+                    spacing: 12
 
-                delegate: Rectangle {
-                    required property int index
-
-                    width: 116 + (index % 5) * 34
-                    height: 36
-                    radius: 18
-                    x: 36 + (index * 81) % Math.max(1, backdrop.width - width - 72)
-                    y: 52 + (index * 67) % Math.max(1, backdrop.height - height - 104)
-                    rotation: -16 + (index % 7) * 5
-                    color: Qt.hsla((index * 0.074) % 1, 0.62, 0.58, 0.42)
+                    Repeater {
+                        model: 8
+                        Rectangle {
+                            width: 56
+                            height: 56
+                            radius: 14
+                            color: Qt.hsla(index / 8, 0.75, 0.55, 1)
+                        }
+                    }
                 }
-            }
 
-            Repeater {
-                model: 34
-
-                delegate: Rectangle {
-                    required property int index
-
-                    width: backdrop.width * 1.25
-                    height: 3
-                    x: -backdrop.width * 0.12
-                    y: 24 + index * 18
-                    rotation: index % 2 === 0 ? -11 : 7
-                    color: index % 3 === 0 ? "#ffffff" : "#0df0ff"
-                    opacity: index % 3 === 0 ? 0.42 : 0.28
-                }
-            }
-        }
-
-        Item {
-            id: buttonLayer
-            anchors.fill: parent
-
-            Repeater {
-                model: [
-                    { label: "Open", detail: "QtEffects blurMax 3", yOffset: -123 },
-                    { label: "Preview", detail: "sourceRect atrás", yOffset: -41 },
-                    { label: "Sync", detail: "transparente", yOffset: 41 },
-                    { label: "Close", detail: "arrasta livre", yOffset: 123 }
-                ]
-
-                delegate: GlassButton {
-                    required property var modelData
-
-                    width: Math.min(330, buttonLayer.width - 68)
-                    label: modelData.label
-                    detail: modelData.detail
-                    sourceItem: backdrop
-
-                    Component.onCompleted: {
-                        x = buttonLayer.width - width - 34
-                        y = buttonLayer.height / 2 + modelData.yOffset - height / 2
+                Repeater {
+                    model: 12
+                    Text {
+                        x: 36
+                        y: 130 + index * 24
+                        text: "texto passando atrás do botão, linha " + (index + 1)
+                        color: Qt.rgba(1, 1, 1, 0.55)
+                        font.pixelSize: 18
                     }
                 }
             }
-        }
-    }
 
-    NumberAnimation {
-        id: drift
-        property real phase: 0
-        from: 0
-        to: Math.PI * 2
-        duration: 9000
-        loops: Animation.Infinite
-        running: true
-    }
+            Item {
+                id: glass
+                x: 150
+                y: 38
+                width: 230
+                height: 72
+                clip: true
 
-    component GlassButton: Item {
-        id: button
+                property point pos: app.mapFromItem(glass, 0, 0)
 
-        required property string label
-        required property string detail
-        required property var sourceItem
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 26
+                    color: "transparent"
+                    clip: true
 
-        height: 68
-        scale: mouse.pressed ? 0.985 : 1
+                    ShaderEffectSource {
+                        id: src
+                        sourceItem: app
+                        sourceRect: Qt.rect(glass.pos.x, glass.pos.y, glass.width, glass.height)
+                        width: glass.width
+                        height: glass.height
+                        live: true
+                        recursive: false
+                        visible: false
+                    }
 
-        Behavior on scale {
-            NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
-        }
+                    MultiEffect {
+                        anchors.fill: parent
+                        source: src
 
-        ShaderEffectSource {
-            id: behindButton
+                        blurEnabled: true
+                        blur: 1.0
+                        blurMax: 64
+                        blurMultiplier: 3.0
 
-            readonly property real capturePadding: 28
+                        saturation: 2.0
+                        brightness: 0.12
 
-            x: -capturePadding
-            y: -capturePadding
-            width: button.width + capturePadding * 2
-            height: button.height + capturePadding * 2
-            sourceItem: button.sourceItem
-            sourceRect: Qt.rect(button.x - capturePadding, button.y - capturePadding, width, height)
-            textureSize: Qt.size(Math.max(1, Math.round(width / 3)), Math.max(1, Math.round(height / 3)))
-            live: true
-            smooth: true
-            recursive: true
-            visible: false
-        }
+                        autoPaddingEnabled: false
+                    }
 
-        Rectangle {
-            anchors.fill: parent
-            radius: 19
-            clip: true
-            color: "transparent"
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 26
+                        color: Qt.rgba(1, 1, 1, 0.18)
+                        border.width: 1
+                        border.color: Qt.rgba(1, 1, 1, 0.45)
+                    }
 
-            MultiEffect {
-                x: behindButton.x
-                y: behindButton.y
-                width: behindButton.width
-                height: behindButton.height
-                source: behindButton
-                blurEnabled: true
-                blur: 1.0
-                blurMax: 32
-                blurMultiplier: 1.35
-                autoPaddingEnabled: false
-                saturation: 1.0
-                brightness: 0.0
-            }
-
-            Rectangle {
-                anchors.fill: parent
-                radius: parent.radius
-                color: Qt.rgba(0, 0, 0, 0.10)
-                border.width: 1
-                border.color: mouse.containsMouse ? Qt.rgba(1, 1, 1, 0.30) : Qt.rgba(1, 1, 1, 0.14)
-            }
-
-            Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                height: 26
-                radius: parent.radius
-                color: Qt.rgba(1, 1, 1, mouse.containsMouse ? 0.08 : 0.035)
-            }
-        }
-
-        Row {
-            anchors.fill: parent
-            anchors.leftMargin: 20
-            anchors.rightMargin: 18
-            spacing: 14
-
-            Rectangle {
-                width: 34
-                height: 34
-                radius: 17
-                anchors.verticalCenter: parent.verticalCenter
-                color: Qt.rgba(0, 0, 0, 0.10)
-                border.width: 1
-                border.color: Qt.rgba(1, 1, 1, 0.18)
-
-                Text {
-                    anchors.centerIn: parent
-                    text: button.label.slice(0, 1)
-                    color: "#ffffff"
-                    font.pixelSize: 16
-                    font.weight: Font.DemiBold
-                }
-            }
-
-            Column {
-                width: parent.width - 66
-                anchors.verticalCenter: parent.verticalCenter
-                spacing: 3
-
-                Text {
-                    width: parent.width
-                    text: button.label
-                    color: "#ffffff"
-                    font.pixelSize: 18
-                    font.weight: Font.DemiBold
-                    elide: Text.ElideRight
+                    Text {
+                        anchors.centerIn: parent
+                        text: "glass button"
+                        color: "white"
+                        font.pixelSize: 18
+                        font.bold: true
+                    }
                 }
 
-                Text {
-                    width: parent.width
-                    text: button.detail
-                    color: Qt.rgba(1, 1, 1, 0.72)
-                    font.pixelSize: 12
-                    elide: Text.ElideRight
+                MouseArea {
+                    anchors.fill: parent
+                    cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+                    property real dx
+                    property real dy
+
+                    onPressed: {
+                        dx = mouse.x
+                        dy = mouse.y
+                    }
+
+                    onPositionChanged: {
+                        if (pressed) {
+                            glass.x += mouse.x - dx
+                            glass.y += mouse.y - dy
+                        }
+                    }
                 }
             }
-        }
-
-        MouseArea {
-            id: mouse
-            anchors.fill: parent
-            hoverEnabled: true
-            cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-            drag.target: button
-            drag.axis: Drag.XAndYAxis
-            drag.minimumX: 10
-            drag.maximumX: Math.max(10, button.parent.width - button.width - 10)
-            drag.minimumY: 10
-            drag.maximumY: Math.max(10, button.parent.height - button.height - 10)
         }
     }
 }

@@ -22,7 +22,7 @@ SystemComponents.TopbarIndicator {
             : root.volLevel < 67 ? "󰖀"
             :                      "󰕾"
         color: root.volMuted ? Theme.shellIconMuted : Theme.shellIconMain
-        font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+        font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIcon }
         Behavior on color { ColorAnimation { duration: Theme.animationFast } }
     }
 }

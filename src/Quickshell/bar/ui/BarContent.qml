@@ -56,6 +56,7 @@ Item {
                 source: root.quickshellAssetRoot + "astrea.png"
                 width: 18
                 height: 18
+                sourceSize: Qt.size(width, height)
                 fillMode: Image.PreserveAspectFit
                 opacity: Theme.opacityMuted
             }

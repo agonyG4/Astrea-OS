@@ -8,7 +8,7 @@ aliases:
 
 This is the main project brain for the live Astrea runtime at `/home/agony/.local/share/Astrea`.
 
-Last broad sync: 2026-05-23 from `/home/agony/.local/share/Astrea-Rolling`.
+Last broad sync: 2026-06-01 from `/home/agony/.local/share/Astrea-Rolling`.
 
 Use this note as the first stop before reading subsystem notes.
 
@@ -42,8 +42,8 @@ Use this note as the first stop before reading subsystem notes.
 - UI runtime: [[Astrea - Quickshell Runtime]], [[Astrea - Desktop Icons]], [[Astrea - Top Bar]], [[Astrea - Island]], [[Astrea - Spotlight]], [[Astrea - Notifications]]
 - Apps: [[Astrea - About App]], [[Astrea - Settings App]], [[Astrea - Explorer App]], [[Astrea - Weather App]], [[Astrea - Media Viewer App]], [[Astrea - Wallpapers App]]
 - Core: [[Astrea - Core Components]], [[Astrea - Features]]
-- Bridges and backends: [[Astrea - Core Bridge]], [[Astrea - App Manager Bridge]], [[Astrea - Explorer Backend]], [[Astrea - FileChooser Portal]], [[Astrea - Weather Bridge]], [[Astrea - Audio Bridge]], [[Astrea - Display Bridge]], [[Astrea - Wallpaper Bridge]], [[Astrea - Session Daemon]], [[Astrea - State JSON Bridge]]
-- System: [[Astrea - System Layer]], [[Astrea - Launcher and Latency]], [[Astrea - Bluetooth Manager]], [[Astrea - Polkit Auth]], [[Astrea - I18n]]
+- Bridges and backends: [[Astrea - Core Bridge]], [[Astrea - App Manager Bridge]], [[Astrea - Explorer Backend]], [[Astrea - FileChooser Portal]], [[Astrea - Weather Bridge]], [[Astrea - Audio Bridge]], [[Astrea - Display Bridge]], [[Astrea - Network Bridge]], [[Astrea - Wallpaper Bridge]], [[Astrea - Session Daemon]], [[Astrea - State JSON Bridge]]
+- System: [[Astrea - System Layer]], [[Astrea - Launcher and Latency]], [[Astrea - Gaming and Compatibility]], [[Astrea - Bluetooth Manager]], [[Astrea - Polkit Auth]], [[Astrea - I18n]]
 - Data and assets: [[Astrea - Assets and Data]]
 - Meta: [[Astrea - AI Project Brain]], [[Astrea - Agent Working Rules]], [[Astrea - Design Rules]], [[Astrea - Unknowns]], [[Astrea - External Dependencies]]
 
@@ -69,12 +69,14 @@ Use this note as the first stop before reading subsystem notes.
 - [[Astrea - Weather Bridge]]
 - [[Astrea - Audio Bridge]]
 - [[Astrea - Display Bridge]]
+- [[Astrea - Network Bridge]]
 - [[Astrea - Wallpaper Bridge]]
 - [[Astrea - App Manager Bridge]]
 - [[Astrea - Session Daemon]]
 - [[Astrea - State JSON Bridge]]
 - [[Astrea - Bluetooth Manager]]
 - [[Astrea - Launcher and Latency]]
+- [[Astrea - Gaming and Compatibility]]
 
 ## Open Questions
 - [[Astrea - Unknowns]]

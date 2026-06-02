@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -16,9 +18,11 @@ REFRESH_LOCK = STATE_DIR / "storage-refresh.lock"
 REFRESH_STATUS = STATE_DIR / "storage-refresh.json"
 REFRESH_LOG = STATE_DIR / "storage-refresh.log"
 AUTO_REFRESH_AFTER_SECONDS = int(os.environ.get("ASTREA_STORAGE_REFRESH_AFTER_SECONDS", "900"))
+REFRESH_SCAN_TIMEOUT = int(os.environ.get("ASTREA_STORAGE_REFRESH_TIMEOUT", "3600"))
 REFRESH_POLL_SECONDS = 5
 COMPSIZE_CACHE = STATE_DIR / "storage-compsize.json"
 COMPSIZE_CACHE_AFTER_SECONDS = int(os.environ.get("ASTREA_STORAGE_COMPSIZE_AFTER_SECONDS", "3600"))
+SENSE_JSON_TIMEOUT = int(os.environ.get("ASTREA_STORAGE_JSON_TIMEOUT", "20"))
 COMPSIZE_PATHS = [Path("/"), Path("/home")]
 SENSE_SCRIPT_CANDIDATES = [
     Path(os.environ["ASTREA_STORAGESENSE"])
@@ -92,6 +96,7 @@ SYSTEM_IDS = {
     "fonts",
 }
 PACMAN_IDS = {"sys:pacman"}
+SIZE_RE = re.compile(r"^\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGTPE]?)(?:I?B)?\s*$", re.IGNORECASE)
 
 
 def find_sense_script() -> Path | None:
@@ -131,27 +136,41 @@ def read_json(path: Path, default: dict) -> dict:
 
 def write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, path)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(path.parent),
+        text=True,
+    )
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def parse_compsize_size(value: str) -> int:
     value = value.strip()
     if not value:
         return 0
-    suffix = value[-1].upper()
-    multiplier = 1
-    number = value
-    if suffix in {"K", "M", "G", "T", "P"}:
-        multiplier = {
-            "K": 1_000,
-            "M": 1_000_000,
-            "G": 1_000_000_000,
-            "T": 1_000_000_000_000,
-            "P": 1_000_000_000_000_000,
-        }[suffix]
-        number = value[:-1]
+    match = SIZE_RE.match(value)
+    if not match:
+        raise ValueError(f"invalid size: {value}")
+    number, suffix = match.groups()
+    multiplier = {
+        "": 1,
+        "K": 1_000,
+        "M": 1_000_000,
+        "G": 1_000_000_000,
+        "T": 1_000_000_000_000,
+        "P": 1_000_000_000_000_000,
+        "E": 1_000_000_000_000_000_000,
+    }[suffix.upper()]
     return int(float(number) * multiplier)
 
 
@@ -242,13 +261,16 @@ def parse_compsize_bytes(output: str) -> dict:
     return parse_compsize_output(output)
 
 
-def cached_compsize_stats() -> dict:
+def cached_compsize_stats(allow_stale: bool = False) -> dict:
     cached = read_json(COMPSIZE_CACHE, {})
     updated_at = cached.get("updated_at")
     if not updated_at:
         return {}
-    if time.time() - float(updated_at) > COMPSIZE_CACHE_AFTER_SECONDS:
+    age = time.time() - float(updated_at)
+    if age > COMPSIZE_CACHE_AFTER_SECONDS and not allow_stale:
         return {}
+    cached["stale"] = age > COMPSIZE_CACHE_AFTER_SECONDS
+    cached["age_seconds"] = max(0, age)
     return cached
 
 
@@ -256,17 +278,30 @@ def compsize_stats(paths: list[Path]) -> dict:
     cached = cached_compsize_stats()
     if cached:
         return cached
+    stale_cached = cached_compsize_stats(allow_stale=True)
     binary = shutil.which("compsize")
     if not binary:
+        if stale_cached:
+            stale_cached["error"] = "compsize not installed"
+            return stale_cached
         return {"exact": False, "error": "compsize not installed", "source": "unavailable"}
     command = [binary, "-b", "-x"] + [str(path) for path in paths if path.exists()]
     if len(command) <= 3:
+        if stale_cached:
+            stale_cached["error"] = "no compsize paths"
+            return stale_cached
         return {"exact": False, "error": "no compsize paths", "source": "unavailable"}
     try:
         result = subprocess.run(command, capture_output=True, text=True, timeout=8)
     except (OSError, subprocess.TimeoutExpired) as err:
+        if stale_cached:
+            stale_cached["error"] = str(err)
+            return stale_cached
         return {"exact": False, "error": str(err), "source": "compsize"}
     if result.returncode != 0:
+        if stale_cached:
+            stale_cached["error"] = (result.stderr or result.stdout or "compsize failed").strip()
+            return stale_cached
         return {
             "exact": False,
             "error": (result.stderr or result.stdout or "compsize failed").strip(),
@@ -341,6 +376,25 @@ def refresh_running() -> bool:
     return bool(refresh_status().get("running"))
 
 
+def acquire_refresh_lock() -> bool:
+    while True:
+        try:
+            fd = os.open(REFRESH_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            if refresh_running():
+                return False
+            try:
+                REFRESH_LOCK.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                return False
+            continue
+        with os.fdopen(fd, "w", encoding="ascii") as handle:
+            handle.write(str(os.getpid()))
+        return True
+
+
 def cache_needs_auto_refresh(meta: dict) -> bool:
     if not meta.get("cache_exists"):
         return True
@@ -400,17 +454,8 @@ def enrich_refresh_metadata(payload: dict, sense_script: Path | None = None) -> 
 
 def run_refresh_background(sense_script: Path, reason: str) -> int:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        fd = os.open(REFRESH_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(fd, str(os.getpid()).encode("ascii"))
-        os.close(fd)
-    except FileExistsError:
-        if refresh_running():
-            return 0
-        try:
-            REFRESH_LOCK.unlink()
-        except OSError:
-            pass
+    if not acquire_refresh_lock():
+        return 0
 
     started = time.time()
     write_json(REFRESH_STATUS, {
@@ -426,14 +471,30 @@ def run_refresh_background(sense_script: Path, reason: str) -> int:
         command_base = [sys.executable, str(sense_script)]
         env = os.environ.copy()
         env["PYTHONPATH"] = str(sense_script.parent) + os.pathsep + env.get("PYTHONPATH", "")
-        result = subprocess.run(
-            command_base + ["scan", "--quiet"],
-            cwd=str(sense_script.parent),
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                command_base + ["scan", "--quiet"],
+                cwd=str(sense_script.parent),
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=REFRESH_SCAN_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as exc:
+            exit_code = 124
+            write_json(REFRESH_STATUS, {
+                "pid": os.getpid(),
+                "running": False,
+                "reason": reason,
+                "started_at": started,
+                "finished_at": time.time(),
+                "updated_at": time.time(),
+                "ok": False,
+                "error": f"refresh timed out after {REFRESH_SCAN_TIMEOUT}s",
+                "log": str(REFRESH_LOG),
+            })
+            return exit_code
         if result.returncode != 0:
             exit_code = result.returncode
             write_json(REFRESH_STATUS, {
@@ -552,46 +613,48 @@ def print_cached_json() -> int:
 
     try:
         conn = sqlite3.connect(f"file:{CACHE_DB}?mode=ro", uri=True)
-        columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
-        if "disk_size" in columns and "disk_ready" in columns:
-            physical_expr = "CASE WHEN disk_ready = 1 THEN disk_size ELSE size END"
-            compressed_expr = "CASE WHEN disk_ready = 1 AND size > disk_size THEN size - disk_size ELSE 0 END"
-            compression_missing_expr = "CASE WHEN disk_ready = 1 THEN 0 ELSE 1 END"
-        elif "disk_size" in columns:
-            physical_expr = "size"
-            compressed_expr = "0"
-            compression_missing_expr = "1"
-        else:
-            physical_expr = "size"
-            compressed_expr = "0"
-            compression_missing_expr = "1"
-        rows = conn.execute(
-            f"""
-            SELECT cat,
-                   COUNT(*),
-                   SUM(size),
-                   SUM({physical_expr}),
-                   SUM({compressed_expr})
-            FROM files
-            GROUP BY cat
-            ORDER BY SUM(size) DESC
-            """
-        ).fetchall()
-        total_scanned, total_physical, total_saved, compression_missing = conn.execute(
-            f"""
-            SELECT
-                SUM(size),
-                SUM({physical_expr}),
-                SUM({compressed_expr}),
-                SUM({compression_missing_expr})
-            FROM files
-            """
-        ).fetchone()
-        total_scanned = total_scanned or 0
-        total_physical = total_physical or 0
-        total_saved = total_saved or 0
-        compression_missing = compression_missing or 0
-        conn.close()
+        try:
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(files)")}
+            if "disk_size" in columns and "disk_ready" in columns:
+                physical_expr = "CASE WHEN disk_ready = 1 THEN disk_size ELSE size END"
+                compressed_expr = "CASE WHEN disk_ready = 1 AND size > disk_size THEN size - disk_size ELSE 0 END"
+                compression_missing_expr = "CASE WHEN disk_ready = 1 THEN 0 ELSE 1 END"
+            elif "disk_size" in columns:
+                physical_expr = "size"
+                compressed_expr = "0"
+                compression_missing_expr = "1"
+            else:
+                physical_expr = "size"
+                compressed_expr = "0"
+                compression_missing_expr = "1"
+            rows = conn.execute(
+                f"""
+                SELECT cat,
+                       COUNT(*),
+                       SUM(size),
+                       SUM({physical_expr}),
+                       SUM({compressed_expr})
+                FROM files
+                GROUP BY cat
+                ORDER BY SUM(size) DESC
+                """
+            ).fetchall()
+            total_scanned, total_physical, total_saved, compression_missing = conn.execute(
+                f"""
+                SELECT
+                    SUM(size),
+                    SUM({physical_expr}),
+                    SUM({compressed_expr}),
+                    SUM({compression_missing_expr})
+                FROM files
+                """
+            ).fetchone()
+            total_scanned = total_scanned or 0
+            total_physical = total_physical or 0
+            total_saved = total_saved or 0
+            compression_missing = compression_missing or 0
+        finally:
+            conn.close()
     except sqlite3.Error as err:
         print(json.dumps(enrich_refresh_metadata({"error": f"Could not read storage cache: {err}", "data": []}, None)))
         return 0
@@ -682,7 +745,23 @@ def print_sense_json(sense_script: Path) -> int:
     command = [sys.executable, str(sense_script), "json"]
     env = os.environ.copy()
     env["PYTHONPATH"] = str(sense_script.parent) + os.pathsep + env.get("PYTHONPATH", "")
-    result = subprocess.run(command, cwd=str(sense_script.parent), env=env, capture_output=True, text=True)
+    try:
+        result = subprocess.run(
+            command,
+            cwd=str(sense_script.parent),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=SENSE_JSON_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired as err:
+        payload = {
+            "error": f"StorageSense json timed out after {SENSE_JSON_TIMEOUT}s",
+            "data": [],
+            **cache_metadata(),
+        }
+        print(json.dumps(enrich_refresh_metadata(payload, sense_script), ensure_ascii=False))
+        return 1
     if result.returncode != 0:
         payload = {
             "error": (result.stderr or result.stdout or "StorageSense json failed").strip(),
@@ -703,9 +782,13 @@ def print_sense_json(sense_script: Path) -> int:
             payload["compressed_total"] = int(exact.get("compressed_total") or 0)
             payload["compressed_saved"] = int(exact.get("zstd_saved") or exact.get("compressed_saved") or 0)
             payload["zstd_disk_usage"] = int(exact.get("zstd_disk_usage") or 0)
-            payload["compressed_source"] = "compsize"
+            payload["compressed_source"] = exact.get("source") or "compsize"
             payload["compressed_exact"] = True
+            payload["compressed_stale"] = bool(exact.get("stale"))
+            payload["compressed_updated_at"] = exact.get("updated_at")
             payload["compressed_algorithms"] = exact.get("by_algorithm", {})
+            if exact.get("error"):
+                payload["compressed_error"] = exact["error"]
         else:
             payload.setdefault("compressed_source", "allocated-estimate")
             payload.setdefault("compressed_exact", False)

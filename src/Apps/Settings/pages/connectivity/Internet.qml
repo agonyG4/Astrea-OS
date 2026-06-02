@@ -44,10 +44,9 @@ Item {
     property string applyStatus: ""
     property string selectedPreset: "Auto"
     property bool   wifiLoading: true
-    property bool   wifiScanning: false
-    property bool   wifiSimulated: false
     property bool   wifiAvailable: false
     property bool   wifiEnabled: false
+    property bool   wifiTogglePending: false
     property string wifiDevice: ""
     property string wifiState: ""
     property string wifiConnectedSsid: ""
@@ -55,6 +54,18 @@ Item {
     property var    wifiNetworks: []
     property string wifiSelectedSsid: ""
     property bool   wifiSelectedRequiresPassword: false
+    property bool   warpLoading: true
+    property bool   warpInstalled: false
+    property bool   warpConnected: false
+    property bool   warpServiceActive: false
+    property bool   warpActionPending: false
+    property string warpStatus: "Unknown"
+    property string warpNetwork: ""
+    property string warpDetail: ""
+    property string warpServiceState: "unknown"
+    property string warpServiceEnabled: "unknown"
+    property string warpTrayState: "unknown"
+    property string warpActionStatus: ""
     property real   lastRx: 0
     property real   lastTx: 0
     property string _statsBuf: ""
@@ -62,11 +73,15 @@ Item {
     property string _firewallBuf: ""
     property string _wifiBuf: ""
     property string _wifiActionBuf: ""
+    property string _warpBuf: ""
+    property string _warpActionBuf: ""
     readonly property color accent: Theme.accent
     readonly property color textPrimary: Theme.textPrimary
     readonly property color textSecondary: Theme.textSecondary
     readonly property color cardBorder: Theme.cardBorder
     readonly property color popupBg: Theme.popupBg
+    readonly property var connectedWifiNetwork: wifiNetworks.find(network => !!network.active) || null
+    readonly property var availableWifiNetworks: wifiNetworks.filter(network => !network.active)
 
     // ── Helpers ──────────────────────────────────────────────────────────────
     function formatBytes(b) {
@@ -120,7 +135,6 @@ Item {
     }
 
     function wifiSubtitle() {
-        if (wifiSimulated) return "Simulation mode for hardware-free testing"
         if (!wifiAvailable) return "No Wi-Fi adapter detected"
         if (!wifiEnabled) return "Wi-Fi radio disabled"
         if (wifiConnectedSsid) return "Connected to " + wifiConnectedSsid
@@ -132,17 +146,14 @@ Item {
         return network.security
     }
 
-    function loadWifi(scan) {
+    function loadWifi() {
         if (wifiProc.running) return
-        wifiScanning = !!scan
         _wifiBuf = ""
-        wifiProc.scan = !!scan
         wifiProc.running = true
     }
 
     function applyWifiPayload(payload) {
         wifiLoading = false
-        wifiSimulated = !!payload.simulated
         wifiAvailable = !!payload.available
         wifiEnabled = !!payload.enabled
         wifiDevice = payload.device || ""
@@ -154,7 +165,7 @@ Item {
     function connectWifi(network) {
         if (!network || wifiConnectProc.running) return
         wifiSelectedSsid = network.ssid || ""
-        wifiSelectedRequiresPassword = !!network.requires_password && !network.simulated
+        wifiSelectedRequiresPassword = !!network.requires_password
         if (wifiSelectedRequiresPassword) {
             wifiPasswordDialog.open()
             return
@@ -169,6 +180,64 @@ Item {
         wifiActionStatus = ""
         _wifiActionBuf = ""
         wifiDisconnectProc.running = true
+    }
+
+    function setWifiEnabled(enabled) {
+        if (!wifiAvailable || wifiRadioProc.running)
+            return
+        wifiActionStatus = ""
+        _wifiActionBuf = ""
+        wifiTogglePending = true
+        wifiRadioProc.enabledValue = enabled ? "on" : "off"
+        wifiRadioProc.running = true
+    }
+
+    function warpSubtitle() {
+        if (warpLoading) return "Checking Cloudflare WARP"
+        if (!warpInstalled) return "warp-cli is not installed"
+        if (warpActionPending) return "Applying change"
+        if (warpConnected) return warpNetwork ? ("Connected · " + warpNetwork) : "Connected"
+        if (warpServiceActive) return "Daemon active, tunnel disconnected"
+        return "Daemon stopped"
+    }
+
+    function applyWarpPayload(payload) {
+        warpLoading = false
+        warpInstalled = !!payload.installed
+        warpConnected = !!payload.connected
+        warpServiceActive = !!payload.service_active
+        warpStatus = payload.status || "Unknown"
+        warpNetwork = payload.network || ""
+        warpDetail = payload.detail || payload.reason || ""
+        warpServiceState = payload.service_state || "unknown"
+        warpServiceEnabled = payload.service_enabled || "unknown"
+        warpTrayState = payload.tray_state || "unknown"
+    }
+
+    function loadWarp() {
+        if (warpStatusProc.running) return
+        _warpBuf = ""
+        warpStatusProc.running = true
+    }
+
+    function setWarpEnabled(enabled) {
+        if (!warpInstalled || warpActionProc.running)
+            return
+        warpActionStatus = ""
+        _warpActionBuf = ""
+        warpActionPending = true
+        warpActionProc.action = enabled ? "on" : "off"
+        warpActionProc.running = true
+    }
+
+    function restartWarp() {
+        if (!warpInstalled || warpActionProc.running)
+            return
+        warpActionStatus = ""
+        _warpActionBuf = ""
+        warpActionPending = true
+        warpActionProc.action = "restart"
+        warpActionProc.running = true
     }
 
     // ── Processes ────────────────────────────────────────────────────────────
@@ -237,11 +306,9 @@ Item {
 
     Process {
         id: wifiProc
-        property bool scan: false
-        command: ["python3", root._script, scan ? "wifi_scan" : "wifi_status"]
+        command: ["python3", root._script, "wifi_status"]
         stdout: SplitParser { onRead: (l) => root._wifiBuf += l }
         onExited: (code) => {
-            root.wifiScanning = false
             if (code === 0 && root._wifiBuf) {
                 try {
                     const payload = JSON.parse(root._wifiBuf)
@@ -276,7 +343,7 @@ Item {
             }
             root.wifiActionStatus = ok ? "ok" : "error"
             root._wifiActionBuf = ""
-            root.loadWifi(false)
+            root.loadWifi()
         }
     }
 
@@ -297,7 +364,74 @@ Item {
             }
             root.wifiActionStatus = ok ? "ok" : "error"
             root._wifiActionBuf = ""
-            root.loadWifi(false)
+            root.loadWifi()
+        }
+    }
+
+    Process {
+        id: wifiRadioProc
+        property string enabledValue: "on"
+        command: ["python3", root._script, "wifi_set_enabled", enabledValue]
+        stdout: SplitParser { onRead: (l) => root._wifiActionBuf += l }
+        onExited: (code) => {
+            let ok = code === 0
+            if (root._wifiActionBuf) {
+                try {
+                    const payload = JSON.parse(root._wifiActionBuf)
+                    ok = ok && payload.success !== false
+                    if (ok) root.applyWifiPayload(payload)
+                } catch (_) {
+                    ok = false
+                }
+            }
+            root.wifiTogglePending = false
+            root.wifiActionStatus = ok ? "ok" : "error"
+            root._wifiActionBuf = ""
+            root.loadWifi()
+        }
+    }
+
+    Process {
+        id: warpStatusProc
+        command: ["python3", root._script, "warp_status"]
+        stdout: SplitParser { onRead: (l) => root._warpBuf += l }
+        onExited: (code) => {
+            if (code === 0 && root._warpBuf) {
+                try {
+                    root.applyWarpPayload(JSON.parse(root._warpBuf))
+                } catch (_) {
+                    root.warpLoading = false
+                    root.warpActionStatus = "error"
+                }
+            } else {
+                root.warpLoading = false
+            }
+            root._warpBuf = ""
+        }
+    }
+
+    Process {
+        id: warpActionProc
+        property string action: "on"
+        command: action === "restart"
+            ? ["python3", root._script, "warp_restart"]
+            : ["python3", root._script, "warp_set_enabled", action]
+        stdout: SplitParser { onRead: (l) => root._warpActionBuf += l }
+        onExited: (code) => {
+            let ok = code === 0
+            if (root._warpActionBuf) {
+                try {
+                    const payload = JSON.parse(root._warpActionBuf)
+                    ok = ok && payload.success !== false
+                    root.applyWarpPayload(payload)
+                } catch (_) {
+                    ok = false
+                }
+            }
+            root.warpActionPending = false
+            root.warpActionStatus = ok ? "ok" : "error"
+            root._warpActionBuf = ""
+            root.loadWarp()
         }
     }
 
@@ -308,14 +442,19 @@ Item {
     Timer { interval: 20000
  running: true
  repeat: true
- onTriggered: root.loadWifi(false) }
+ onTriggered: root.loadWifi() }
+    Timer { interval: 15000
+ running: true
+ repeat: true
+ onTriggered: root.loadWarp() }
     Timer { id: statusClearTimer
  interval: 3000
  repeat: false
- onTriggered: { root.applyStatus = ""; root.wifiActionStatus = "" } }
+ onTriggered: { root.applyStatus = ""; root.wifiActionStatus = ""; root.warpActionStatus = "" } }
     onApplyStatusChanged: if (applyStatus) statusClearTimer.restart()
     onWifiActionStatusChanged: if (wifiActionStatus) statusClearTimer.restart()
-    Component.onCompleted: { statsProc.running = true; fetchDns(); firewallProc.running = true; loadWifi(false) }
+    onWarpActionStatusChanged: if (warpActionStatus) statusClearTimer.restart()
+    Component.onCompleted: { statsProc.running = true; fetchDns(); firewallProc.running = true; loadWifi(); loadWarp() }
 
     // ── Inline Components ─────────────────────────────────────────────────────
 
@@ -455,8 +594,8 @@ Item {
         property int strength: 0
 
         spacing: 2
-        implicitWidth: 22
-        implicitHeight: 16
+        width: 22
+        height: 16
         Repeater {
             model: 4
             Rectangle {
@@ -477,7 +616,11 @@ Item {
  visible: false
  z: 100
 
-        function open()  { dnsInput.text = ""; visible = true; dnsInput.forceActiveFocus() }
+        function open()  {
+            dnsInput.text = root.currentDnsAuto ? "" : root.currentDnsDetail
+            visible = true
+            dnsInput.forceActiveFocus()
+        }
         function apply() { root.applyDnsValue(dnsInput.text); visible = false }
 
         Rectangle {
@@ -536,14 +679,6 @@ Item {
  selectionColor: Theme.accent
                         Keys.onReturnPressed: customDnsDialog.apply()
                         Keys.onEscapePressed: customDnsDialog.visible = false
-                        Text {
-                            anchors.fill: parent
- verticalAlignment: Text.AlignVCenter
-                            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.text.e_g_8_8_8_8_1_1_1_1"]) || "e.g. 8.8.8.8, 1.1.1.1")
-                            font: dnsInput.font
- color: Qt.rgba(1,1,1,0.18)
-                            visible: !dnsInput.text && !dnsInput.activeFocus
-                        }
                     }
                 }
 
@@ -629,6 +764,14 @@ Item {
                     Layout.fillWidth: true
                 }
 
+                Text {
+                    text: "Network password"
+                    color: root.textSecondary
+                    font.family: Theme.fontFamily
+                    font.pixelSize: 12
+                    Layout.fillWidth: true
+                }
+
                 Rectangle {
                     Layout.fillWidth: true
                     height: 34
@@ -648,14 +791,6 @@ Item {
                         selectionColor: Theme.accent
                         Keys.onReturnPressed: wifiPasswordDialog.apply()
                         Keys.onEscapePressed: wifiPasswordDialog.visible = false
-                        Text {
-                            anchors.fill: parent
-                            verticalAlignment: Text.AlignVCenter
-                            text: "Password"
-                            font: wifiPasswordInput.font
-                            color: Qt.rgba(1,1,1,0.18)
-                            visible: !wifiPasswordInput.text && !wifiPasswordInput.activeFocus
-                        }
                     }
                 }
 
@@ -724,47 +859,95 @@ Item {
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
-                isLast: true
 
                 ValueLabel { text: root.interfaceName || "—" }
+            }
+
+            SettingRow {
+                label: "Activity"
+                sublabel: "Current transfer rate"
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                isLast: true
+
+                ValueLabel {
+                    text: "Down " + root.downloadSpeed + "  Up " + root.uploadSpeed
+                    strong: true
+                }
             }
         }
 
         SectionHeader {
+            visible: root.wifiAvailable
             text: "WI-FI"
             textSecondary: root.textSecondary
             Layout.bottomMargin: 12
         }
 
         FormCard {
+            visible: root.wifiAvailable
             Layout.bottomMargin: 24
 
             SettingRow {
-                label: root.wifiSimulated ? "Wi-Fi Simulation" : "Wi-Fi"
+                label: "Wi-Fi"
                 sublabel: root.wifiSubtitle()
                 textPrimary: root.textPrimary
                 textSecondary: root.wifiActionStatus === "error" ? "#ff5f57" : (root.wifiActionStatus === "ok" ? "#3ddc97" : root.textSecondary)
                 cardBorder: root.cardBorder
 
-                RowLayout {
-                    spacing: 8
+                ToggleSwitch {
+                    enabled: !root.wifiTogglePending
+                    checked: root.wifiEnabled
+                    onToggled: targetChecked => root.setWifiEnabled(targetChecked)
+                }
+            }
 
-                    MiniButton {
-                        label: root.wifiScanning ? "Scanning" : "Scan"
-                        enabledState: !root.wifiScanning && !wifiConnectProc.running && !wifiDisconnectProc.running
-                        onClicked: root.loadWifi(true)
+            SettingRow {
+                visible: root.wifiEnabled && root.connectedWifiNetwork !== null
+                label: "Connected Network"
+                sublabel: root.connectedWifiNetwork
+                    ? root.wifiSecurityLabel(root.connectedWifiNetwork) + " · " + (root.connectedWifiNetwork.signal || 0) + "%"
+                    : ""
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                isLast: !root.wifiEnabled || root.availableWifiNetworks.length === 0
+
+                RowLayout {
+                    spacing: 10
+
+                    Text {
+                        text: root.connectedWifiNetwork ? root.connectedWifiNetwork.ssid : ""
+                        color: root.textPrimary
+                        font.family: Theme.fontFamily
+                        font.pixelSize: 13
+                        font.weight: 700
+                        elide: Text.ElideRight
+                        Layout.preferredWidth: 160
                     }
 
+                    WifiSignal { strength: root.connectedWifiNetwork ? (root.connectedWifiNetwork.signal || 0) : 0 }
+
                     MiniButton {
-                        visible: root.wifiConnectedSsid !== ""
                         label: "Disconnect"
                         onClicked: root.disconnectWifi()
                     }
                 }
             }
 
+            SettingRow {
+                visible: root.wifiEnabled && root.availableWifiNetworks.length > 0
+                label: "Available Networks"
+                sublabel: "Choose a network to connect"
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                isLast: false
+            }
+
             Repeater {
-                model: root.wifiNetworks
+                model: root.wifiEnabled ? root.availableWifiNetworks : []
                 delegate: SettingRow {
                     required property var modelData
                     required property int index
@@ -775,36 +958,27 @@ Item {
                     textSecondary: root.textSecondary
                     cardBorder: root.cardBorder
                     clickable: true
-                    isLast: index === root.wifiNetworks.length - 1
-                    onClicked: modelData.active ? root.disconnectWifi() : root.connectWifi(modelData)
+                    isLast: index === root.availableWifiNetworks.length - 1
+                    onClicked: root.connectWifi(modelData)
 
                     RowLayout {
                         spacing: 10
 
-                        Text {
-                            visible: !!modelData.active
-                            text: "Connected"
-                            color: "#3ddc97"
-                            font.family: Theme.fontFamily
-                            font.pixelSize: 12
-                            font.weight: 700
-                        }
-
                         WifiSignal { strength: modelData.signal || 0 }
 
                         MiniButton {
-                            label: modelData.active ? "Leave" : "Join"
-                            primary: !modelData.active
-                            onClicked: modelData.active ? root.disconnectWifi() : root.connectWifi(modelData)
+                            label: "Join"
+                            primary: true
+                            onClicked: root.connectWifi(modelData)
                         }
                     }
                 }
             }
 
             SettingRow {
-                visible: !root.wifiLoading && root.wifiNetworks.length === 0
+                visible: root.wifiEnabled && !root.wifiLoading && root.wifiNetworks.length === 0
                 label: "No networks found"
-                sublabel: root.wifiAvailable ? "Try scanning again" : "Simulation will appear here on machines without Wi-Fi"
+                sublabel: "No Wi-Fi networks are visible right now"
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
@@ -813,7 +987,7 @@ Item {
         }
 
         SectionHeader {
-            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.text.security"]) || "SECURITY")
+            text: "CLOUDFLARE WARP"
             textSecondary: root.textSecondary
             Layout.bottomMargin: 12
         }
@@ -822,17 +996,19 @@ Item {
             Layout.bottomMargin: 24
 
             SettingRow {
-                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.firewall"]) || "Firewall")
-                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.sublabel.local_firewall_service_state"]) || "Local firewall service state")
+                label: "Cloudflare WARP"
+                sublabel: root.warpActionStatus === "ok"
+                    ? "WARP setting applied"
+                    : (root.warpActionStatus === "error" ? "Could not apply WARP setting" : root.warpSubtitle())
                 textPrimary: root.textPrimary
-                textSecondary: root.textSecondary
+                textSecondary: root.warpActionStatus === "error" ? "#ff5f57" : (root.warpActionStatus === "ok" ? "#3ddc97" : root.textSecondary)
                 cardBorder: root.cardBorder
                 isLast: true
 
-                ValueLabel {
-                    text: root.firewallStatus
-                    color: root.firewallActive ? "#3ddc97" : root.textSecondary
-                    strong: root.firewallActive
+                ToggleSwitch {
+                    enabled: root.warpInstalled && !root.warpActionPending
+                    checked: root.warpConnected
+                    onToggled: targetChecked => root.setWarpEnabled(targetChecked)
                 }
             }
         }
@@ -879,24 +1055,13 @@ Item {
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
-                isLast: true
             }
-        }
-
-        SectionHeader {
-            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.text.quick_presets"]) || "QUICK PRESETS")
-            textSecondary: root.textSecondary
-            Layout.bottomMargin: 12
-        }
-
-        FormCard {
-            Layout.bottomMargin: 28
 
             SettingRow {
                 label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.dns_preset"]) || "DNS preset")
                 sublabel: root.applyStatus === "ok"
                     ? "Settings applied"
-                    : (root.applyStatus === "error" ? "Failed to apply" : "Choose a known provider or reset to automatic")
+                    : (root.applyStatus === "error" ? "Failed to apply" : "Choose a provider or return to automatic DNS")
                 textPrimary: root.textPrimary
                 textSecondary: root.applyStatus === "error" ? "#ff5f57" : (root.applyStatus === "ok" ? "#3ddc97" : root.textSecondary)
                 cardBorder: root.cardBorder
@@ -920,22 +1085,40 @@ Item {
 
             SettingRow {
                 label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.text.custom_dns"]) || "Custom DNS")
-                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.sublabel.enter_custom_dns_servers_manually"]) || "Enter custom DNS servers manually")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.sublabel.enter_custom_dns_servers_manually"]) || "Set DNS servers manually")
                 textPrimary: root.textPrimary
                 textSecondary: root.textSecondary
                 cardBorder: root.cardBorder
                 isLast: true
 
-                SelectButton {
-                    implicitWidth: 120
-                    label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.custom"]) || "Custom")
-                    options: []
-                    isButton: true
-                    accent: root.accent
-                    textPrimary: root.textPrimary
-                    textSecondary: root.textSecondary
-                    popupBg: root.popupBg
-                    onSelected: customDnsDialog.open()
+                MiniButton {
+                    label: "Edit"
+                    onClicked: customDnsDialog.open()
+                }
+            }
+        }
+
+        SectionHeader {
+            text: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.text.security"]) || "SECURITY")
+            textSecondary: root.textSecondary
+            Layout.bottomMargin: 12
+        }
+
+        FormCard {
+            Layout.bottomMargin: 28
+
+            SettingRow {
+                label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.label.firewall"]) || "Firewall")
+                sublabel: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.settings.pages.connectivity.internet.sublabel.local_firewall_service_state"]) || "Local firewall service state")
+                textPrimary: root.textPrimary
+                textSecondary: root.textSecondary
+                cardBorder: root.cardBorder
+                isLast: true
+
+                ValueLabel {
+                    text: root.firewallStatus
+                    color: root.firewallActive ? "#3ddc97" : root.textSecondary
+                    strong: root.firewallActive
                 }
             }
         }

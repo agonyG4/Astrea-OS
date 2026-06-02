@@ -1,6 +1,7 @@
 import Quickshell
 import Quickshell.Io
 import QtQuick
+import ".." as Modules
 
 QtObject {
     id: root
@@ -9,23 +10,12 @@ QtObject {
     property int level: 50
     property bool muted: false
     property bool performancePaused: false
+    property bool statusInitialized: false
+
+    signal volumeChanged(int level, bool muted)
 
     function refresh() {
-        if (performancePaused) {
-            statusFile.reload()
-            return
-        }
-        statusRefreshProc.running = false
-        statusRefreshProc.running = true
-    }
-
-    onPerformancePausedChanged: {
-        if (performancePaused) {
-            statusRefreshProc.running = false
-            statusFile.reload()
-        } else {
-            refresh()
-        }
+        statusBridge.refresh()
     }
 
     function clampLevel(value) {
@@ -38,6 +28,7 @@ QtObject {
     function setVolume(value) {
         var nextLevel = clampLevel(value)
         root.level = nextLevel
+        root.volumeChanged(root.level, root.muted)
         volSetProc.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", nextLevel + "%"]
         volSetProc.running = false
         volSetProc.running = true
@@ -46,20 +37,16 @@ QtObject {
     function applyStatus(text) {
         try {
             var payload = JSON.parse(text || "{}")
-            root.level = payload.level !== undefined ? clampLevel(payload.level) : root.level
-            root.muted = payload.muted === true
+            var nextLevel = payload.level !== undefined ? clampLevel(payload.level) : root.level
+            var nextMuted = payload.muted === true
+            var changed = root.statusInitialized && (nextLevel !== root.level || nextMuted !== root.muted)
+            root.level = nextLevel
+            root.muted = nextMuted
+            if (changed)
+                root.volumeChanged(root.level, root.muted)
+            root.statusInitialized = true
         } catch (error) {
         }
-    }
-
-    property var statusFile: FileView {
-        path: root.statusPath
-        preload: true
-        blockLoading: true
-        watchChanges: true
-        printErrors: false
-        onFileChanged: reload()
-        onLoaded: root.applyStatus(text())
     }
 
     property var volSetProc: Process {
@@ -67,9 +54,11 @@ QtObject {
         running: false
     }
 
-    property var statusRefreshProc: Process {
-        command: ["systemctl", "--user", "kill", "-s", "USR1", "astrea-status.service"]
-        running: false
-        onExited: statusFile.reload()
+    property var statusBridge: Modules.StatusFile {
+        statusPath: root.statusPath
+        performancePaused: root.performancePaused
+        startOnRefreshFailure: false
+        signalName: "USR1"
+        onLoaded: text => root.applyStatus(text)
     }
 }

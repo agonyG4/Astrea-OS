@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import importlib.util
 import sys
@@ -26,6 +27,25 @@ class FolderCreationTests(unittest.TestCase):
                 app_index.next_folder_path(desktop).name,
                 "Nova Pasta 3",
             )
+
+
+class IconInstallTests(unittest.TestCase):
+    def test_install_png_icon_does_not_leave_partial_target_on_copy_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.png"
+            source.write_bytes(b"png")
+            target = root / "icon.png"
+
+            def failing_copy(_source, dest):
+                Path(dest).write_bytes(b"partial")
+                raise OSError("copy failed")
+
+            with mock.patch.object(app_index, "hicolor_icon_path", return_value=target), \
+                    mock.patch.object(app_index.shutil, "copyfile", side_effect=failing_copy):
+                self.assertFalse(app_index.install_png_icon("123", source, 256))
+
+            self.assertFalse(target.exists())
 
 
 if __name__ == "__main__":

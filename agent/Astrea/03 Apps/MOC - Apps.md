@@ -15,7 +15,7 @@ App notes describe standalone Astrea applications.
 
 ## App Backends
 - About: [[Astrea - Core Bridge]]
-- Settings: [[Astrea - Core Bridge]], [[Astrea - App Manager Bridge]], [[Astrea - Display Bridge]], [[Astrea - Audio Bridge]], [[Astrea - Bluetooth Manager]], [[Astrea - Wallpaper Bridge]], [[Astrea - I18n]]
+- Settings: [[Astrea - Core Bridge]], [[Astrea - App Manager Bridge]], [[Astrea - Display Bridge]], [[Astrea - Audio Bridge]], [[Astrea - Network Bridge]], [[Astrea - Gaming and Compatibility]], [[Astrea - Bluetooth Manager]], [[Astrea - Wallpaper Bridge]], [[Astrea - I18n]]
 - Explorer: [[Astrea - Explorer Backend]]
 - Weather: [[Astrea - Weather Bridge]]
 - Media Viewer: `Apps/MediaViewer/media_viewer_helper.py`

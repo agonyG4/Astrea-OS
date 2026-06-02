@@ -10,6 +10,7 @@ import "ui/components/system/popups"
 import "ui/components/system/tray"
 import "ui/components/system/workspaces"
 import "ui/components/volume"
+import "../notifications/ui" as NotificationUi
 
 Scope {
     id: bar
@@ -105,6 +106,7 @@ Scope {
                     source: "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/ui/quickshell/bar/astrea.png"
                     width: 18
                     height: 18
+                    sourceSize: Qt.size(width, height)
                     fillMode: Image.PreserveAspectFit
                     opacity: Theme.opacityMuted
                 }
@@ -194,6 +196,7 @@ Scope {
 
             Clock {
                 anchors.verticalCenter: parent.verticalCenter
+                popupHost: notificationPopupHost
             }
         }
     }
@@ -261,6 +264,14 @@ Scope {
                 onVolumeChangeHandled: (v) => { if (bar.sharedAudioState) bar.sharedAudioState.level = v }
                 onMuteChangeHandled: (muted) => { if (bar.sharedAudioState) bar.sharedAudioState.muted = muted }
             }
+        }
+    }
+
+    PopupHost {
+        id: notificationPopupHost
+        anchorOffset: bar.statusLeft
+        sourceComponent: Component {
+            NotificationUi.NotificationHistoryPanel {}
         }
     }
 

@@ -46,8 +46,10 @@ Do not treat GitHub mirrors, old `.config/quickshell` trees, or Bench copies as 
 | reusable file UI | `Features/Files` | [[Astrea - Features]] |
 | system bridges | `Core/bridge`, `System` | [[Astrea - Core Bridge]], [[Astrea - System Layer]] |
 | app/session/state helpers | `Core/bridge/apps.py`, `astrea_sessiond.py`, `state_json.py` | [[Astrea - App Manager Bridge]], [[Astrea - Session Daemon]], [[Astrea - State JSON Bridge]] |
+| network, Wi-Fi, DNS, WARP | `Core/bridge/network/manager.py`, `Apps/Settings/pages/connectivity/Internet.qml` | [[Astrea - Network Bridge]] |
 | i18n and auth | `System/i18n`, `System/auth` | [[Astrea - I18n]], [[Astrea - Polkit Auth]] |
 | launch and latency | `System/launch`, `bin/astrea-launch`, `System/services/astrea_latencyd.py` | [[Astrea - Launcher and Latency]] |
+| gamescope, Proton, Windows app compatibility | `System/scripts/astrea-gaming-settings`, `System/scripts/astrea-windows-run`, `Apps/Settings/pages/gaming` | [[Astrea - Gaming and Compatibility]] |
 | file chooser portal | `System/portal` + `Apps/Explorer/PortalDialog.qml` | [[Astrea - FileChooser Portal]] |
 
 ## Design DNA
@@ -99,9 +101,10 @@ Shell:
 - code sharing does not mean visual merging
 - verify the active shell before touching runtime behavior
 - keep Quickshell as UI: periodic system polling belongs in user services or bridges
+- component toggles live in `~/.config/AstreaOS/ui/components.json`
 - audio, network, and Bluetooth status come from `astrea-status.service` JSON caches under `~/.local/state/Astrea/status`
 - Desktop Icons is a conditional bottom-layer shell surface
-- It is loaded by `Quickshell/shell.qml` only when `~/.local/state/Astrea/desktop-icons/config.json` has `enabled != false`
+- It is loaded by `Quickshell/shell.qml` only when the desktop component is enabled
 - It renders `.desktop` files from the XDG desktop folder, not the full application database
 
 ## Design Rules
@@ -121,6 +124,9 @@ Persistent user config:
 
 Runtime app state:
 - `~/.local/state/Astrea`
+
+Durable user library data:
+- `~/.local/share/AstreaOS`
 
 Cache:
 - `~/.cache`

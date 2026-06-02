@@ -15,6 +15,10 @@ Item {
     readonly property int reservedWidth: Theme.workspaceActiveWidth
         + Math.max(0, reservedWorkspaceSlots - 1) * (Theme.workspaceDotSize + Theme.spacingSmall)
 
+    function switchToWorkspace(workspaceId) {
+        Hyprland.dispatch("hl.dsp.focus({ workspace = " + workspaceId + " })")
+    }
+
     implicitWidth: stableWidth
     implicitHeight: Theme.workspaceDotSize
     clip: true
@@ -45,7 +49,7 @@ Item {
                     anchors.leftMargin:   -6
                     anchors.rightMargin:  -6
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: Hyprland.dispatch("workspace " + modelData.id)
+                    onClicked: root.switchToWorkspace(modelData.id)
                 }
             }
         }

@@ -24,7 +24,8 @@ UI notes describe the Quickshell runtime and persistent shell surfaces.
 
 ## Common Flow
 1. `Quickshell/shell.qml` starts the shell.
-2. The shell loads Desktop Icons only when enabled.
-3. The shell creates shared music state.
-4. Bar and Island consume shared state.
-5. UI surfaces call process bridges for system data.
+2. `Runtime.ComponentSettings` reads component toggles from `~/.config/AstreaOS/ui/components.json`.
+3. The shell loads Desktop Icons, Top Bar, Island, Spotlight, Alt Tab, and Notifications only when their component is enabled.
+4. The shell creates shared music state.
+5. Bar and Island consume shared state.
+6. UI surfaces call process bridges for system data.

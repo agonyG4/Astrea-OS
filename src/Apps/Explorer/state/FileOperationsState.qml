@@ -506,20 +506,36 @@ QtObject {
     function dropFiles(urls, destinationPath, mode) {
         if (!urls || urls.length === 0)
             return
-        var files = []
-        var resolvedDestination = destinationPath || app.currentPath
+        var paths = []
         for (var i = 0; i < urls.length; i++) {
             var uriItems = String(urls[i] || "").split(/\r?\n/).filter(function(line) { return line.trim() !== "" })
             for (var u = 0; u < uriItems.length; u++) {
                 var path = normalizeFileUrl(uriItems[u].trim())
                 if (!path)
                     continue
-                var targetPath = joinPath(resolvedDestination, basename(path))
-                if (path === targetPath)
-                    continue
-                if (path)
-                    files.push(path)
+                paths.push(path)
             }
+        }
+        dropFilePaths(paths, destinationPath, mode)
+    }
+
+    function dropFilePaths(paths, destinationPath, mode) {
+        if (!paths || paths.length === 0)
+            return
+        var files = []
+        var seen = {}
+        var resolvedDestination = destinationPath || app.currentPath
+        for (var i = 0; i < paths.length; i++) {
+            var path = String(paths[i] || "").trim()
+            if (path.indexOf("file://") === 0)
+                path = normalizeFileUrl(path)
+            if (!path || seen[path])
+                continue
+            var targetPath = joinPath(resolvedDestination, basename(path))
+            if (path === targetPath)
+                continue
+            seen[path] = true
+            files.push(path)
         }
         if (files.length === 0)
             return
@@ -594,15 +610,17 @@ QtObject {
             return
 
         resetFileOperation(mode, destinationPath, files.length)
-        pasteProcess.command = [
+        var cmd = [
             app.backendPath,
             "file-op",
             "--json-events",
             mode,
             destinationPath,
-            policy,
-            pendingPasteRename
-        ].concat(files)
+            policy
+        ]
+        if (policy === "rename" && pendingPasteRename !== "")
+            cmd = cmd.concat(["--rename", pendingPasteRename])
+        pasteProcess.command = cmd.concat(files)
         pasteProcess.running = false
         pasteProcess.running = true
         pendingPasteClearsClipboard = mode === "cut"
@@ -794,9 +812,10 @@ QtObject {
                     ? "Compactacao concluida"
                     : "Extracao concluida"
                 ops.archiveExtractionError = ""
-                app.refreshCurrentFolder()
-                if (ops.archiveOperationMode === "extract" && ops.archiveExtractionRevealName !== "")
-                    archiveRevealTimer.restart()
+                if (ops.archiveOperationMode === "extract" && ops.archiveExtractionDestination !== "")
+                    app.navigateTo(ops.archiveExtractionDestination)
+                else
+                    app.refreshCurrentFolder()
             } else if (ops.archivePasswordPromptVisible || ops.archiveConflictVisible) {
                 ops.archiveExtractionRunning = false
                 return
@@ -813,7 +832,7 @@ QtObject {
     }
 
     property Timer archiveExtractionHideTimer: Timer {
-        interval: 1800
+        interval: ops.archiveExtractionError !== "" ? 6000 : 1800
         repeat: false
         onTriggered: {
             ops.archiveExtractionRunning = false

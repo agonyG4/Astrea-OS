@@ -109,6 +109,8 @@ Rectangle {
                 height: 64
                 fillMode: Image.PreserveAspectFit
                 asynchronous: true
+                cache: true
+                retainWhileLoading: true
                 smooth: true
                 sourceSize: Qt.size(64, 64)
                 visible: root.selectedPreviewSource === "" || previewImage.status !== Image.Ready

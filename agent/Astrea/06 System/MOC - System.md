@@ -9,6 +9,7 @@ System notes describe OS integration, local scripts, privileged helpers, and mac
 - [[Astrea - System Layer]]
 - [[Astrea - Bluetooth Manager]]
 - [[Astrea - Launcher and Latency]]
+- [[Astrea - Gaming and Compatibility]]
 - [[Astrea - Polkit Auth]]
 - [[Astrea - I18n]]
 

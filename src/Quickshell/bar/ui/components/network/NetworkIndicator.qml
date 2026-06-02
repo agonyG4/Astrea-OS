@@ -15,7 +15,7 @@ SystemComponents.TopbarIndicator {
             : root.netType === "wifi" ? "󰖩"
             : "󰈀"
         color: !root.netConnected ? Theme.iconWarning : Theme.shellIconMain
-        font { family: Theme.fontFamily; pixelSize: Theme.fontSizeIcon }
+        font { family: Theme.iconFontFamily; pixelSize: Theme.fontSizeIcon }
         Behavior on color { ColorAnimation { duration: Theme.animationFast } }
     }
 }

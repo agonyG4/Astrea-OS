@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import json
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 
@@ -20,6 +23,35 @@ def load_module():
 
 
 class BluetoothManagerTests(unittest.TestCase):
+    def test_status_command_publishes_shared_status_snapshot(self):
+        bt = load_module()
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp)
+            bt.STATUS_CACHE_PATH = state / "status-cache.json"
+            bt.SHARED_STATUS_PATH = state / "status" / "bluetooth.json"
+            bt.get_status_payload = lambda: {
+                "success": True,
+                "powered": True,
+                "connected_name": "Headset",
+                "paired_devices": [
+                    {
+                        "mac": "AA:BB:CC:DD:EE:FF",
+                        "name": "Headset",
+                        "connected": True,
+                    }
+                ],
+                "_cached_at": 123,
+            }
+
+            with redirect_stdout(io.StringIO()):
+                bt.cmd_status()
+
+            payload = json.loads(bt.SHARED_STATUS_PATH.read_text())
+            self.assertTrue(payload["ok"])
+            self.assertTrue(payload["powered"])
+            self.assertEqual(payload["connected_name"], "Headset")
+            self.assertNotIn("_cached_at", payload)
+
     def test_failed_autoconnect_sets_device_cooldown(self):
         bt = load_module()
         with tempfile.TemporaryDirectory() as tmp:

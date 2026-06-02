@@ -89,7 +89,8 @@ class ZoomQmlTests(unittest.TestCase):
     def test_window_title_stays_stable_for_hyprland_float_rule(self):
         source = MAIN_QML.read_text(encoding="utf-8")
 
-        self.assertIn('title: "Astrea Image Viewer"', source)
+        self.assertIn('title: t("apps.media_viewer.title", "Astrea Image Viewer")', source)
+        self.assertIn('Qt.application.name = t("apps.media_viewer.title", "Astrea Image Viewer")', source)
         self.assertNotIn("title: currentItem", source)
 
 

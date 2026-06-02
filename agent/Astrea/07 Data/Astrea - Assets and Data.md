@@ -17,21 +17,30 @@ Observed assets:
 - `Assets/ui/quickshell/island/*`
 - `Apps/Weather/assets/icons/weather/*`
 - `audio/hrir.wav`
+- `audio/astrea_sidefix_7p1_16ch_50ms_safe_-10dB.wav`
 
-## Data
-Folder: `Data/`
+## Audio Assets
+`audio/hrir.wav` is the canonical packaged Astrea Spatial Audio HRIR.
 
-Role:
-- Astrea-owned user data inside the runtime tree.
+Current format:
+- 48 kHz
+- 16 channels
+- 50 ms
+- 7.1 layout represented as 8 speaker positions times 2 ears
 
-Observed data:
-- `Data/user/wallpapers/Persona_3`
-- `Data/user/wallpapers/Persona_5`
+The named sidefix file is kept beside it as a provenance/readability copy. Runtime PipeWire config should point to `/home/agony/.local/share/Astrea/audio/hrir.wav`.
 
-Current wallpaper user data has moved toward:
+## Durable User Data
+The current Rolling runtime does not have an active top-level `Data/` directory.
+
+Durable user-owned library data should live outside the runtime tree:
 - `~/.local/share/AstreaOS/user/wallpapers`
+- `~/.local/share/AstreaOS/windows-prefixes/shared/proton`
 
-The wallpaper bridge can migrate legacy user wallpapers from the runtime tree.
+Legacy runtime-side wallpaper data may still be migrated from:
+- `/home/agony/.local/share/Astrea/Data/user/wallpapers`
+
+Do not add new user libraries under the installed runtime tree.
 
 ## Related External State
 Astrea also stores state/config outside this tree:
@@ -41,6 +50,10 @@ Astrea also stores state/config outside this tree:
 - `~/.local/state/Astrea/weather/current.json`
 - `~/.local/state/Astrea/weather/alerts-seen.json`
 - `~/.local/state/Astrea/sessiond-status.json`
+- `~/.config/AstreaOS/ui/components.json`
+- `~/.config/AstreaOS/gaming/gamescope.json`
+- `~/.config/AstreaOS/gaming/proton.json`
+- `~/.config/AstreaOS/gaming/compatibility.json`
 - `~/.cache/Astrea/media-viewer/previews`
 - `~/.cache/weather`
 

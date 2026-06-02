@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import os
 import sys
 import tempfile
 import unittest
@@ -34,6 +35,50 @@ class ManagerActionsTest(unittest.TestCase):
             self.assertIn("Name=Weather", target.read_text(encoding="utf-8"))
             self.assertTrue(target.stat().st_mode & 0o111)
 
+    def test_list_apps_uses_astrea_language_for_localized_astrea_desktop_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            applications = Path(tmp) / "applications"
+            applications.mkdir()
+            settings = Path(tmp) / "settings.json"
+            settings.write_text('{"language":"pt_BR"}\n', encoding="utf-8")
+            entries = {
+                "astrea-explorer.desktop": ("Explorer", "Explorador"),
+                "astrea-media.desktop": ("Image Viewer", "Visualizador de Imagens"),
+                "astrea-settings.desktop": ("Settings", "Configurações"),
+                "astrea-wallpapers.desktop": ("Wallpapers", "Papéis de Parede"),
+                "astrea-weather.desktop": ("Weather", "Clima"),
+            }
+            for desktop_id, names in entries.items():
+                english_name, portuguese_name = names
+                (applications / desktop_id).write_text(
+                    "[Desktop Entry]\n"
+                    "Type=Application\n"
+                    f"Name={english_name}\n"
+                    f"Name[pt_BR]={portuguese_name}\n"
+                    f"Comment=Open {english_name}\n"
+                    f"Comment[pt_BR]=Abrir {portuguese_name}\n",
+                    encoding="utf-8",
+                )
+
+            with mock.patch.object(manager, "application_dirs", return_value=[applications]), \
+                    mock.patch.dict(os.environ, {"ASTREA_SYSTEM_SETTINGS_PATH": str(settings)}):
+                apps = manager.list_apps()["apps"]
+            apps_by_id = {app["id"]: app for app in apps}
+
+            for desktop_id, names in entries.items():
+                self.assertEqual(apps_by_id[desktop_id]["name"], names[1])
+                self.assertEqual(apps_by_id[desktop_id]["comment"], f"Abrir {names[1]}")
+
+            settings.write_text('{"language":"en_US"}\n', encoding="utf-8")
+            with mock.patch.object(manager, "application_dirs", return_value=[applications]), \
+                    mock.patch.dict(os.environ, {"ASTREA_SYSTEM_SETTINGS_PATH": str(settings)}):
+                apps = manager.list_apps()["apps"]
+            apps_by_id = {app["id"]: app for app in apps}
+
+            for desktop_id, names in entries.items():
+                self.assertEqual(apps_by_id[desktop_id]["name"], names[0])
+                self.assertEqual(apps_by_id[desktop_id]["comment"], f"Open {names[0]}")
+
     def test_flatpak_app_id_reads_desktop_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "com.example.App.desktop"
@@ -60,14 +105,27 @@ class ManagerActionsTest(unittest.TestCase):
 
     def test_uninstall_user_desktop_file_removes_launcher_only(self):
         with tempfile.TemporaryDirectory() as tmp:
-            source = Path(tmp) / "local-app.desktop"
+            applications = Path(tmp) / "applications"
+            applications.mkdir()
+            source = applications / "local-app.desktop"
             source.write_text("[Desktop Entry]\nType=Application\nName=Local\n", encoding="utf-8")
 
-            with mock.patch.object(manager, "refresh_desktop_index"):
+            with mock.patch.object(manager, "application_dirs", return_value=[applications]), \
+                    mock.patch.object(manager, "refresh_desktop_index"):
                 result = manager.uninstall_app({"id": "local-app.desktop", "desktop_file": str(source), "source": "user"})
 
             self.assertFalse(source.exists())
             self.assertEqual(result["message"], "Launcher removido da lista de aplicativos")
+
+    def test_uninstall_user_desktop_file_rejects_path_outside_launcher_dirs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "notes.desktop"
+            source.write_text("[Desktop Entry]\nType=Application\nName=Local\n", encoding="utf-8")
+
+            with mock.patch.object(manager, "application_dirs", return_value=[Path(tmp) / "applications"]):
+                info = manager.uninstall_info({"id": source.name, "desktop_file": str(source), "source": "user"})
+
+            self.assertFalse(info["can"])
 
     def test_steam_game_launcher_must_be_uninstalled_in_steam(self):
         app = {
@@ -76,7 +134,7 @@ class ManagerActionsTest(unittest.TestCase):
             "comment": "Play this game on Steam",
             "exec": "steam steam://rungameid/413150",
             "icon": "steam_icon_413150",
-            "desktop_file": "/home/agony/.local/share/applications/Stardew Valley.desktop",
+            "desktop_file": "/home/astrea/.local/share/applications/Stardew Valley.desktop",
             "source": "user",
         }
         info = manager.uninstall_info(app)
@@ -101,17 +159,46 @@ class ManagerActionsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / "com.example.App.desktop"
             source.write_text("[Desktop Entry]\nType=Application\nName=Example\nExec=/usr/bin/flatpak run com.example.App\nX-Flatpak=com.example.App\n", encoding="utf-8")
-            with mock.patch.object(manager.subprocess, "run") as run_mock, mock.patch.object(manager, "refresh_desktop_index"):
+            with mock.patch.object(manager, "package_owner", return_value=""), mock.patch.object(manager.subprocess, "run") as run_mock, mock.patch.object(manager, "refresh_desktop_index"):
                 result = manager.uninstall_app({"id": source.name, "desktop_file": str(source), "source": "system"})
-            run_mock.assert_called_once()
+            run_mock.assert_called_once_with(["flatpak", "uninstall", "--assumeyes", "--app", "com.example.App"], check=True, stdout=manager.subprocess.DEVNULL, stderr=manager.subprocess.PIPE, text=True, timeout=120)
             self.assertEqual(result["target"], "com.example.App")
 
     def test_uninstall_system_package_runs_pkexec_pacman(self):
         app = {"id": "brave-browser.desktop", "desktop_file": "/usr/share/applications/brave-browser.desktop", "source": "system"}
         with mock.patch.object(manager, "package_owner", return_value="brave-bin"), mock.patch.object(manager.subprocess, "run") as run_mock, mock.patch.object(manager, "refresh_desktop_index"):
             result = manager.uninstall_app(app)
-        run_mock.assert_called_once_with(["pkexec", "pacman", "-Rns", "--noconfirm", "brave-bin"], check=True, stdout=manager.subprocess.DEVNULL, stderr=manager.subprocess.PIPE, text=True)
+        run_mock.assert_called_once_with(["pkexec", "pacman", "-Rns", "--noconfirm", "brave-bin"], check=True, stdout=manager.subprocess.DEVNULL, stderr=manager.subprocess.PIPE, text=True, timeout=180)
         self.assertEqual(result["message"], "Pacote brave-bin desinstalado")
+
+    def test_pacman_owner_uses_machine_readable_query(self):
+        calls = []
+
+        def fake_output(command, *, timeout=3.0):
+            calls.append(command)
+            self.assertEqual(command, ["pacman", "-Qoq", "/usr/share/applications/spotify.desktop"])
+            return "spotify"
+
+        with mock.patch.object(manager, "command_output", side_effect=fake_output):
+            self.assertEqual(manager.pacman_owner(Path("/usr/share/applications/spotify.desktop")), "spotify")
+
+        self.assertEqual(calls, [["pacman", "-Qoq", "/usr/share/applications/spotify.desktop"]])
+
+    def test_package_owner_looks_through_shell_wrapper(self):
+        app = {
+            "id": "wrapped-app.desktop",
+            "desktop_file": "/usr/local/share/applications/wrapped-app.desktop",
+            "exec": "bash -c 'spotify --uri=%u'",
+            "source": "system",
+        }
+
+        def fake_owner(path):
+            if str(path) == "/usr/bin/spotify":
+                return "spotify"
+            return ""
+
+        with mock.patch.object(manager, "pacman_owner", side_effect=fake_owner), mock.patch.object(manager.shutil, "which", side_effect=lambda name: "/usr/bin/spotify" if name == "spotify" else None):
+            self.assertEqual(manager.package_owner(app), "spotify")
 
     def test_main_list_action_is_import_safe_and_returns_zero(self):
         with mock.patch.object(manager, "list_apps", return_value={"apps": [], "total": 0, "user_count": 0, "system_count": 0}), mock.patch("builtins.print"):

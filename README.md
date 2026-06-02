@@ -1,7 +1,6 @@
 <div align="center">
 
-# AstreaOS
+<img src="https://raw.githubusercontent.com/agonyG4/AstreaOS/main/gitpage/logo/AstreaOS_landwhite.png" width="420">
 
 AstreaOS is a Linux distribution based on Arch Linux, designed to deliver a premium, elegant, and high-performance desktop experience.
-
 </div>

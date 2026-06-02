@@ -28,9 +28,11 @@ Item {
         property int   sz:   18
 
         width: sz; height: sz
+        sourceSize: Qt.size(sz, sz)
         fillMode: Image.PreserveAspectFit
         smooth: true; mipmap: true
         anchors.verticalCenter: parent?.verticalCenter
+        opacity: 0.95
         layer.enabled: true; layer.smooth: true
         layer.effect: ColorOverlay {
             color: ctrlIconBase.tint

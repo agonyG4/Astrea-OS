@@ -1,4 +1,5 @@
 MusicArtwork     1.0 MusicArtwork.qml
 MusicCompactBars 1.0 MusicCompactBars.qml
+MusicMode        1.0 MusicMode.qml
 MusicMonitor     1.0 MusicMonitor.qml
 MusicView        1.0 MusicView.qml

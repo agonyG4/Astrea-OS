@@ -48,8 +48,8 @@ ColumnLayout {
 
                 UI.TextLabel {
                     property int diff: (weatherData && weatherData.temp_history_avg !== undefined && weatherData.temp_history_avg !== null) ? (weatherData.temp - weatherData.temp_history_avg) : 0
-                    text: diff === 0 ? "Na média." :
-                          Math.abs(diff) + "° " + (diff > 0 ? "acima" : "abaixo")
+                    text: diff === 0 ? AstreaI18n.I18n.tr("apps.weather.ui.components.sections.temperature_trend.text.on_average", "On average.") :
+                          Math.abs(diff) + "° " + (diff > 0 ? AstreaI18n.I18n.tr("apps.weather.ui.components.sections.temperature_trend.text.above", "above") : AstreaI18n.I18n.tr("apps.weather.ui.components.sections.temperature_trend.text.below", "below"))
                     font.pixelSize: UI.Theme.fontSizeLarge
                     textColor: UI.Theme.textPrimary
                     elide: Text.ElideRight

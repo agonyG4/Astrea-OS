@@ -1,3 +1,6 @@
 IslandConfig     1.0 IslandConfig.qml
+IslandGeometry   1.0 IslandGeometry.qml
+IslandInteraction 1.0 IslandInteraction.qml
 IslandModeRouter 1.0 IslandModeRouter.qml
 IslandProcesses  1.0 IslandProcesses.qml
+IslandState      1.0 IslandState.qml

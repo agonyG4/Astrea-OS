@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_path="$(realpath -- "${BASH_SOURCE[0]}")"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -d "$script_dir/../Apps" && -d "$script_dir/../System" ]]; then
+    default_root="$(realpath -- "$script_dir/..")"
+else
+    default_root="$HOME/.local/share/Astrea"
+fi
+
+export QML_XHR_ALLOW_FILE_READ=1
+export ASTREA_ROOT="${ASTREA_ROOT:-$default_root}"
+
+if [[ "${ASTREA_SETTINGS_DIRECT:-0}" != "1" ]] && command -v hyprctl >/dev/null 2>&1; then
+    launch_cmd="env ASTREA_SETTINGS_DIRECT=1 ASTREA_ROOT=${ASTREA_ROOT@Q} QML_XHR_ALLOW_FILE_READ=1 ${script_path@Q}"
+    if hyprctl dispatch "(function() local ws=hl.get_active_workspace(); return hl.dsp.exec_cmd([[$launch_cmd]], { workspace = ws and ws.id or nil }) end)()"; then
+        exit 0
+    fi
+fi
+
+exec quickshell -p "$ASTREA_ROOT/Apps/Settings/main.qml"

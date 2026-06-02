@@ -25,6 +25,11 @@ Item {
 
     Item {
         anchors.fill: parent
+        layer.enabled: true
+        layer.smooth: true
+        layer.effect: OpacityMask {
+            maskSource: artClipMask
+        }
         transform: Scale {
             origin.x: root.width / 2
             origin.y: root.height / 2
@@ -34,6 +39,7 @@ Item {
         Image {
             anchors.fill: parent
             source: root.artSource
+            sourceSize: Qt.size(Math.max(root.width, 96), Math.max(root.height, 96))
             fillMode: Image.PreserveAspectCrop
             smooth: true
             mipmap: true
@@ -41,8 +47,6 @@ Item {
             asynchronous: true
             opacity: source === "" || status === Image.Loading ? 0 : 1
             Behavior on opacity { NumberAnimation { duration: 150 } }
-            layer.enabled: true
-            layer.effect: OpacityMask { maskSource: artClipMask }
         }
     }
 

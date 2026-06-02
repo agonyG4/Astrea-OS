@@ -2,6 +2,7 @@ import Quickshell
 import Quickshell.Wayland
 import QtQuick
 import "../../components"
+import "../../AstreaComponents" as UI
 
 Item {
     id: root
@@ -62,14 +63,22 @@ Item {
                     width: Math.min(Math.max(220, appRow.implicitWidth + 34), parent.width - 120)
                     height: 116
                     radius: 26
-                    color: "#80323232"
-                    border.color: "#30FFFFFF"
+                    color: UI.Theme.windowBackground
+                    border.color: UI.Theme.windowBorder
                     border.width: 1
                     clip: true
 
                     scale: root.open ? 1 : 0.96
                     opacity: root.open ? 1 : 0
 
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: parent.radius
+                        color: UI.Theme.windowWash
+                        visible: UI.Theme.windowWash.a > 0
+                    }
+
+                    Behavior on color { ColorAnimation { duration: UI.Theme.animationFast; easing.type: Easing.OutCubic } }
                     Behavior on scale { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
                     Behavior on opacity { NumberAnimation { duration: 90 } }
 
@@ -84,26 +93,42 @@ Item {
                             delegate: Rectangle {
                                 required property int index
                                 required property var modelData
+                                readonly property bool selected: index === root.controller.currentIndex
 
                                 width: 92
                                 height: 92
                                 radius: 22
-                                color: index === root.controller.currentIndex ? "#347DFF" : "transparent"
-                                border.color: index === root.controller.currentIndex ? "#88FFFFFF" : "transparent"
-                                border.width: 1
-                                scale: index === root.controller.currentIndex ? 1.06 : 1.0
+                                color: "transparent"
 
-                                Behavior on color { ColorAnimation { duration: 90 } }
-                                Behavior on scale { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: parent.radius
+                                    color: selected
+                                        ? Qt.rgba(UI.Theme.accent.r, UI.Theme.accent.g, UI.Theme.accent.b, UI.Theme.isLight ? 0.20 : 0.28)
+                                        : "transparent"
+                                    border.color: selected
+                                        ? Qt.rgba(UI.Theme.accent.r, UI.Theme.accent.g, UI.Theme.accent.b, UI.Theme.isLight ? 0.34 : 0.46)
+                                        : "transparent"
+                                    border.width: 1
+                                    scale: selected ? 1.06 : 1.0
+
+                                    Behavior on color { ColorAnimation { duration: 90 } }
+                                    Behavior on scale { NumberAnimation { duration: 90; easing.type: Easing.OutCubic } }
+                                }
 
                                 AppIcon {
                                     anchors.centerIn: parent
-                                    width: 74
-                                    height: 74
+                                    width: selected ? 84 : 72
+                                    height: width
                                     entry: modelData
-                                    fallbackRadius: 18
-                                    fallbackColor: "#24FFFFFF"
+                                    iconRadius: selected ? 18 : 15
+                                    fallbackRadius: iconRadius
+                                    fallbackColor: UI.Theme.cardBg
                                     fallbackFontSize: 27
+                                    showFallbackText: !modelData.hideIconFallback
+
+                                    Behavior on width { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
+                                    Behavior on iconRadius { NumberAnimation { duration: 110; easing.type: Easing.OutCubic } }
                                 }
 
                                 MouseArea {
