@@ -80,7 +80,7 @@ pub fn run_search(args: &[String]) -> Result<(), String> {
             .collect()
     } else {
         let mut local_entries = Vec::new();
-        search_dir_recursive(dir, show_hidden, &query, 0, &mut local_entries)?;
+        search_dir_recursive(dir, dir, show_hidden, &query, 0, &mut local_entries)?;
         local_entries
     };
     sort_entries_in_place(&mut entries, sort_field, sort_asc, folders_first);
@@ -186,6 +186,7 @@ fn entry_from_remote_dir_item(
 }
 
 fn search_dir_recursive(
+    root: &Path,
     dir: &Path,
     show_hidden: bool,
     query: &str,
@@ -233,12 +234,51 @@ fn search_dir_recursive(
             out.push(entry_from_parts(name, &path, meta, is_dir, is_hidden));
         }
 
-        if should_descend && depth < SEARCH_MAX_DEPTH {
-            let _ = search_dir_recursive(&path, show_hidden, query, depth + 1, out);
+        if should_descend && depth < SEARCH_MAX_DEPTH && !should_prune_search_dir(root, &path) {
+            let _ = search_dir_recursive(root, &path, show_hidden, query, depth + 1, out);
         }
     }
 
     Ok(())
+}
+
+fn should_prune_search_dir(root: &Path, path: &Path) -> bool {
+    if path == root || path_is_compat_runtime_dir(root) {
+        return false;
+    }
+    path_is_compat_runtime_dir(path)
+}
+
+fn path_is_compat_runtime_dir(path: &Path) -> bool {
+    path_has_component_suffix(path, &["drive_c", "windows"])
+        || (path_has_proton_runtime_hint(path)
+            && (path_has_component_suffix(path, &["files", "lib", "wine"])
+                || path_has_component_suffix(path, &["files", "share", "default_pfx"])))
+}
+
+fn path_has_component_suffix(path: &Path, suffix: &[&str]) -> bool {
+    let components: Vec<_> = path
+        .components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .collect();
+    components.len() >= suffix.len()
+        && components[components.len() - suffix.len()..]
+            .iter()
+            .zip(suffix.iter())
+            .all(|(component, expected)| component.eq_ignore_ascii_case(expected))
+}
+
+fn path_has_proton_runtime_hint(path: &Path) -> bool {
+    path.components()
+        .filter_map(|component| component.as_os_str().to_str())
+        .any(|component| {
+            let lower = component.to_ascii_lowercase();
+            lower == "proton"
+                || lower.starts_with("proton-")
+                || lower.starts_with("ge-proton")
+                || lower == "umu-default"
+                || lower == "umu"
+        })
 }
 
 fn entry_from_parts(
@@ -615,7 +655,7 @@ mod tests {
         symlink(root.join("real_dir"), root.join("dir_link")).unwrap();
 
         let mut entries = Vec::new();
-        search_dir_recursive(&root, true, "hidden_match", 0, &mut entries).unwrap();
+        search_dir_recursive(&root, &root, true, "hidden_match", 0, &mut entries).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert!(entries[0].path.ends_with("real_dir/hidden_match.txt"));
@@ -636,10 +676,121 @@ mod tests {
         symlink(root.join("real_dir"), root.join("dir_link")).unwrap();
 
         let mut entries = Vec::new();
-        search_dir_recursive(&root, true, "dir_link", 0, &mut entries).unwrap();
+        search_dir_recursive(&root, &root, true, "dir_link", 0, &mut entries).unwrap();
 
         assert_eq!(entries.len(), 1);
         assert!(entries[0].is_dir);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recursive_search_prunes_compat_runtime_noise_from_parent_search() {
+        let root = std::env::temp_dir().join(format!(
+            "astrea-search-compat-prune-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let real = root.join("Steam");
+        let compat_system32 = root.join("Games/Proton/drive_c/windows/system32");
+        let compat_wine = root.join("Downloads/GE-Proton/files/lib/wine/x86_64-windows");
+        let compat_default_pfx =
+            root.join("Downloads/GE-Proton/files/share/default_pfx/drive_c/windows/system32");
+        fs::create_dir_all(&real).unwrap();
+        fs::create_dir_all(&compat_system32).unwrap();
+        fs::create_dir_all(&compat_wine).unwrap();
+        fs::create_dir_all(&compat_default_pfx).unwrap();
+        fs::write(real.join("steam.exe"), "real").unwrap();
+        fs::write(compat_system32.join("steam.exe"), "compat").unwrap();
+        fs::write(compat_wine.join("steam.exe"), "compat").unwrap();
+        fs::write(compat_default_pfx.join("steam.exe"), "compat").unwrap();
+
+        let mut entries = Vec::new();
+        search_dir_recursive(&root, &root, true, "steam.exe", 0, &mut entries).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].path.ends_with("Steam/steam.exe"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recursive_search_does_not_prune_generic_files_lib_wine_project() {
+        let root = std::env::temp_dir().join(format!(
+            "astrea-search-generic-wine-test-{}",
+            std::process::id()
+        ));
+        let generic_wine = root.join("project/files/lib/wine");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&generic_wine).unwrap();
+        fs::write(generic_wine.join("steam.exe"), "source").unwrap();
+
+        let mut entries = Vec::new();
+        search_dir_recursive(&root, &root, true, "steam.exe", 0, &mut entries).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert!(
+            entries[0]
+                .path
+                .ends_with("project/files/lib/wine/steam.exe")
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recursive_search_does_not_prune_proton_named_non_runtime_project() {
+        let root = std::env::temp_dir().join(format!(
+            "astrea-search-protonmail-project-test-{}",
+            std::process::id()
+        ));
+        let project_wine = root.join("protonmail-tool/files/lib/wine");
+        let project_pfx = root.join("protonmail-tool/files/share/default_pfx");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&project_wine).unwrap();
+        fs::create_dir_all(&project_pfx).unwrap();
+        fs::write(project_wine.join("steam.exe"), "source").unwrap();
+        fs::write(project_pfx.join("steam-helper.exe"), "source").unwrap();
+
+        let mut entries = Vec::new();
+        search_dir_recursive(&root, &root, true, "steam", 0, &mut entries).unwrap();
+
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().any(|entry| {
+            entry
+                .path
+                .ends_with("protonmail-tool/files/lib/wine/steam.exe")
+        }));
+        assert!(entries.iter().any(|entry| {
+            entry
+                .path
+                .ends_with("protonmail-tool/files/share/default_pfx/steam-helper.exe")
+        }));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn recursive_search_allows_explicit_compat_runtime_root() {
+        let root = std::env::temp_dir().join(format!(
+            "astrea-search-compat-explicit-test-{}",
+            std::process::id()
+        ));
+        let compat_root = root.join("Games/Proton/drive_c/windows");
+        let compat_system32 = compat_root.join("system32");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&compat_system32).unwrap();
+        fs::write(compat_system32.join("steam.exe"), "compat").unwrap();
+
+        let mut entries = Vec::new();
+        search_dir_recursive(
+            &compat_root,
+            &compat_root,
+            true,
+            "steam.exe",
+            0,
+            &mut entries,
+        )
+        .unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].path.ends_with("system32/steam.exe"));
         let _ = fs::remove_dir_all(root);
     }
 }
