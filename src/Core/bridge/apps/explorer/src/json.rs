@@ -27,6 +27,13 @@ pub fn escape(s: &str) -> String {
     out
 }
 
+fn push_percent_encoded_byte(out: &mut String, byte: u8) {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    out.push('%');
+    out.push(HEX[(byte >> 4) as usize] as char);
+    out.push(HEX[(byte & 0x0f) as usize] as char);
+}
+
 #[cfg(unix)]
 pub fn file_url(path: &std::path::Path) -> String {
     use std::os::unix::ffi::OsStrExt;
@@ -37,7 +44,7 @@ pub fn file_url(path: &std::path::Path) -> String {
             b'/' | b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
                 out.push(byte as char)
             }
-            _ => out.push_str(&format!("%{byte:02X}")),
+            _ => push_percent_encoded_byte(&mut out, byte),
         }
     }
     out
@@ -48,10 +55,17 @@ pub fn file_url(path: &std::path::Path) -> String {
     let mut out = String::from("file://");
     for byte in path.to_string_lossy().as_bytes() {
         match *byte {
-            b'/' | b'\\' | b':' | b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                out.push(*byte as char)
-            }
-            _ => out.push_str(&format!("%{byte:02X}")),
+            b'/'
+            | b'\\'
+            | b':'
+            | b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'.'
+            | b'_'
+            | b'~' => out.push(*byte as char),
+            _ => push_percent_encoded_byte(&mut out, *byte),
         }
     }
     out

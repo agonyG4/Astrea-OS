@@ -3,9 +3,14 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 use crate::entries;
 use crate::json;
+
+const WARM_THUMBNAIL_THREADS: usize = 4;
+
+static CACHE_DIR: OnceLock<Result<PathBuf, String>> = OnceLock::new();
 
 pub fn run_warm(args: &[String]) -> Result<(), String> {
     let (dir, show_hidden, sort_field, sort_asc, folders_first) = entries::parse_list_args(args)?;
@@ -32,14 +37,20 @@ pub fn run_warm(args: &[String]) -> Result<(), String> {
         .take(limit)
         .collect();
 
-    let warmed = targets
-        .into_par_iter()
-        .filter(|e| {
-            let p = PathBuf::from(&e.path);
-            let out = cache.join(format!("{}.png", cache_key(&p, e.modified_ms)));
-            out.exists() || gen_thumbnail(&p, &out).is_ok()
-        })
-        .count();
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(WARM_THUMBNAIL_THREADS)
+        .build()
+        .map_err(|e| format!("thumbnail worker pool: {e}"))?;
+    let warmed = pool.install(|| {
+        targets
+            .into_par_iter()
+            .filter(|e| {
+                let p = PathBuf::from(&e.path);
+                let out = cache.join(format!("{}.png", cache_key(&p, e.modified_ms)));
+                out.exists() || gen_thumbnail(&p, &out).is_ok()
+            })
+            .count()
+    });
 
     println!("{warmed}");
     Ok(())
@@ -83,8 +94,12 @@ pub fn is_svg(path: &Path) -> bool {
 }
 
 fn cache_dir() -> Result<PathBuf, String> {
-    Ok(PathBuf::from(env::var("HOME").map_err(|_| "HOME not set")?)
-        .join(".cache/explorer/thumbnails"))
+    CACHE_DIR
+        .get_or_init(|| {
+            Ok(PathBuf::from(env::var("HOME").map_err(|_| "HOME not set")?)
+                .join(".cache/explorer/thumbnails"))
+        })
+        .clone()
 }
 
 fn cache_key(path: &Path, modified_ms: i64) -> String {
@@ -127,27 +142,25 @@ fn gen_thumbnail(input: &Path, out: &Path) -> Result<(), String> {
             ])
             .arg(&tmp)
             .status(),
-        Some("image") if ext == "svg" => Command::new("magick")
-            .args([
-                "-background",
-                "none",
-                "-density",
-                svg_preview_density(input),
-            ])
-            .arg(input)
-            .args([
-                "-filter",
-                "Lanczos",
-                "-define",
-                &format!("filter:blur={}", svg_filter_blur(input)),
-                "-resize",
-                svg_preview_size(input),
-                "-alpha",
-                "Set",
-                "-strip",
-            ])
-            .arg(&tmp)
-            .status(),
+        Some("image") if ext == "svg" => {
+            let svg_params = svg_preview_params(input);
+            Command::new("magick")
+                .args(["-background", "none", "-density", svg_params.density])
+                .arg(input)
+                .args([
+                    "-filter",
+                    "Lanczos",
+                    "-define",
+                    &format!("filter:blur={}", svg_params.filter_blur),
+                    "-resize",
+                    svg_params.size,
+                    "-alpha",
+                    "Set",
+                    "-strip",
+                ])
+                .arg(&tmp)
+                .status()
+        }
         _ => Command::new("magick")
             .arg(input)
             .args([
@@ -207,20 +220,26 @@ fn is_small_svg(path: &Path) -> bool {
     width > 0 && height > 0 && width <= 64 && height <= 64
 }
 
-fn svg_preview_density(path: &Path) -> &'static str {
-    if is_small_svg(path) { "512" } else { "384" }
+struct SvgPreviewParams {
+    density: &'static str,
+    size: &'static str,
+    filter_blur: &'static str,
 }
 
-fn svg_preview_size(path: &Path) -> &'static str {
+fn svg_preview_params(path: &Path) -> SvgPreviewParams {
     if is_small_svg(path) {
-        "768x768"
+        SvgPreviewParams {
+            density: "512",
+            size: "768x768",
+            filter_blur: "0.85",
+        }
     } else {
-        "512x512"
+        SvgPreviewParams {
+            density: "384",
+            size: "512x512",
+            filter_blur: "0.92",
+        }
     }
-}
-
-fn svg_filter_blur(path: &Path) -> &'static str {
-    if is_small_svg(path) { "0.85" } else { "0.92" }
 }
 
 #[cfg(test)]
@@ -230,10 +249,8 @@ mod tests {
 
     #[test]
     fn preview_url_percent_encodes_local_image_paths() {
-        let root = std::env::temp_dir().join(format!(
-            "astrea-preview-url-test-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("astrea-preview-url-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         let path = root.join("img # one.png");
