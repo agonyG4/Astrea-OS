@@ -151,7 +151,7 @@ Scope {
             }
 
             Item {
-                width: trayComp.width > 0 ? 8 : 0
+                width: trayComp.width > 0 ? Theme.spacingTiny : 0
                 height: bar.pillHeight
             }
 

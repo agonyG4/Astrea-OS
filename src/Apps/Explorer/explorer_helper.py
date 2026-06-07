@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import datetime
 import json
 import os
 import select
@@ -16,6 +17,7 @@ import tempfile
 import time
 import urllib.parse
 import zipfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -209,6 +211,217 @@ def parse_desktop_entry(path: Path) -> dict[str, object] | None:
         "no_display": no_display,
         "terminal": _truthy_desktop_value(values.get("Terminal")),
     }
+
+
+PREVIEWABLE_RECENT_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".avif",
+    ".heic", ".heif", ".tiff", ".tif",
+}
+
+
+def _file_url(path: Path) -> str:
+    return "file://" + urllib.parse.quote(str(path), safe="/")
+
+
+def _unix_millis_from_stat(path: Path) -> int:
+    try:
+        return int(path.stat().st_mtime * 1000)
+    except OSError:
+        return 0
+
+
+def _unix_millis_from_iso8601(value: str | None) -> int:
+    if not value:
+        return 0
+    try:
+        normalized = value.replace("Z", "+00:00")
+        return int(datetime.datetime.fromisoformat(normalized).timestamp() * 1000)
+    except Exception:
+        return 0
+
+
+def _safe_int(value: object, default: int = 0) -> int:
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
+def _recent_file_kind(path: Path, is_dir: bool) -> str:
+    if is_dir:
+        return "Pasta"
+    suffix = path.suffix.lstrip(".")
+    return suffix.upper() if suffix else "Arquivo"
+
+
+def _recent_item_from_path(path: Path, last_accessed: int | None = None, *, kind: str = "") -> dict[str, object] | None:
+    path = path.expanduser()
+    if not _path_exists(path):
+        return None
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    is_dir = path.is_dir()
+    executable = bool(stat.st_mode & 0o111) and not is_dir
+    preview_url = _file_url(path) if (not is_dir and path.suffix.lower() in PREVIEWABLE_RECENT_EXTENSIONS) else ""
+    return {
+        "fileName": path.name or str(path),
+        "filePath": str(path),
+        "fileUrl": _file_url(path),
+        "fileIsDir": is_dir,
+        "fileExecutable": executable,
+        "fileHidden": path.name.startswith("."),
+        "fileSize": 0 if is_dir else stat.st_size,
+        "fileModified": int(stat.st_mtime * 1000),
+        "fileKind": kind or _recent_file_kind(path, is_dir),
+        "filePreviewUrl": preview_url,
+        "lastAccessed": int(last_accessed or _unix_millis_from_stat(path)),
+        "recentSource": "finder",
+    }
+
+
+def _resolve_desktop_file(desktop_id: str) -> Path | None:
+    candidate = Path(desktop_id).expanduser()
+    if candidate.is_file():
+        return candidate
+    file_name = desktop_id if desktop_id.endswith(".desktop") else f"{desktop_id}.desktop"
+    for directory in _application_dirs():
+        path = directory / file_name
+        if path.is_file():
+            return path
+    return None
+
+
+def _desktop_recent_item(desktop_file: Path, last_accessed: int) -> dict[str, object] | None:
+    parsed = parse_desktop_entry(desktop_file)
+    if not parsed:
+        return None
+    item = _recent_item_from_path(desktop_file, last_accessed, kind="Aplicativo")
+    if not item:
+        return None
+    item["fileName"] = str(parsed.get("name") or desktop_file.stem)
+    item["fileExecutable"] = True
+    item["filePreviewUrl"] = ""
+    item["recentSource"] = "launch"
+    return item
+
+
+def _desktop_file_from_launch_record(record: dict[str, object]) -> Path | None:
+    for arg in record.get("argv") or []:
+        if isinstance(arg, str) and arg.endswith(".desktop"):
+            path = Path(arg).expanduser()
+            if path.is_file():
+                return path
+    target = str(record.get("target") or "")
+    return _resolve_desktop_file(target) if target else None
+
+
+def _iter_launch_history_items(history_path: Path, limit: int) -> list[dict[str, object]]:
+    if not history_path.is_file():
+        return []
+    records: list[dict[str, object]] = []
+    seen_paths: set[str] = set()
+    try:
+        lines = history_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    for line in reversed(lines):
+        if len(seen_paths) >= limit:
+            break
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if record.get("status") != "ok":
+            continue
+        timestamp = _safe_int(record.get("timestamp_ms"), 0)
+        kind = record.get("kind")
+        item = None
+        if kind == "file":
+            target = str(record.get("target") or "")
+            if target:
+                item = _recent_item_from_path(Path(target), timestamp)
+        elif kind == "desktop":
+            desktop_file = _desktop_file_from_launch_record(record)
+            if desktop_file:
+                item = _desktop_recent_item(desktop_file, timestamp)
+        if item:
+            item_path = str(item.get("filePath") or "")
+            if not item_path or item_path in seen_paths:
+                continue
+            item["recentSource"] = "launch"
+            records.append(item)
+            seen_paths.add(item_path)
+    return records
+
+
+def _iter_xbel_recent_items(xbel_path: Path, limit: int) -> list[dict[str, object]]:
+    if not xbel_path.is_file():
+        return []
+    try:
+        root = ET.parse(xbel_path).getroot()
+    except Exception:
+        return []
+    items: list[dict[str, object]] = []
+    for bookmark in root.findall("{*}bookmark"):
+        href = bookmark.attrib.get("href", "")
+        if not href.startswith("file://"):
+            continue
+        path = Path(urllib.parse.unquote(urllib.parse.urlparse(href).path))
+        timestamp = max(
+            _unix_millis_from_iso8601(bookmark.attrib.get("visited")),
+            _unix_millis_from_iso8601(bookmark.attrib.get("modified")),
+            _unix_millis_from_iso8601(bookmark.attrib.get("added")),
+        )
+        item = _recent_item_from_path(path, timestamp)
+        if item:
+            item["recentSource"] = "xbel"
+            items.append(item)
+    return sorted(items, key=lambda item: _safe_int(item.get("lastAccessed"), 0), reverse=True)[:limit]
+
+
+def _load_finder_recent_items(path: Path) -> list[dict[str, object]]:
+    if not path.is_file():
+        return []
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    items = []
+    for item in parsed:
+        if isinstance(item, dict):
+            item.setdefault("recentSource", "finder")
+            items.append(item)
+    return items
+
+
+def _merge_recent_items(*sources: list[dict[str, object]], limit: int = 60) -> list[dict[str, object]]:
+    merged: dict[str, dict[str, object]] = {}
+    for source in sources:
+        for item in source:
+            path = str(item.get("filePath") or "")
+            if not path:
+                continue
+            timestamp = _safe_int(item.get("lastAccessed"), 0)
+            existing = merged.get(path)
+            if not existing or timestamp >= _safe_int(existing.get("lastAccessed"), 0):
+                merged[path] = item
+    return sorted(merged.values(), key=lambda item: _safe_int(item.get("lastAccessed"), 0), reverse=True)[:limit]
+
+
+def merged_recents(finder_path_text: str, launch_history_text: str, xbel_path_text: str, limit: int = 60) -> list[dict[str, object]]:
+    finder_path = Path(finder_path_text).expanduser()
+    launch_history = Path(launch_history_text).expanduser()
+    xbel_path = Path(xbel_path_text).expanduser()
+    return _merge_recent_items(
+        _load_finder_recent_items(finder_path),
+        _iter_launch_history_items(launch_history, limit),
+        _iter_xbel_recent_items(xbel_path, limit),
+        limit=limit,
+    )
 
 
 def _application_dirs() -> list[Path]:
@@ -513,6 +726,10 @@ def _list_tar_entries(archive_path: Path) -> list[dict[str, object]]:
     return entries
 
 
+def _is_tar_archive(archive_path: Path) -> bool:
+    return archive_path.name.lower().endswith((".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz", ".txz"))
+
+
 def _list_archive_entries(archive_path: Path, password: str | None = None, which_runner=shutil.which) -> list[object]:
     lower = archive_path.name.lower()
     if lower.endswith(".zip"):
@@ -695,6 +912,66 @@ def _build_extract_command(base_cmd: list[str], destination: Path, password: str
     return base_cmd + [str(destination)]
 
 
+def _apply_tar_metadata(target: Path, member: tarfile.TarInfo) -> None:
+    if member.mode is not None:
+        try:
+            os.chmod(target, member.mode & 0o777)
+        except OSError:
+            pass
+    try:
+        os.utime(target, (member.mtime, member.mtime))
+    except OSError:
+        pass
+
+
+def _extract_tar_archive_streaming(
+    archive_path: Path,
+    destination: Path,
+    start_time: float,
+    now,
+) -> tuple[int, int]:
+    done = 0
+    bytes_done = 0
+
+    with tarfile.open(archive_path, mode="r|*") as archive:
+        for member in archive:
+            validate_archive_entries([member.name])
+            try:
+                filtered = tarfile.data_filter(member, str(destination))
+            except tarfile.FilterError as exc:
+                raise ValueError(str(exc)) from exc
+            if filtered is None:
+                continue
+
+            target = destination / filtered.name
+            if filtered.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                _apply_tar_metadata(target, filtered)
+                continue
+
+            if filtered.isfile():
+                source = archive.extractfile(member)
+                if source is None:
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with source, target.open("wb") as output:
+                    while True:
+                        chunk = source.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        output.write(chunk)
+                        bytes_done += len(chunk)
+                _apply_tar_metadata(target, filtered)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                archive.extract(member, str(destination), filter="data")
+
+            done += 1
+            _json_event(_archive_progress_payload("extract", done, 0, start_time, now, bytes_done, 0))
+
+    return done, bytes_done
+
+
 def _called_process_error_code(exc: subprocess.CalledProcessError) -> str:
     output = ""
     for value in (getattr(exc, "stdout", None), getattr(exc, "stderr", None)):
@@ -811,6 +1088,35 @@ def extract_archive(
     try:
         destination, backup = _prepare_extract_destination(parent, folder_name or archive_path.name, conflict_policy)
         destination_preexisting = _path_exists(destination)
+        if run_cmd is None and list_runner is None and _is_tar_archive(archive_path):
+            destination.mkdir(parents=True, exist_ok=True)
+            _json_event({
+                "event": "start",
+                "mode": "extract",
+                "name": archive_path.name,
+                "destination": str(destination),
+                "total": 0,
+                "bytes_total": 0,
+            })
+            done, bytes_done = _extract_tar_archive_streaming(archive_path, destination, start_time, now)
+            total = done
+            total_bytes = bytes_done
+            _json_event(_archive_progress_payload("extract", done, total, start_time, now, bytes_done, total_bytes))
+            _json_event({
+                "event": "done",
+                "mode": "extract",
+                "destination": str(destination),
+                "done": done,
+                "total": total,
+                "percent": 100,
+                "eta_seconds": 0,
+                "eta_text": _format_eta(0),
+                "bytes_done": bytes_done,
+                "bytes_total": total_bytes,
+            })
+            _finish_extract_backup(backup)
+            return
+
         entries = entry_lister(archive_path, password, which_runner)
         entry_names = [_archive_entry_name(entry) for entry in entries]
         total = max(0, len(entry_names))
@@ -1302,6 +1608,12 @@ def parse_args() -> argparse.Namespace:
     desktop_shortcut_cmd = sub.add_parser("create-desktop-shortcut")
     desktop_shortcut_cmd.add_argument("path")
 
+    merged_recents_cmd = sub.add_parser("merged-recents")
+    merged_recents_cmd.add_argument("finder_recents")
+    merged_recents_cmd.add_argument("launch_history")
+    merged_recents_cmd.add_argument("xbel_recents")
+    merged_recents_cmd.add_argument("--limit", type=int, default=60)
+
     open_with_cmd = sub.add_parser("open-with-apps")
     open_with_cmd.add_argument("path")
     launch_with_cmd = sub.add_parser("launch-open-with")
@@ -1347,6 +1659,14 @@ def main() -> None:
         compress_folder(args.folder_path, args.archive_format)
     elif args.command == "create-desktop-shortcut":
         print(json.dumps(create_desktop_shortcut(args.path), ensure_ascii=False), flush=True)
+    elif args.command == "merged-recents":
+        print(
+            json.dumps(
+                merged_recents(args.finder_recents, args.launch_history, args.xbel_recents, args.limit),
+                ensure_ascii=False,
+            ),
+            flush=True,
+        )
     elif args.command == "open-with-apps":
         print(json.dumps(open_with_apps(args.path), ensure_ascii=False), flush=True)
     elif args.command == "launch-open-with":

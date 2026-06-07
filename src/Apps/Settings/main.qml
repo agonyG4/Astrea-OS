@@ -57,6 +57,7 @@ ApplicationWindow {
         "pages/display/Island.qml",
         "pages/system/Storage.qml",
         "pages/system/Components.qml",
+        "pages/system/Services.qml",
         "pages/gaming/Compatibility.qml"
     ]
 
@@ -97,9 +98,10 @@ ApplicationWindow {
                     items: [
                         { label: "Language", sublabel: "Language, region and locale preferences", pageIndex: 2,  sym: "\uf1ab", iconKey: "" },
                         { label: "Apps",     sublabel: "Installed applications and defaults",      pageIndex: 4,  sym: "",       iconKey: "apps" },
-                        { label: "Compatibilidade", sublabel: "Windows executables, Wine/Proton runner and wrappers", pageIndex: 16, sym: "\uf17a", iconKey: "" },
+                        { label: "Compatibilidade", sublabel: "Windows executables, Wine/Proton runner and wrappers", pageIndex: 17, sym: "\uf17a", iconKey: "" },
                         { label: "Storage",    sublabel: "Disk usage and cleanup options",           pageIndex: 14, sym: "\uf1c0", iconKey: "" },
-                        { label: "Components", sublabel: "Desktop, topbar and shell component toggles", pageIndex: 15, sym: "\uf0e8", iconKey: "" }
+                        { label: "Components", sublabel: "Desktop, topbar and shell component toggles", pageIndex: 15, sym: "\uf0e8", iconKey: "" },
+                        { label: "Services",   sublabel: "Astrea background services and startup units", pageIndex: 16, sym: "\uf085", iconKey: "" }
                     ]
                 }
             ]
@@ -163,6 +165,7 @@ ApplicationWindow {
         ListElement { kind: "page";   label: "Bluetooth";       labelKey: "settings.nav.bluetooth";       sym: "";       iconSource: ""; iconKey: "bluetooth";       pageIndex: 9;    sectionKey: ""; parentSection: ""; expanded: false }
         ListElement { kind: "page";   label: "Audio";           labelKey: "settings.nav.audio";           sym: "";       iconSource: ""; iconKey: "audio";           pageIndex: 12;   sectionKey: ""; parentSection: ""; expanded: false }
         ListElement { kind: "page";   label: "Components";      labelKey: "";                            sym: "\uf0e8"; iconSource: ""; iconKey: "";                pageIndex: 15;   sectionKey: ""; parentSection: ""; expanded: false }
+        ListElement { kind: "page";   label: "Services";        labelKey: "";                            sym: "\uf085"; iconSource: ""; iconKey: "";                pageIndex: 16;   sectionKey: ""; parentSection: ""; expanded: false }
         ListElement { kind: "spacer"; label: "";                labelKey: "";                            sym: "";       iconSource: ""; iconKey: "";                pageIndex: -999; sectionKey: ""; parentSection: ""; expanded: false }
         ListElement { kind: "group";  label: "Desempenho";      labelKey: "";                            sym: "";       iconSource: ""; iconKey: "performance";     pageIndex: -100; sectionKey: ""; parentSection: ""; expanded: false }
         ListElement { kind: "group";  label: "Aparência";       labelKey: "";                            sym: "";       iconSource: ""; iconKey: "theme";           pageIndex: -101; sectionKey: ""; parentSection: ""; expanded: false }

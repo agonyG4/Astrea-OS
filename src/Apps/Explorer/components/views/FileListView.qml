@@ -49,7 +49,7 @@ Item {
     // ── Header column definitions (computed once) ──────────────────────────
     readonly property var columns: [
         { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.views.file_list_view.label.nome"]) || "Name"),                field: "name", flex: 2   },
-        { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.file_list.modified_date"]) || "Modification Date"), field: "date", flex: 1.5 },
+        { label: AppState.isRecentPath(AppState.currentPath) ? ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.file_list.opened_date"]) || "Opened") : ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["explorer.file_list.modified_date"]) || "Modification Date"), field: "date", flex: 1.5 },
         { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.views.file_list_view.label.tamanho"]) || "Size"),             field: "size", flex: 0.8 },
         { label: ((AstreaI18n.I18n.messages && AstreaI18n.I18n.messages["apps.explorer.components.views.file_list_view.label.tipo"]) || "Kind"),                field: "kind", flex: 1   },
     ]

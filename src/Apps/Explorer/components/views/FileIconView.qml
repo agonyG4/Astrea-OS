@@ -386,7 +386,7 @@ Item {
         ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
         // ── Tile metrics (computed once, read by every delegate) ───────────
-        readonly property var   absoluteTileWidths: [72, 90, 120, 160, 220]
+        readonly property var   absoluteTileWidths: [72, 90, 120, 160, 220, 300, 400]
         readonly property int   minimumTileWidth: compactLayout ? 76 : 88
         readonly property int   preferredTileWidth: {
             var baseWidth = AppState.isPortalDialog
@@ -396,15 +396,23 @@ Item {
         }
         readonly property int   columns: Math.max(1, Math.floor(width / preferredTileWidth))
         readonly property int   tileWidth: Math.max(minimumTileWidth, Math.floor(width / columns))
-        readonly property int   iconSize:   Math.round(tileWidth * (AppState.isPortalDialog ? 0.68 : 0.55))
-        readonly property var   iconDecodeSizes: [48, 64, 96, 128, 160]
+        readonly property var   thumbnailFillRatios: [0.55, 0.55, 0.55, 0.55, 0.55, 0.74, 0.78]
+        readonly property var   previewFillRatios: [0.82, 0.82, 0.82, 0.82, 0.86, 0.96, 0.98]
+        readonly property int   iconSize:   AppState.isPortalDialog
+                                            ? Math.round(tileWidth * 0.68)
+                                            : Math.round(tileWidth * thumbnailFillRatios[AppState.thumbnailLevel()])
+        readonly property var   iconDecodeSizes: [48, 64, 96, 128, 160, 256, 384]
         readonly property int   iconDecodeSize: AppState.isPortalDialog ? 96 : iconDecodeSizes[AppState.thumbnailLevel()]
-        readonly property int   previewReqSize: AppState.isPortalDialog ? 160 : 128
+        readonly property var   previewReqSizes: [128, 128, 160, 192, 256, 320, 384]
+        readonly property int   previewReqSize: AppState.isPortalDialog ? 160 : previewReqSizes[AppState.thumbnailLevel()]
         readonly property int   fontSize:   Math.round(11 + AppState.thumbnailLevel())
         readonly property int   textHeight: Math.round(fontSize * 1.4)
         readonly property int   tilePad:    compactLayout ? 2 : 3
+        readonly property int   iconTopPad: AppState.thumbnailLevel() >= 5 ? 6 : 8
+        readonly property int   labelTopGap: AppState.thumbnailLevel() >= 5 ? 14 : 6
+        readonly property int   labelBottomPad: AppState.thumbnailLevel() >= 5 ? 12 : 0
         readonly property int   hlWidth:    tileWidth  - tilePad * 2
-        readonly property int   hlHeight:   iconSize + textHeight + 14
+        readonly property int   hlHeight:   iconTopPad + iconSize + labelTopGap + textHeight + labelBottomPad
         readonly property int   tileHeight: hlHeight + tilePad * 2
 
         // ── Thumbnail warm-up ─────────────────────────────────────────────
@@ -578,7 +586,7 @@ Item {
                         readonly property bool   hasPreview: livePreviewUrl !== ""
                         property url    activePreviewUrl: livePreviewUrl
                         readonly property int    previewRequestSize: grid.previewReqSize
-                        readonly property int    previewDisplaySize: Math.min(grid.iconSize, Math.round(grid.iconSize * 0.82))
+                        readonly property int    previewDisplaySize: Math.min(grid.iconSize, Math.round(grid.iconSize * grid.previewFillRatios[AppState.thumbnailLevel()]))
                         readonly property int    dragPreviewSize: Math.max(48, Math.round(grid.iconSize * 0.78))
                         readonly property url    dragImageUrl: DragDropSupport.dragImageUrl(
                                                     hasPreview && activePreviewUrl ? activePreviewUrl : "",
@@ -613,7 +621,7 @@ Item {
                             id: iconSlot
                             width: grid.iconSize; height: grid.iconSize
                             x: Math.round((parent.width - width) / 2)
-                            y: hl.y + 8
+                            y: hl.y + grid.iconTopPad
 
                             Image {
                                 anchors.centerIn: parent
@@ -647,7 +655,7 @@ Item {
                             width: grid.hlWidth - 8
                             height: grid.textHeight
                             x: Math.round((parent.width - width) / 2)
-                            y: iconSlot.y + iconSlot.height + 6
+                            y: iconSlot.y + iconSlot.height + grid.labelTopGap
                             text: itemName
                             color: Theme.text
                             font { pixelSize: grid.fontSize; weight: Font.Normal }

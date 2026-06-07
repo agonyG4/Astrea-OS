@@ -8,6 +8,7 @@ SystemComponents.TopbarIndicator {
     property bool btOn:          false
     property string devicesJson: "[]"
     property bool scanning:      false
+    property bool showDeviceName: false
 
     // ── propriedades derivadas ────────────────────────────────────
     readonly property bool btPopupValid:    root.hostedPopup !== null
@@ -25,15 +26,16 @@ SystemComponents.TopbarIndicator {
         : ""
 
     spacing: 5
+    fixedWidth: 28
 
     Item {
-        width:  18
-        height: 18
+        width:  16
+        height: 16
 
         Rectangle {
             id: scanPulse
             anchors.centerIn: parent
-            width: 18; height: 18; radius: 9
+            width: 16; height: 16; radius: 8
             color:        "transparent"
             border.width: 1.5
             border.color: Qt.rgba(0.35, 0.65, 1, 0.7)
@@ -65,11 +67,11 @@ SystemComponents.TopbarIndicator {
     }
 
     Text {
-        visible: root.btOn && root.connectedCount > 0
+        visible: root.showDeviceName && root.btOn && root.connectedCount > 0
         text:    root.firstDeviceName
         color:   Theme.shellTextDim
         font { family: Theme.fontFamily; pixelSize: Theme.fontSizeCaption; weight: Font.Medium }
         elide: Text.ElideRight
-        width: Math.min(implicitWidth, 80)
+        width: visible ? Math.min(implicitWidth, 80) : 0
     }
 }

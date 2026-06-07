@@ -20,10 +20,10 @@ QtObject {
     readonly property string trashInfoPath: homePath + "/.local/share/Trash/info"
     readonly property string recentVirtualPath: "recent://"
     readonly property real minZoom: 0.75
-    readonly property real maxZoom: 1.7
+    readonly property real maxZoom: 2.0
     readonly property real thumbnailZoomThreshold: 1.15
-    readonly property var thumbnailColumnStops: [18, 14, 10, 7, 5]
-    readonly property var thumbnailScaleStops: [1.0, 1.08, 1.16, 1.26, 1.38]
+    readonly property var thumbnailColumnStops: [18, 14, 10, 7, 5, 4, 3]
+    readonly property var thumbnailScaleStops: [1.0, 1.08, 1.16, 1.26, 1.38, 1.65, 2.0]
     readonly property color themeSelected: Theme.selected
     readonly property color themeHover: Theme.hover
     property var scrollPositions: ({})

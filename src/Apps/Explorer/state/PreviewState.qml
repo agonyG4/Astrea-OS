@@ -591,16 +591,37 @@ QtObject {
         return (bytes / 1073741824).toFixed(2) + " GB"
     }
 
+    function padDatePart(value) {
+        return value < 10 ? "0" + value : String(value)
+    }
+
+    function formatAbsoluteDate(date) {
+        if (!(date instanceof Date) || isNaN(date.getTime())) return "—"
+        return padDatePart(date.getDate()) + "/" + padDatePart(date.getMonth() + 1) + "/" + date.getFullYear()
+    }
+
     function formatDate(date) {
         if (!date) return "—"
         if (typeof date === "number")
             date = new Date(date)
-        var diff = (new Date() - date) / 1000
+        else if (!(date instanceof Date))
+            date = new Date(date)
+        if (!(date instanceof Date) || isNaN(date.getTime())) return "—"
+
+        var now = new Date()
+        var today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        var itemDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+        var diffDays = Math.floor((today - itemDay) / 86400000)
+        if (diffDays < 0)
+            return formatAbsoluteDate(date)
+        if (diffDays > 1)
+            return formatAbsoluteDate(date)
+
+        var diff = (now - date) / 1000
         if (diff < 60) return "Agora"
         if (diff < 3600) return Math.floor(diff / 60) + " min atrás"
-        if (diff < 86400) return "Hoje, " + Qt.formatTime(date, "hh:mm")
-        if (diff < 172800) return "Ontem"
-        return Qt.formatDate(date, "d MMM yyyy")
+        if (diffDays === 0) return "Hoje, " + Qt.formatTime(date, "hh:mm")
+        return "Ontem"
     }
 
     function itemColor(name, hovered) {
@@ -630,7 +651,9 @@ QtObject {
         if (zoomLevel < 1.35) return 1
         if (zoomLevel < 1.45) return 2
         if (zoomLevel < 1.55) return 3
-        return 4
+        if (zoomLevel < 1.7) return 4
+        if (zoomLevel < 1.9) return 5
+        return 6
     }
 
     function thumbnailColumnCount() {
@@ -647,6 +670,10 @@ QtObject {
 
     function isWindowsExecutable(path) {
         return /\.(exe|msi)$/i.test(path || "")
+    }
+
+    function isDesktopLauncher(path) {
+        return /\.desktop$/i.test(path || "")
     }
 
     function isDirectExecutable(path) {
@@ -669,6 +696,14 @@ QtObject {
         if (!path)
             return
         directExecutableProcess.command = [app.astreaLaunch, "--file", path]
+        directExecutableProcess.running = false
+        directExecutableProcess.running = true
+    }
+
+    function openDesktopLauncher(path) {
+        if (!path)
+            return
+        directExecutableProcess.command = [app.astreaLaunch, "--desktop", path]
         directExecutableProcess.running = false
         directExecutableProcess.running = true
     }
@@ -716,6 +751,10 @@ QtObject {
         }
         if (isWindowsExecutable(path)) {
             openWindowsExecutable(path)
+            return
+        }
+        if (isDesktopLauncher(path)) {
+            openDesktopLauncher(path)
             return
         }
         if (isDirectExecutable(path)) {

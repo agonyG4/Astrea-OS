@@ -8,11 +8,14 @@ QtObject {
     property bool isExpanded: false
     property bool showCompactMusic: false
     property bool showGamemodeNotify: false
+    property bool showEmailCodeNotify: false
 
     readonly property bool isNotch: style === "Notch"
-    readonly property bool isExpandedOrNotify: isExpanded || showGamemodeNotify
+    readonly property bool isExpandedOrNotify: isExpanded || showGamemodeNotify || showEmailCodeNotify
 
     readonly property int width: {
+        if (showEmailCodeNotify)
+            return isNotch ? 310 : 300
         if (showGamemodeNotify)
             return isNotch ? 210 : 100
         if (!hasMusic)
@@ -25,6 +28,8 @@ QtObject {
     }
 
     readonly property int height: {
+        if (showEmailCodeNotify)
+            return 78
         if (showGamemodeNotify)
             return 100
         if (!hasMusic)
@@ -35,6 +40,8 @@ QtObject {
     }
 
     readonly property int radius: {
+        if (showEmailCodeNotify)
+            return 28
         if (showGamemodeNotify)
             return 32
         if (isExpanded)

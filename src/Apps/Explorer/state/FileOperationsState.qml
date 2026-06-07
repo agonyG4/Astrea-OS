@@ -392,7 +392,13 @@ QtObject {
                     archiveExtractionProgress = archiveExtractionPercent / 100
                     archiveExtractionRemainingText = String(evt.eta_text || "")
                     var v = archiveOperationMode === "compress" ? "Compactando" : "Extraindo"
-                    archiveExtractionStatus = v + "... " + archiveExtractionPercent + "%"
+                    if (archiveExtractionTotalCount > 0 || archiveExtractionPercent > 0) {
+                        archiveExtractionStatus = v + "... " + archiveExtractionPercent + "%"
+                    } else if (archiveExtractionDoneCount > 0) {
+                        archiveExtractionStatus = v + "... " + archiveExtractionDoneCount + " itens"
+                    } else {
+                        archiveExtractionStatus = v + "..."
+                    }
                     if (archiveExtractionRemainingText !== "")
                         archiveExtractionStatus += " · " + archiveExtractionRemainingText
                     return

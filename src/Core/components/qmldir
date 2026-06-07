@@ -27,6 +27,7 @@ ContextMenu 1.0 ContextMenu.qml
 ContextMenuAction 1.0 ContextMenuAction.qml
 ContextMenuDivider 1.0 ContextMenuDivider.qml
 ProgressCard 1.0 ProgressCard.qml
+NotificationClient 1.0 NotificationClient.qml
 TextLabel 1.0 TextLabel.qml
 DisplayLabel 1.0 DisplayLabel.qml
 Divider 1.0 Divider.qml

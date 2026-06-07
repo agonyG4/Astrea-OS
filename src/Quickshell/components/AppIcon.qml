@@ -10,7 +10,7 @@ Item {
     property int fallbackRadius: 6
     property int fallbackFontSize: Math.max(11, Math.round(Math.min(width, height) * 0.36))
     property bool showFallbackText: true
-    property int iconRadius: 0
+    property int iconRadius: Math.max(5, Math.round(Math.min(width || implicitWidth, height || implicitHeight) * 0.14))
     property int sourcePixelSize: 192
     property string fallbackIconName: ""
 

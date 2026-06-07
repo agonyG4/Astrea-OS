@@ -2,9 +2,9 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum OperationMode {
     Copy,
     Move,
@@ -19,7 +19,7 @@ impl OperationMode {
     }
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ConflictPolicy {
     Skip,
     Overwrite,
@@ -27,10 +27,16 @@ enum ConflictPolicy {
     KeepBoth,
 }
 
-#[derive(Clone, Copy, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum EventFormat {
     Legacy,
     Jsonl,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ProgressMode {
+    Items,
+    Bytes,
 }
 
 struct FileOpRequest {
@@ -38,7 +44,103 @@ struct FileOpRequest {
     destination: PathBuf,
     policy: ConflictPolicy,
     rename: String,
+    progress_mode: ProgressMode,
     sources: Vec<PathBuf>,
+}
+
+struct ProgressSource {
+    path: PathBuf,
+    bytes: u64,
+}
+
+struct ProgressPlan {
+    mode: ProgressMode,
+    sources: Vec<ProgressSource>,
+    total_bytes: Option<u64>,
+}
+
+struct ProgressEmitter {
+    format: EventFormat,
+    op_mode: OperationMode,
+    mode: ProgressMode,
+    done_items: usize,
+    total_items: usize,
+    done_bytes: u64,
+    total_bytes: Option<u64>,
+    last_percent: Option<usize>,
+    last_emit: Option<Instant>,
+    min_interval: Duration,
+}
+
+impl ProgressEmitter {
+    fn new(format: EventFormat, op_mode: OperationMode, plan: &ProgressPlan) -> Self {
+        Self {
+            format,
+            op_mode,
+            mode: plan.mode,
+            done_items: 0,
+            total_items: plan.sources.len(),
+            done_bytes: 0,
+            total_bytes: plan.total_bytes,
+            last_percent: None,
+            last_emit: None,
+            min_interval: Duration::from_millis(100),
+        }
+    }
+
+    fn current_percent(&self) -> usize {
+        match (self.mode, self.total_bytes) {
+            (ProgressMode::Bytes, Some(total)) => clamped_percent_u64(self.done_bytes, total),
+            _ => clamped_percent(self.done_items, self.total_items),
+        }
+    }
+
+    fn add_bytes(&mut self, bytes: u64, source: &Path) {
+        if self.mode != ProgressMode::Bytes || bytes == 0 {
+            return;
+        }
+        self.done_bytes = self.done_bytes.saturating_add(bytes);
+        self.maybe_emit(source);
+    }
+
+    fn finish_source(&mut self, source: &Path, expected_done_bytes: Option<u64>) {
+        self.done_items = self.done_items.saturating_add(1).min(self.total_items);
+        if self.mode == ProgressMode::Bytes {
+            if let Some(expected) = expected_done_bytes {
+                self.done_bytes = self.done_bytes.max(expected);
+            }
+        }
+        self.maybe_emit(source);
+    }
+
+    fn maybe_emit(&mut self, source: &Path) {
+        let percent = self.current_percent();
+        self.maybe_emit_with_percent(percent, source);
+    }
+
+    fn maybe_emit_with_percent(&mut self, percent: usize, source: &Path) {
+        let now = Instant::now();
+        if should_emit_progress(self.last_percent, self.last_emit, percent, now, self.min_interval) {
+            emit_file_op_progress_percent(
+                self.format,
+                self.op_mode,
+                self.done_items,
+                self.total_items,
+                percent,
+                source,
+                self.byte_fields(),
+            );
+            self.last_percent = Some(percent);
+            self.last_emit = Some(now);
+        }
+    }
+
+    fn byte_fields(&self) -> Option<(u64, u64)> {
+        match (self.mode, self.total_bytes) {
+            (ProgressMode::Bytes, Some(total)) => Some((self.done_bytes.min(total), total)),
+            _ => None,
+        }
+    }
 }
 
 pub fn run(args: &[String]) -> Result<(), String> {
@@ -62,6 +164,7 @@ fn run_inner(args: &[String], format: EventFormat) -> Result<(), String> {
     let destination = request.destination.as_path();
     let policy = request.policy;
     let rename = request.rename.as_str();
+    let requested_progress_mode = request.progress_mode;
     let sources = request.sources;
 
     validate_rename_policy(policy, rename, sources.len())?;
@@ -73,10 +176,12 @@ fn run_inner(args: &[String], format: EventFormat) -> Result<(), String> {
         ));
     }
 
-    emit_file_op_start(format, mode, destination, sources.len());
+    let progress_plan = build_progress_plan(&sources, requested_progress_mode);
+    emit_file_op_start(format, mode, destination, sources.len(), progress_plan.total_bytes);
+    let mut progress = ProgressEmitter::new(format, mode, &progress_plan);
 
-    let mut completed = 0usize;
-    for source in &sources {
+    for source_info in &progress_plan.sources {
+        let source = &source_info.path;
         let name = source
             .file_name()
             .and_then(|v| v.to_str())
@@ -87,16 +192,15 @@ fn run_inner(args: &[String], format: EventFormat) -> Result<(), String> {
             name
         };
         let initial_target = destination.join(target_name);
+        let source_done_floor = expected_done_bytes(&progress, source_info.bytes);
 
         if same_path(source, &initial_target) {
-            completed += 1;
-            emit_file_op_progress(format, mode, completed, sources.len(), source);
+            progress.finish_source(source, source_done_floor);
             continue;
         }
 
         let Some(target) = resolve_conflict_target(&initial_target, policy)? else {
-            completed += 1;
-            emit_file_op_progress(format, mode, completed, sources.len(), source);
+            progress.finish_source(source, source_done_floor);
             continue;
         };
 
@@ -110,8 +214,7 @@ fn run_inner(args: &[String], format: EventFormat) -> Result<(), String> {
             source,
             &target,
             policy == ConflictPolicy::Overwrite,
-            completed,
-            sources.len(),
+            &mut progress,
         ) {
             emit_file_op_error(
                 format,
@@ -123,16 +226,15 @@ fn run_inner(args: &[String], format: EventFormat) -> Result<(), String> {
             return Err(err);
         }
 
-        completed += 1;
-        emit_file_op_progress(format, mode, completed, sources.len(), source);
+        progress.finish_source(source, source_done_floor);
     }
 
-    emit_file_op_done(format, mode, destination, completed, sources.len());
+    emit_file_op_done(format, mode, destination, progress.done_items, progress.total_items, progress.byte_fields());
     Ok(())
 }
 
 fn file_op_usage() -> &'static str {
-    "usage: explorer_backend file-op <copy|move|cut> <destination> <merge|overwrite|skip|rename|keep-both> [--rename <name>] <paths...>"
+    "usage: explorer_backend file-op <copy|move|cut> <destination> <merge|overwrite|skip|rename|keep-both> [--rename <name>] [--progress <items|bytes>] <paths...>"
 }
 
 fn parse_file_op_request(args: &[String]) -> Result<FileOpRequest, String> {
@@ -144,6 +246,7 @@ fn parse_file_op_request(args: &[String]) -> Result<FileOpRequest, String> {
     let destination = PathBuf::from(&args[1]);
     let policy = parse_conflict_policy(&args[2])?;
     let mut rename = String::new();
+    let mut progress_mode = ProgressMode::Items;
     let mut source_start = 3usize;
 
     if args[3] == "--rename" {
@@ -163,7 +266,20 @@ fn parse_file_op_request(args: &[String]) -> Result<FileOpRequest, String> {
         source_start = 4;
     }
 
-    let sources: Vec<PathBuf> = args[source_start..].iter().map(PathBuf::from).collect();
+    let mut sources = Vec::new();
+    let mut idx = source_start;
+    while idx < args.len() {
+        if args[idx] == "--progress" {
+            let Some(value) = args.get(idx + 1) else {
+                return Err(file_op_usage().into());
+            };
+            progress_mode = parse_progress_mode(value)?;
+            idx += 2;
+            continue;
+        }
+        sources.push(PathBuf::from(&args[idx]));
+        idx += 1;
+    }
     if sources.is_empty() {
         return Err(file_op_usage().into());
     }
@@ -173,6 +289,7 @@ fn parse_file_op_request(args: &[String]) -> Result<FileOpRequest, String> {
         destination,
         policy,
         rename,
+        progress_mode,
         sources,
     })
 }
@@ -193,6 +310,73 @@ fn parse_conflict_policy(policy: &str) -> Result<ConflictPolicy, String> {
         "rename" => Ok(ConflictPolicy::Rename),
         "keep-both" => Ok(ConflictPolicy::KeepBoth),
         other => Err(format!("unsupported conflict policy: {other}")),
+    }
+}
+
+fn parse_progress_mode(mode: &str) -> Result<ProgressMode, String> {
+    match mode {
+        "items" | "percent" => Ok(ProgressMode::Items),
+        "bytes" => Ok(ProgressMode::Bytes),
+        other => Err(format!("unsupported progress mode: {other}")),
+    }
+}
+
+fn build_progress_plan(sources: &[PathBuf], requested: ProgressMode) -> ProgressPlan {
+    if requested == ProgressMode::Bytes {
+        if let Ok(bytes) = pre_scan_total_bytes(sources) {
+            let total_bytes = bytes.iter().copied().sum();
+            return ProgressPlan {
+                mode: ProgressMode::Bytes,
+                sources: sources
+                    .iter()
+                    .cloned()
+                    .zip(bytes)
+                    .map(|(path, bytes)| ProgressSource { path, bytes })
+                    .collect(),
+                total_bytes: Some(total_bytes),
+            };
+        }
+    }
+
+    ProgressPlan {
+        mode: ProgressMode::Items,
+        sources: sources
+            .iter()
+            .cloned()
+            .map(|path| ProgressSource { path, bytes: 0 })
+            .collect(),
+        total_bytes: None,
+    }
+}
+
+fn pre_scan_total_bytes(sources: &[PathBuf]) -> Result<Vec<u64>, String> {
+    sources.iter().map(|source| scan_path_bytes(source)).collect()
+}
+
+fn scan_path_bytes(path: &Path) -> Result<u64, String> {
+    let meta = fs::symlink_metadata(path).map_err(|e| format!("metadata {}: {e}", path.display()))?;
+    if meta.file_type().is_symlink() {
+        return Ok(0);
+    }
+    if meta.is_file() {
+        return Ok(meta.len());
+    }
+    if meta.is_dir() {
+        let mut total = 0u64;
+        for entry in fs::read_dir(path).map_err(|e| format!("read {}: {e}", path.display()))? {
+            let entry = entry.map_err(|e| format!("read {}: {e}", path.display()))?;
+            total = total.saturating_add(scan_path_bytes(&entry.path())?);
+        }
+        return Ok(total);
+    }
+    Ok(0)
+}
+
+fn expected_done_bytes(progress: &ProgressEmitter, source_bytes: u64) -> Option<u64> {
+    if progress.mode == ProgressMode::Bytes {
+        Some(progress.done_bytes.saturating_add(source_bytes))
+    } else {
+        None
     }
 }
 
@@ -236,8 +420,7 @@ fn run_operation_with_progress(
     source: &Path,
     target: &Path,
     overwrite: bool,
-    completed: usize,
-    total: usize,
+    progress: &mut ProgressEmitter,
 ) -> Result<(), String> {
     if mode == OperationMode::Copy {
         if let Ok(meta) = fs::symlink_metadata(source) {
@@ -248,8 +431,7 @@ fn run_operation_with_progress(
                     overwrite,
                     format,
                     mode,
-                    completed,
-                    total,
+                    progress,
                 );
             }
         }
@@ -262,9 +444,35 @@ fn clamped_percent(done: usize, total: usize) -> usize {
     raw.clamp(0, 100)
 }
 
-fn emit_file_op_progress(format: EventFormat, mode: OperationMode, done: usize, total: usize, source: &Path) {
-    let percent = clamped_percent(done, total);
-    emit_file_op_progress_percent(format, mode, done, total, percent, source)
+fn clamped_percent_u64(done: u64, total: u64) -> usize {
+    let raw = if total == 0 { 100 } else { done.saturating_mul(100) / total };
+    (raw as usize).clamp(0, 100)
+}
+
+fn aggregate_item_percent(done_items: usize, total_items: usize, source_percent: usize) -> usize {
+    if total_items == 0 {
+        return 100;
+    }
+    let done_units = done_items
+        .saturating_mul(100)
+        .saturating_add(source_percent.min(99));
+    (done_units / total_items).min(99)
+}
+
+fn should_emit_progress(
+    last_percent: Option<usize>,
+    last_emit: Option<Instant>,
+    percent: usize,
+    now: Instant,
+    min_interval: Duration,
+) -> bool {
+    if last_percent == Some(percent) {
+        return false;
+    }
+    match last_emit {
+        Some(last) => now.duration_since(last) >= min_interval,
+        None => true,
+    }
 }
 
 fn emit_file_op_progress_percent(
@@ -274,6 +482,7 @@ fn emit_file_op_progress_percent(
     total: usize,
     percent: usize,
     source: &Path,
+    byte_fields: Option<(u64, u64)>,
 ) {
     let name = source
         .file_name()
@@ -293,7 +502,7 @@ fn emit_file_op_progress_percent(
         ),
         EventFormat::Jsonl => println!(
             "{}",
-            json_progress_line(mode, done, total, percent, &source_path, &name)
+            json_progress_line(mode, done, total, percent, &source_path, &name, byte_fields)
         ),
     }
     flush_stdout();
@@ -308,26 +517,28 @@ fn emit_file_op_event(event: &str, fields: &[String]) {
     println!("{line}");
 }
 
-fn emit_file_op_start(format: EventFormat, mode: OperationMode, destination: &Path, total: usize) {
+fn emit_file_op_start(format: EventFormat, mode: OperationMode, destination: &Path, total: usize, total_bytes: Option<u64>) {
     let destination = destination.to_string_lossy().into_owned();
     match format {
         EventFormat::Legacy => emit_file_op_event("START", &[mode.as_str().to_string(), destination, total.to_string()]),
         EventFormat::Jsonl => println!(
             "{}",
-            json_start_line(mode, &destination, total)
+            json_start_line(mode, &destination, total, total_bytes)
         ),
     }
     flush_stdout();
 }
 
-fn emit_file_op_done(format: EventFormat, mode: OperationMode, destination: &Path, done: usize, total: usize) {
+fn emit_file_op_done(format: EventFormat, mode: OperationMode, destination: &Path, done: usize, total: usize, byte_fields: Option<(u64, u64)>) {
     let destination = destination.to_string_lossy().into_owned();
-    let percent = clamped_percent(done, total);
+    let percent = byte_fields
+        .map(|(done_bytes, total_bytes)| clamped_percent_u64(done_bytes, total_bytes))
+        .unwrap_or_else(|| clamped_percent(done, total));
     match format {
         EventFormat::Legacy => emit_file_op_event("DONE", &[destination, done.to_string(), total.to_string()]),
         EventFormat::Jsonl => println!(
             "{}",
-            json_done_line(mode, &destination, done, total, percent)
+            json_done_line(mode, &destination, done, total, percent, byte_fields)
         ),
     }
     flush_stdout();
@@ -362,33 +573,45 @@ fn classify_error_code(message: &str) -> &'static str {
         "operation_failed"
     }
 }
-fn json_start_line(mode: OperationMode, destination: &str, total: usize) -> String {
+fn json_start_line(mode: OperationMode, destination: &str, total: usize, total_bytes: Option<u64>) -> String {
+    let byte_json = total_bytes
+        .map(|bytes| format!(",\"bytesTotal\":{bytes}"))
+        .unwrap_or_default();
     format!(
-        "{{\"event\":\"start\",\"mode\":\"{}\",\"destination\":\"{}\",\"total\":{}}}",
+        "{{\"event\":\"start\",\"mode\":\"{}\",\"destination\":\"{}\",\"total\":{}{}}}",
         mode.as_str(),
         escape_json(destination),
-        total
+        total,
+        byte_json
     )
 }
-fn json_progress_line(mode: OperationMode, done: usize, total: usize, percent: usize, path: &str, name: &str) -> String {
+fn json_progress_line(mode: OperationMode, done: usize, total: usize, percent: usize, path: &str, name: &str, byte_fields: Option<(u64, u64)>) -> String {
+    let byte_json = byte_fields
+        .map(|(done_bytes, total_bytes)| format!(",\"bytesDone\":{},\"bytesTotal\":{}", done_bytes, total_bytes))
+        .unwrap_or_default();
     format!(
-        "{{\"event\":\"progress\",\"mode\":\"{}\",\"done\":{},\"total\":{},\"percent\":{},\"path\":\"{}\",\"name\":\"{}\"}}",
+        "{{\"event\":\"progress\",\"mode\":\"{}\",\"done\":{},\"total\":{},\"percent\":{},\"path\":\"{}\",\"name\":\"{}\"{}}}",
         mode.as_str(),
         done,
         total,
         percent.clamp(0, 100),
         escape_json(path),
-        escape_json(name)
+        escape_json(name),
+        byte_json
     )
 }
-fn json_done_line(mode: OperationMode, destination: &str, done: usize, total: usize, percent: usize) -> String {
+fn json_done_line(mode: OperationMode, destination: &str, done: usize, total: usize, percent: usize, byte_fields: Option<(u64, u64)>) -> String {
+    let byte_json = byte_fields
+        .map(|(done_bytes, total_bytes)| format!(",\"bytesDone\":{},\"bytesTotal\":{}", done_bytes, total_bytes))
+        .unwrap_or_default();
     format!(
-        "{{\"event\":\"done\",\"mode\":\"{}\",\"destination\":\"{}\",\"done\":{},\"total\":{},\"percent\":{}}}",
+        "{{\"event\":\"done\",\"mode\":\"{}\",\"destination\":\"{}\",\"done\":{},\"total\":{},\"percent\":{}{}}}",
         mode.as_str(),
         escape_json(destination),
         done,
         total,
-        percent.clamp(0, 100)
+        percent.clamp(0, 100),
+        byte_json
     )
 }
 fn json_error_line(mode_json: String, code: &str, message: &str, path_json: String) -> String {
@@ -706,8 +929,7 @@ fn copy_regular_file_with_progress(
     overwrite: bool,
     format: EventFormat,
     mode: OperationMode,
-    completed: usize,
-    total: usize,
+    progress: &mut ProgressEmitter,
 ) -> Result<(), String> {
     if path_exists_or_symlink(target) && !overwrite {
         return Err(format!("target already exists: {}", target.display()));
@@ -718,8 +940,7 @@ fn copy_regular_file_with_progress(
         &staged,
         format,
         mode,
-        completed,
-        total,
+        progress,
     ) {
         let _ = remove_existing_if_present(&staged);
         return Err(err);
@@ -744,10 +965,9 @@ fn copy_regular_file_with_progress(
 fn copy_file_stream_with_progress(
     source: &Path,
     target: &Path,
-    format: EventFormat,
-    mode: OperationMode,
-    completed: usize,
-    total: usize,
+    _format: EventFormat,
+    _mode: OperationMode,
+    progress: &mut ProgressEmitter,
 ) -> Result<(), String> {
     let meta =
         fs::metadata(source).map_err(|e| format!("metadata {}: {e}", source.display()))?;
@@ -758,7 +978,6 @@ fn copy_file_stream_with_progress(
         .map_err(|e| format!("create {}: {e}", target.display()))?;
     let _ = output.set_permissions(meta.permissions());
     let mut copied = 0u64;
-    let mut last_percent = 0usize;
     let mut buffer = vec![0u8; 1024 * 1024];
 
     loop {
@@ -772,14 +991,20 @@ fn copy_file_stream_with_progress(
             .write_all(&buffer[..read])
             .map_err(|e| format!("write {}: {e}", target.display()))?;
         copied = copied.saturating_add(read as u64);
-        let percent = if total_bytes == 0 {
-            99
-        } else {
-            ((copied.saturating_mul(100) / total_bytes).min(99)) as usize
-        };
-        if percent > last_percent {
-            emit_file_op_progress_percent(format, mode, completed, total, percent, source);
-            last_percent = percent;
+        if progress.mode == ProgressMode::Bytes {
+            progress.add_bytes(read as u64, source);
+        } else if total_bytes > 0 {
+            let source_percent = ((copied.saturating_mul(100) / total_bytes).min(99)) as usize;
+            if source_percent > 0 {
+                progress.maybe_emit_with_percent(
+                    aggregate_item_percent(
+                        progress.done_items,
+                        progress.total_items,
+                        source_percent,
+                    ),
+                    source,
+                );
+            }
         }
     }
     output
@@ -967,7 +1192,7 @@ mod tests {
     #[test]
     fn json_lines_escape_special_names() {
         let name = "a|b \"ç\" 😀\nline.txt";
-        let line = json_progress_line(OperationMode::Copy, 1, 3, 33, "/tmp/a|b\nx", name);
+        let line = json_progress_line(OperationMode::Copy, 1, 3, 33, "/tmp/a|b\nx", name, None);
         assert!(line.contains("\"event\":\"progress\""));
         assert!(line.contains("\\n"));
         assert!(line.contains("\\\"ç\\\""));
@@ -977,8 +1202,62 @@ mod tests {
     #[test]
     fn percent_is_clamped() {
         assert_eq!(clamped_percent(300, 1), 100);
-        let line = json_done_line(OperationMode::Move, "/tmp", 3, 2, 150);
+        let line = json_done_line(OperationMode::Move, "/tmp", 3, 2, 150, None);
         assert!(line.contains("\"percent\":100"));
+    }
+
+    #[test]
+    fn progress_throttle_requires_percent_change_and_interval() {
+        let start = Instant::now();
+        assert!(should_emit_progress(None, None, 1, start, Duration::from_millis(100)));
+        assert!(!should_emit_progress(Some(1), Some(start), 1, start + Duration::from_millis(200), Duration::from_millis(100)));
+        assert!(!should_emit_progress(Some(1), Some(start), 2, start + Duration::from_millis(99), Duration::from_millis(100)));
+        assert!(should_emit_progress(Some(1), Some(start), 2, start + Duration::from_millis(100), Duration::from_millis(100)));
+    }
+
+    #[test]
+    fn item_progress_scales_source_percent_across_multiple_sources() {
+        assert_eq!(aggregate_item_percent(0, 2, 99), 49);
+        assert_eq!(clamped_percent(1, 2), 50);
+        assert_eq!(aggregate_item_percent(1, 2, 99), 99);
+        assert_eq!(clamped_percent(2, 2), 100);
+    }
+
+    #[test]
+    fn parses_optional_byte_progress_flag_without_reordering_sources() {
+        let args = vec![
+            "copy".into(),
+            "/tmp".into(),
+            "keep-both".into(),
+            "--progress".into(),
+            "bytes".into(),
+            "/tmp/a.txt".into(),
+            "/tmp/b.txt".into(),
+        ];
+        let request = parse_file_op_request(&args).unwrap();
+        assert_eq!(request.progress_mode, ProgressMode::Bytes);
+        assert_eq!(request.sources, vec![PathBuf::from("/tmp/a.txt"), PathBuf::from("/tmp/b.txt")]);
+    }
+
+    #[test]
+    fn byte_progress_plan_falls_back_when_prescan_fails() {
+        let missing = PathBuf::from(format!("/tmp/astrea-missing-{}", unix_millis()));
+        let plan = build_progress_plan(&[missing], ProgressMode::Bytes);
+        assert_eq!(plan.mode, ProgressMode::Items);
+        assert_eq!(plan.total_bytes, None);
+    }
+
+    #[test]
+    fn byte_progress_json_fields_are_additive() {
+        let start = json_start_line(OperationMode::Copy, "/tmp", 2, Some(42));
+        let progress = json_progress_line(OperationMode::Copy, 1, 2, 50, "/tmp/a", "a", Some((21, 42)));
+        let done = json_done_line(OperationMode::Copy, "/tmp", 2, 2, 100, Some((42, 42)));
+        assert!(start.contains("\"total\":2"));
+        assert!(start.contains("\"bytesTotal\":42"));
+        assert!(progress.contains("\"done\":1"));
+        assert!(progress.contains("\"bytesDone\":21"));
+        assert!(progress.contains("\"bytesTotal\":42"));
+        assert!(done.contains("\"bytesDone\":42"));
     }
 
     #[test]

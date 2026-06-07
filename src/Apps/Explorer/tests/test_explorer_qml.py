@@ -130,7 +130,53 @@ class ExplorerDialogAndDragRegressionTests(unittest.TestCase):
         self.assertIn("app.remoteDirectoryActive", preview)
 
 
+class ExplorerDateFormattingRegressionTests(unittest.TestCase):
+    def test_file_dates_fall_back_to_explicit_absolute_dates(self):
+        preview_state = (APP_ROOT / "state" / "PreviewState.qml").read_text(encoding="utf-8")
+
+        self.assertIn("function formatAbsoluteDate(date)", preview_state)
+        self.assertIn("function padDatePart(value)", preview_state)
+        self.assertIn('if (!(date instanceof Date) || isNaN(date.getTime())) return "—"', preview_state)
+        self.assertIn('return formatAbsoluteDate(date)', preview_state)
+        self.assertNotIn('return Qt.formatDate(date, "d MMM yyyy")', preview_state)
+
+    def test_icon_view_date_groups_do_not_use_vague_old_bucket(self):
+        view_shared = (APP_ROOT / "components" / "views" / "ViewShared.js").read_text(encoding="utf-8")
+
+        self.assertIn("function monthYearLabel(date)", view_shared)
+        self.assertIn('return "Ultimos 30 dias"', view_shared)
+        self.assertIn("return monthYearLabel(date)", view_shared)
+        self.assertNotIn('return "Mais antigos"', view_shared)
+
+
 class ExplorerIconRenderingRegressionTests(unittest.TestCase):
+    def test_icon_grid_exposes_two_larger_zoom_presets(self):
+        app_state = (APP_ROOT / "AppState.qml").read_text(encoding="utf-8")
+        preview_state = (APP_ROOT / "state" / "PreviewState.qml").read_text(encoding="utf-8")
+        icon_view = (APP_ROOT / "components" / "views" / "FileIconView.qml").read_text(encoding="utf-8")
+
+        self.assertIn("readonly property real maxZoom: 2.0", app_state)
+        self.assertIn("readonly property var thumbnailColumnStops: [18, 14, 10, 7, 5, 4, 3]", app_state)
+        self.assertIn("readonly property var thumbnailScaleStops: [1.0, 1.08, 1.16, 1.26, 1.38, 1.65, 2.0]", app_state)
+        self.assertIn("if (zoomLevel < 1.7) return 4", preview_state)
+        self.assertIn("if (zoomLevel < 1.9) return 5", preview_state)
+        self.assertIn("return 6", preview_state)
+        self.assertIn("absoluteTileWidths: [72, 90, 120, 160, 220, 300, 400]", icon_view)
+        self.assertIn("iconDecodeSizes: [48, 64, 96, 128, 160, 256, 384]", icon_view)
+        self.assertIn("previewReqSizes: [128, 128, 160, 192, 256, 320, 384]", icon_view)
+        self.assertIn("previewReqSizes[AppState.thumbnailLevel()]", icon_view)
+
+    def test_large_icon_grid_fills_tiles_like_finder(self):
+        icon_view = (APP_ROOT / "components" / "views" / "FileIconView.qml").read_text(encoding="utf-8")
+
+        self.assertIn("thumbnailFillRatios: [0.55, 0.55, 0.55, 0.55, 0.55, 0.74, 0.78]", icon_view)
+        self.assertIn("previewFillRatios: [0.82, 0.82, 0.82, 0.82, 0.86, 0.96, 0.98]", icon_view)
+        self.assertIn("tileWidth * thumbnailFillRatios[AppState.thumbnailLevel()]", icon_view)
+        self.assertIn("grid.iconSize * grid.previewFillRatios[AppState.thumbnailLevel()]", icon_view)
+        self.assertIn("readonly property int   iconTopPad: AppState.thumbnailLevel() >= 5 ? 6 : 8", icon_view)
+        self.assertIn("readonly property int   labelTopGap: AppState.thumbnailLevel() >= 5 ? 14 : 6", icon_view)
+        self.assertIn("readonly property int   labelBottomPad: AppState.thumbnailLevel() >= 5 ? 12 : 0", icon_view)
+
     def test_icon_grid_decodes_theme_icons_at_stable_size_during_resize(self):
         icon_view = (APP_ROOT / "components" / "views" / "FileIconView.qml").read_text(encoding="utf-8")
 

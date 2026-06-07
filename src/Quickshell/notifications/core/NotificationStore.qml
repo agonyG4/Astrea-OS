@@ -20,6 +20,14 @@ Item {
         return -1
     }
 
+    function historyIndexFor(notificationId) {
+        for (let index = 0; index < notificationHistoryModel.count; index++) {
+            if (notificationHistoryModel.get(index).notificationId === notificationId)
+                return index
+        }
+        return -1
+    }
+
     function normalizedNotification(item) {
         return {
             notificationId: item.notificationId || item.id || 0,
@@ -65,11 +73,34 @@ Item {
     }
 
     function syncHistory(items) {
-        notificationHistoryModel.clear()
-
+        const seen = {}
+        let targetIndex = 0
         const historyItems = (items || []).slice(-root.maxHistoryNotifications)
-        for (let index = historyItems.length - 1; index >= 0; index--)
-            notificationHistoryModel.append(normalizedNotification(historyItems[index]))
+        for (let index = historyItems.length - 1; index >= 0; index--) {
+            const notification = normalizedNotification(historyItems[index])
+            if (!notification.notificationId)
+                continue
+            seen[notification.notificationId] = true
+
+            const existingIndex = historyIndexFor(notification.notificationId)
+            if (existingIndex >= 0) {
+                notificationHistoryModel.set(existingIndex, notification)
+                if (existingIndex !== targetIndex)
+                    notificationHistoryModel.move(existingIndex, targetIndex, 1)
+            } else {
+                notificationHistoryModel.insert(targetIndex, notification)
+            }
+            targetIndex += 1
+        }
+
+        for (let index = notificationHistoryModel.count - 1; index >= 0; index--) {
+            const currentId = notificationHistoryModel.get(index).notificationId
+            if (!seen[currentId])
+                notificationHistoryModel.remove(index)
+        }
+
+        while (notificationHistoryModel.count > root.maxHistoryNotifications)
+            notificationHistoryModel.remove(notificationHistoryModel.count - 1)
     }
 
     function closeNotification(notificationId) {

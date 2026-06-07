@@ -5,6 +5,7 @@ use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::UNIX_EPOCH;
 
 use crate::json;
@@ -12,6 +13,8 @@ use crate::thumbnails;
 
 const SEARCH_MAX_DEPTH: usize = 8;
 const SEARCH_MAX_RESULTS: usize = 2_000;
+
+static MOUNTINFO_CACHE: OnceLock<Option<Vec<MountInfoEntry>>> = OnceLock::new();
 
 #[derive(Clone)]
 pub struct Entry {
@@ -29,10 +32,34 @@ pub struct Entry {
     pub filesystem: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PreviewMode {
+    None,
+    Cached,
+    Full,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ListingProfile {
     pub remote: bool,
     pub filesystem: String,
+}
+
+impl PreviewMode {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "none" => Some(Self::None),
+            "cached" => Some(Self::Cached),
+            "full" => Some(Self::Full),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MountInfoEntry {
+    mount_point: PathBuf,
+    fs_type: String,
 }
 
 impl ListingProfile {
@@ -52,8 +79,16 @@ impl ListingProfile {
 }
 
 pub fn run_list(args: &[String]) -> Result<(), String> {
-    let (dir, show_hidden, sort_field, sort_asc, folders_first) = parse_list_args(args)?;
-    let entries = read_sorted_entries(dir, show_hidden, sort_field, sort_asc, folders_first)?;
+    let (dir, show_hidden, sort_field, sort_asc, folders_first, preview_mode) =
+        parse_list_args_with_preview(args)?;
+    let entries = read_sorted_entries_with_preview(
+        dir,
+        show_hidden,
+        sort_field,
+        sort_asc,
+        folders_first,
+        preview_mode,
+    )?;
     println!("{}", json::array(&entries, entry_to_json));
     Ok(())
 }
@@ -71,6 +106,7 @@ pub fn run_search(args: &[String]) -> Result<(), String> {
     let sort_field = &args[3];
     let sort_asc = args[4] == "1";
     let folders_first = args[5] == "1";
+    let preview_mode = parse_preview_mode_arg(&args[6..])?;
 
     let profile = path_listing_profile(dir);
     let mut entries = if profile.remote {
@@ -80,7 +116,15 @@ pub fn run_search(args: &[String]) -> Result<(), String> {
             .collect()
     } else {
         let mut local_entries = Vec::new();
-        search_dir_recursive(dir, dir, show_hidden, &query, 0, &mut local_entries)?;
+        search_dir_recursive_with_preview(
+            dir,
+            dir,
+            show_hidden,
+            &query,
+            0,
+            preview_mode,
+            &mut local_entries,
+        )?;
         local_entries
     };
     sort_entries_in_place(&mut entries, sort_field, sort_asc, folders_first);
@@ -110,17 +154,77 @@ pub fn read_sorted_entries(
     sort_asc: bool,
     folders_first: bool,
 ) -> Result<Vec<Entry>, String> {
+    read_sorted_entries_with_preview(
+        dir,
+        show_hidden,
+        sort_field,
+        sort_asc,
+        folders_first,
+        PreviewMode::Full,
+    )
+}
+
+fn read_sorted_entries_with_preview(
+    dir: &Path,
+    show_hidden: bool,
+    sort_field: &str,
+    sort_asc: bool,
+    folders_first: bool,
+    preview_mode: PreviewMode,
+) -> Result<Vec<Entry>, String> {
     let profile = path_listing_profile(dir);
     let mut entries = if profile.remote {
         read_dir_sequential(dir, show_hidden, &profile)?
     } else {
-        read_dir_parallel(dir, show_hidden)?
+        read_dir_parallel(dir, show_hidden, preview_mode)?
     };
     sort_entries_in_place(&mut entries, sort_field, sort_asc, folders_first);
     Ok(entries)
 }
 
-fn read_dir_parallel(dir: &Path, show_hidden: bool) -> Result<Vec<Entry>, String> {
+fn parse_list_args_with_preview(
+    args: &[String],
+) -> Result<(&Path, bool, &str, bool, bool, PreviewMode), String> {
+    let (dir, show_hidden, sort_field, sort_asc, folders_first) = parse_list_args(args)?;
+    let preview_mode = parse_preview_mode_arg(args.get(5..).unwrap_or(&[]))?;
+    Ok((
+        dir,
+        show_hidden,
+        sort_field,
+        sort_asc,
+        folders_first,
+        preview_mode,
+    ))
+}
+
+fn parse_preview_mode_arg(args: &[String]) -> Result<PreviewMode, String> {
+    let mut mode = PreviewMode::Full;
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        if let Some(value) = arg.strip_prefix("--preview-mode=") {
+            mode = PreviewMode::parse(value)
+                .ok_or_else(|| format!("invalid --preview-mode: {value}"))?;
+            i += 1;
+        } else if arg == "--preview-mode" {
+            let value = args
+                .get(i + 1)
+                .ok_or_else(|| "missing value for --preview-mode".to_string())?;
+            mode = PreviewMode::parse(value)
+                .ok_or_else(|| format!("invalid --preview-mode: {value}"))?;
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    Ok(mode)
+}
+
+fn read_dir_parallel(
+    dir: &Path,
+    show_hidden: bool,
+    preview_mode: PreviewMode,
+) -> Result<Vec<Entry>, String> {
     let raw: Vec<_> = fs::read_dir(dir)
         .map_err(|e| format!("failed to read {}: {e}", dir.display()))?
         .filter_map(|r| r.ok())
@@ -128,11 +232,15 @@ fn read_dir_parallel(dir: &Path, show_hidden: bool) -> Result<Vec<Entry>, String
 
     Ok(raw
         .into_par_iter()
-        .filter_map(|item| entry_from_dir_item(item, show_hidden))
+        .filter_map(|item| entry_from_dir_item(item, show_hidden, preview_mode))
         .collect())
 }
 
-fn entry_from_dir_item(item: fs::DirEntry, show_hidden: bool) -> Option<Entry> {
+fn entry_from_dir_item(
+    item: fs::DirEntry,
+    show_hidden: bool,
+    preview_mode: PreviewMode,
+) -> Option<Entry> {
     let path = item.path();
     let meta = item.metadata().ok()?;
     let is_dir = meta.is_dir();
@@ -147,6 +255,7 @@ fn entry_from_dir_item(item: fs::DirEntry, show_hidden: bool) -> Option<Entry> {
         meta,
         is_dir,
         is_hidden,
+        preview_mode,
     ))
 }
 
@@ -193,6 +302,18 @@ fn search_dir_recursive(
     depth: usize,
     out: &mut Vec<Entry>,
 ) -> Result<(), String> {
+    search_dir_recursive_with_preview(root, dir, show_hidden, query, depth, PreviewMode::Full, out)
+}
+
+fn search_dir_recursive_with_preview(
+    root: &Path,
+    dir: &Path,
+    show_hidden: bool,
+    query: &str,
+    depth: usize,
+    preview_mode: PreviewMode,
+    out: &mut Vec<Entry>,
+) -> Result<(), String> {
     if depth > SEARCH_MAX_DEPTH || out.len() >= SEARCH_MAX_RESULTS {
         return Ok(());
     }
@@ -231,11 +352,26 @@ fn search_dir_recursive(
         }
 
         if query.is_empty() || name.to_lowercase().contains(query) {
-            out.push(entry_from_parts(name, &path, meta, is_dir, is_hidden));
+            out.push(entry_from_parts(
+                name,
+                &path,
+                meta,
+                is_dir,
+                is_hidden,
+                preview_mode,
+            ));
         }
 
         if should_descend && depth < SEARCH_MAX_DEPTH && !should_prune_search_dir(root, &path) {
-            let _ = search_dir_recursive(root, &path, show_hidden, query, depth + 1, out);
+            let _ = search_dir_recursive_with_preview(
+                root,
+                &path,
+                show_hidden,
+                query,
+                depth + 1,
+                preview_mode,
+                out,
+            );
         }
     }
 
@@ -287,6 +423,7 @@ fn entry_from_parts(
     meta: fs::Metadata,
     is_dir: bool,
     is_hidden: bool,
+    preview_mode: PreviewMode,
 ) -> Entry {
     let modified_ms = meta
         .modified()
@@ -297,7 +434,7 @@ fn entry_from_parts(
 
     Entry {
         kind: file_kind(path, is_dir),
-        preview_url: thumbnails::preview_url(path, is_dir, modified_ms),
+        preview_url: preview_url_for_mode(path, is_dir, modified_ms, preview_mode),
         name,
         path: path.to_string_lossy().into_owned(),
         is_dir,
@@ -309,6 +446,43 @@ fn entry_from_parts(
         metadata_limited: false,
         filesystem: String::new(),
     }
+}
+
+fn preview_url_for_mode(path: &Path, is_dir: bool, modified_ms: i64, mode: PreviewMode) -> String {
+    match mode {
+        PreviewMode::None => String::new(),
+        PreviewMode::Cached => cached_preview_url(path, is_dir, modified_ms),
+        PreviewMode::Full => thumbnails::preview_url(path, is_dir, modified_ms),
+    }
+}
+
+fn cached_preview_url(path: &Path, is_dir: bool, modified_ms: i64) -> String {
+    if is_dir {
+        return String::new();
+    }
+    if thumbnails::is_svg(path) {
+        return json::file_url(path);
+    }
+    let Some(home) = env::var_os("HOME") else {
+        return String::new();
+    };
+    let cached = PathBuf::from(home)
+        .join(".cache/explorer/thumbnails")
+        .join(format!("{}.png", thumbnail_cache_key(path, modified_ms)));
+    if cached.exists() {
+        json::file_url(&cached)
+    } else {
+        String::new()
+    }
+}
+
+fn thumbnail_cache_key(path: &Path, modified_ms: i64) -> String {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in format!("v3|{}|{modified_ms}", path.to_string_lossy()).as_bytes() {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("{h:016x}")
 }
 
 fn entry_from_remote_parts(
@@ -335,29 +509,53 @@ fn entry_from_remote_parts(
 }
 
 fn sort_entries_in_place(entries: &mut [Entry], field: &str, asc: bool, folders_first: bool) {
-    entries.sort_unstable_by(|a, b| sort_entries(a, b, field, asc, folders_first));
+    let mut decorated: Vec<_> = entries
+        .iter()
+        .cloned()
+        .map(|entry| SortEntry {
+            name_lower: entry.name.to_lowercase(),
+            kind_lower: entry.kind.to_lowercase(),
+            entry,
+        })
+        .collect();
+    decorated.sort_unstable_by(|a, b| sort_decorated_entries(a, b, field, asc, folders_first));
+    for (target, sorted) in entries.iter_mut().zip(decorated) {
+        *target = sorted.entry;
+    }
 }
 
-fn sort_entries(a: &Entry, b: &Entry, field: &str, asc: bool, folders_first: bool) -> Ordering {
-    if folders_first && a.is_dir != b.is_dir {
-        return if a.is_dir {
+struct SortEntry {
+    entry: Entry,
+    name_lower: String,
+    kind_lower: String,
+}
+
+fn sort_decorated_entries(
+    a: &SortEntry,
+    b: &SortEntry,
+    field: &str,
+    asc: bool,
+    folders_first: bool,
+) -> Ordering {
+    if folders_first && a.entry.is_dir != b.entry.is_dir {
+        return if a.entry.is_dir {
             Ordering::Less
         } else {
             Ordering::Greater
         };
     }
     let ord = match field {
-        "date" => a.modified_ms.cmp(&b.modified_ms),
-        "size" => a.size.cmp(&b.size),
-        "kind" => icmp(&a.kind, &b.kind),
-        _ => icmp(&a.name, &b.name),
+        "date" => a.entry.modified_ms.cmp(&b.entry.modified_ms),
+        "size" => a.entry.size.cmp(&b.entry.size),
+        "kind" => a.kind_lower.cmp(&b.kind_lower),
+        _ => a.name_lower.cmp(&b.name_lower),
     }
-    .then_with(|| icmp(&a.name, &b.name));
-    if asc { ord } else { ord.reverse() }
-}
-
-fn icmp(a: &str, b: &str) -> Ordering {
-    a.to_lowercase().cmp(&b.to_lowercase())
+    .then_with(|| a.name_lower.cmp(&b.name_lower));
+    if asc {
+        ord
+    } else {
+        ord.reverse()
+    }
 }
 
 fn entry_to_json(e: &Entry) -> String {
@@ -437,15 +635,43 @@ fn current_uid() -> u32 {
 }
 
 fn filesystem_type_for_path(path: &Path) -> Option<String> {
-    let mountinfo = fs::read_to_string("/proc/self/mountinfo").ok()?;
     let query = if path.as_os_str().is_empty() {
         Path::new("/")
     } else {
         path
     };
+    filesystem_type_for_path_from_mounts(query, mountinfo_entries()?)
+}
+
+fn mountinfo_entries() -> Option<&'static [MountInfoEntry]> {
+    MOUNTINFO_CACHE
+        .get_or_init(|| {
+            fs::read_to_string("/proc/self/mountinfo")
+                .ok()
+                .map(|mountinfo| parse_mountinfo_entries(&mountinfo))
+        })
+        .as_deref()
+}
+
+fn filesystem_type_for_path_from_mounts(query: &Path, mounts: &[MountInfoEntry]) -> Option<String> {
     let mut best_mount_len = 0usize;
     let mut best_fs_type = None;
 
+    for mount in mounts {
+        if query.starts_with(&mount.mount_point) {
+            let mount_len = mount.mount_point.as_os_str().len();
+            if mount_len >= best_mount_len {
+                best_mount_len = mount_len;
+                best_fs_type = Some(mount.fs_type.clone());
+            }
+        }
+    }
+
+    best_fs_type
+}
+
+fn parse_mountinfo_entries(mountinfo: &str) -> Vec<MountInfoEntry> {
+    let mut entries = Vec::new();
     for line in mountinfo.lines() {
         let Some((left, right)) = line.split_once(" - ") else {
             continue;
@@ -458,16 +684,12 @@ fn filesystem_type_for_path(path: &Path) -> Option<String> {
         };
 
         let mount_point = PathBuf::from(decode_mountinfo_field(mount_point_raw));
-        if query.starts_with(&mount_point) {
-            let mount_len = mount_point.as_os_str().len();
-            if mount_len >= best_mount_len {
-                best_mount_len = mount_len;
-                best_fs_type = Some(fs_type.to_string());
-            }
-        }
+        entries.push(MountInfoEntry {
+            mount_point,
+            fs_type: fs_type.to_string(),
+        });
     }
-
-    best_fs_type
+    entries
 }
 
 fn decode_mountinfo_field(value: &str) -> String {
@@ -567,13 +789,112 @@ mod tests {
         let path = root.join("a # b 😀.txt");
         fs::write(&path, "x").unwrap();
         let meta = fs::metadata(&path).unwrap();
-        let entry = entry_from_parts("a # b 😀.txt".to_string(), &path, meta, false, false);
+        let entry = entry_from_parts(
+            "a # b 😀.txt".to_string(),
+            &path,
+            meta,
+            false,
+            false,
+            PreviewMode::Full,
+        );
         let body = entry_to_json(&entry);
         let raw_file_url = format!("\"fileUrl\":\"file://{}\"", path.to_string_lossy());
 
         assert!(body.contains("%20%23%20b%20%F0%9F%98%80.txt"));
         assert!(!body.contains(&raw_file_url));
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn preview_mode_parser_defaults_to_full_and_accepts_flag_forms() {
+        assert_eq!(parse_preview_mode_arg(&[]).unwrap(), PreviewMode::Full);
+        assert_eq!(
+            parse_preview_mode_arg(&["--preview-mode".into(), "none".into()]).unwrap(),
+            PreviewMode::None
+        );
+        assert_eq!(
+            parse_preview_mode_arg(&["--preview-mode=cached".into()]).unwrap(),
+            PreviewMode::Cached
+        );
+        assert!(parse_preview_mode_arg(&["--preview-mode=bad".into()]).is_err());
+    }
+
+    #[test]
+    fn preview_mode_none_keeps_schema_but_omits_preview_url() {
+        let root = std::env::temp_dir().join(format!(
+            "astrea-entry-preview-none-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("photo.png");
+        fs::write(&path, "x").unwrap();
+        let meta = fs::metadata(&path).unwrap();
+
+        let entry = entry_from_parts(
+            "photo.png".to_string(),
+            &path,
+            meta,
+            false,
+            false,
+            PreviewMode::None,
+        );
+        let body = entry_to_json(&entry);
+
+        assert_eq!(entry.preview_url, "");
+        assert!(body.contains("\"filePreviewUrl\":\"\""));
+        assert_eq!(entry.name, "photo.png");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sorting_is_case_insensitive_without_touching_display_names() {
+        let mut entries = vec![
+            test_entry("banana.txt", false, "TXT", 10, 1),
+            test_entry("Apricot.txt", false, "TXT", 10, 2),
+            test_entry("apple.txt", true, "Pasta", 0, 3),
+        ];
+
+        sort_entries_in_place(&mut entries, "name", true, true);
+
+        assert_eq!(entries[0].name, "apple.txt");
+        assert_eq!(entries[1].name, "Apricot.txt");
+        assert_eq!(entries[2].name, "banana.txt");
+    }
+
+    #[test]
+    fn mountinfo_parser_selects_deepest_matching_mount_once_parsed() {
+        let mounts = parse_mountinfo_entries(
+            "1 0 0:1 / / rw - ext4 /dev/root rw\n\
+             2 1 0:2 / /mnt/Remote\\040Drive rw - fuse.sshfs host rw\n\
+             3 1 0:3 / /mnt/Remote\\040Drive/sub rw - nfs server rw\n",
+        );
+
+        assert_eq!(
+            filesystem_type_for_path_from_mounts(Path::new("/mnt/Remote Drive/file"), &mounts),
+            Some("fuse.sshfs".to_string())
+        );
+        assert_eq!(
+            filesystem_type_for_path_from_mounts(Path::new("/mnt/Remote Drive/sub/file"), &mounts),
+            Some("nfs".to_string())
+        );
+    }
+
+    fn test_entry(name: &str, is_dir: bool, kind: &str, size: i64, modified_ms: i64) -> Entry {
+        Entry {
+            name: name.to_string(),
+            path: format!("/tmp/{name}"),
+            is_dir,
+            executable: false,
+            is_hidden: false,
+            size,
+            modified_ms,
+            kind: kind.to_string(),
+            preview_url: String::new(),
+            remote: false,
+            metadata_limited: false,
+            filesystem: String::new(),
+        }
     }
 
     #[test]
@@ -727,11 +1048,9 @@ mod tests {
         search_dir_recursive(&root, &root, true, "steam.exe", 0, &mut entries).unwrap();
 
         assert_eq!(entries.len(), 1);
-        assert!(
-            entries[0]
-                .path
-                .ends_with("project/files/lib/wine/steam.exe")
-        );
+        assert!(entries[0]
+            .path
+            .ends_with("project/files/lib/wine/steam.exe"));
         let _ = fs::remove_dir_all(root);
     }
 

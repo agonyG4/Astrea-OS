@@ -337,6 +337,7 @@
     "explorer.conflict.multi_suffix": " itens com o mesmo nome no destino. O que você quer fazer com todos eles?",
     "explorer.conflict.single_message": "Já existe um item com esse nome no destino. O que você quer fazer?",
     "explorer.file_list.modified_date": "Data de modificação",
+    "explorer.file_list.opened_date": "Aberto em",
     "explorer.network.connect": "Conectar",
     "explorer.network.connecting": "Conectando...",
     "explorer.operation.copying": "Copiando...",

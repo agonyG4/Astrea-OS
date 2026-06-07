@@ -6,7 +6,7 @@ import "TrayIcon.js" as TrayIcon
 
 Row {
     id: root
-    spacing: Theme.spacing
+    spacing: 0
     height:  36
     property real anchorOffset: 0
 

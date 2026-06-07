@@ -8,6 +8,9 @@ ColumnLayout {
     property var controller: null
     property string queryText: ""
     property string fontFamily: "SF Pro Display"
+    readonly property int resultRowHeight: 50
+    readonly property int resultIconSize: 40
+    readonly property int resultIconSourceSize: 80
     readonly property int count: resultList.count
 
     signal launchRequested(int index)
@@ -39,14 +42,14 @@ ColumnLayout {
         id: resultList
 
         Layout.fillWidth: true
-        implicitHeight: Math.min(count, 6) * 50
+        implicitHeight: Math.min(count, 6) * root.resultRowHeight
         model: root.controller ? root.controller.results : []
         currentIndex: 0
         interactive: false
 
         delegate: Rectangle {
             width: resultList.width
-            height: 50
+            height: root.resultRowHeight
             radius: 7
             color: resultList.currentIndex === index ? "#007AFF" : "transparent"
 
@@ -59,10 +62,12 @@ ColumnLayout {
                 spacing: 15
 
                 Components.AppIcon {
-                    Layout.preferredWidth: 30
-                    Layout.preferredHeight: 30
+                    Layout.preferredWidth: root.resultIconSize
+                    Layout.preferredHeight: root.resultIconSize
                     entry: modelData
-                    fallbackRadius: 6
+                    iconRadius: 7
+                    sourcePixelSize: root.resultIconSourceSize
+                    fallbackRadius: 7
                     fallbackColor: "#22FFFFFF"
                 }
 
