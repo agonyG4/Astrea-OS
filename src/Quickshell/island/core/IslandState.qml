@@ -35,6 +35,11 @@ Item {
     readonly property bool hasMusic: modeRouter.hasMusic
     readonly property bool showCompactMusic: modeRouter.showCompactMusic
     property bool showGamemodeNotify: false
+    property bool showEmailCodeNotify: false
+    property string emailCode: ""
+    property string emailSender: ""
+    property string emailSubject: ""
+    property bool emailCodeCopied: false
     readonly property bool musicBarsActive: hasMusic && !showGamemodeNotify
     readonly property bool cavaActive: musicBarsActive
 
@@ -58,6 +63,7 @@ Item {
         musicTitle: root.musicTitleText
         shouldDisplayMusic: root.shouldDisplayMusic
         notifyVisible: root.showGamemodeNotify
+        emailCodeVisible: root.showEmailCodeNotify
     }
 
     Binding on smoothPosition {
@@ -123,11 +129,29 @@ Item {
         }
     }
 
+    function showEmailCodeEvent(event) {
+        emailCode = String(event.code || "")
+        if (emailCode === "")
+            return
+        emailSender = String(event.fromName || event.fromAddress || "Email")
+        emailSubject = String(event.subject || "")
+        emailCodeCopied = event.copied === true
+        showEmailCodeNotify = true
+        emailCodeNotifyTimer.restart()
+    }
+
     Timer {
         id: gamemodeNotifyTimer
 
         interval: 3000
         onTriggered: root.showGamemodeNotify = false
+    }
+
+    Timer {
+        id: emailCodeNotifyTimer
+
+        interval: 6500
+        onTriggered: root.showEmailCodeNotify = false
     }
 
     NumberAnimation {

@@ -19,6 +19,8 @@ class IslandArchitectureTest(unittest.TestCase):
         music_qmldir = read("modes/music/qmldir")
         idle_qmldir = read("modes/idle/qmldir")
         gamemode_qmldir = read("modes/gamemode/qmldir")
+        email_qmldir = read("modes/email/qmldir")
+        services_qmldir = read("services/qmldir")
 
         self.assertIn("IslandModeHost", island_qmldir)
         self.assertIn("IslandState", core_qmldir)
@@ -28,6 +30,8 @@ class IslandArchitectureTest(unittest.TestCase):
         self.assertIn("MusicMode", music_qmldir)
         self.assertIn("IdleMode", idle_qmldir)
         self.assertIn("GamemodeMode", gamemode_qmldir)
+        self.assertIn("EmailCodeMode", email_qmldir)
+        self.assertIn("EmailEventMonitor", services_qmldir)
 
     def test_root_preserves_public_music_contract(self):
         island = read("Island.qml")
@@ -63,6 +67,7 @@ class IslandArchitectureTest(unittest.TestCase):
         self.assertIn("Modes.ModeContainer", mode_host)
         self.assertIn("Music.MusicMode", mode_host)
         self.assertIn("Gamemode.GamemodeMode", mode_host)
+        self.assertIn("Email.EmailCodeMode", mode_host)
         self.assertNotIn("Music.MusicCompactBars", mode_host)
         self.assertNotIn("Music.MusicArtwork", mode_host)
         self.assertNotIn("Music.MusicView", mode_host)
@@ -72,6 +77,21 @@ class IslandArchitectureTest(unittest.TestCase):
 
         self.assertIn("OpacityMask", artwork)
         self.assertIn("maskSource: artClipMask", artwork)
+
+    def test_email_code_mode_has_priority_over_other_modes(self):
+        router = read("core/IslandModeRouter.qml")
+        state = read("core/IslandState.qml")
+        island = read("Island.qml")
+        geometry = read("core/IslandGeometry.qml")
+        content = read("IslandContent.qml")
+
+        self.assertIn('emailCodeVisible ? "emailCode"', router)
+        self.assertIn("property bool showEmailCodeNotify", state)
+        self.assertIn("function showEmailCodeEvent(event)", state)
+        self.assertIn("Services.EmailEventMonitor", island)
+        self.assertIn("onEventReady", island)
+        self.assertIn("property bool showEmailCodeNotify", geometry)
+        self.assertIn("showEmailCodeNotify: island.showEmailCodeNotify", content)
 
 
 if __name__ == "__main__":

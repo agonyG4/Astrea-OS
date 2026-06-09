@@ -8,9 +8,9 @@ SystemComponents.TopbarIndicator {
 
     readonly property string quickshellAssetRoot: "file://" + (Quickshell.env("ASTREA_ROOT") || (Quickshell.env("HOME") + "/.local/share/Astrea")) + "/Assets/ui/quickshell/bar/"
 
-    fixedWidth: 36
+    fixedWidth: 28
     height: 36
-    backgroundMargin: 4
+    backgroundMargin: Theme.spacingTiny
     backgroundRadius: Theme.radiusMedium
     hoverColor: Theme.shellHover
     pressedColor: Theme.shellPressed

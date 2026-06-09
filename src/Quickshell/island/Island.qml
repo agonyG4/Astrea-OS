@@ -5,6 +5,7 @@ import QtQuick
 import "."
 import "./core" as Core
 import "./effects" as Effects
+import "./services" as Services
 
 PanelWindow {
     id: island
@@ -67,6 +68,10 @@ PanelWindow {
     property alias musicBarsActive: islandState.musicBarsActive
     property alias cavaActive: islandState.cavaActive
     property alias showGamemodeNotify: islandState.showGamemodeNotify
+    property alias showEmailCodeNotify: islandState.showEmailCodeNotify
+    property alias emailCode: islandState.emailCode
+    property alias emailSender: islandState.emailSender
+    property alias emailCodeCopied: islandState.emailCodeCopied
     property alias artFlipPhase: islandState.artFlipPhase
     property alias artFlipDirection: islandState.artFlipDirection
     property alias artFlipAngle: islandState.artFlipAngle
@@ -112,6 +117,10 @@ PanelWindow {
 
     // ── Componentes ───────────────────────────────────────────────
     Core.IslandProcesses { id: procs }
+    Services.EmailEventMonitor {
+        id: emailEventMonitor
+        onEventReady: event => islandState.showEmailCodeEvent(event)
+    }
     Effects.IslandAnimations { id: flipAnim }
     IslandContent {
         id: islandContent

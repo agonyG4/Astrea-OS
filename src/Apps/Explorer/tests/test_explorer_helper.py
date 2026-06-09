@@ -2,6 +2,7 @@ import json
 import io
 import struct
 import subprocess
+import tarfile
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -419,6 +420,180 @@ class OpenWithTests(unittest.TestCase):
         self.assertEqual(result["default"], "viewer.desktop")
         self.assertEqual(calls[0][0], ["xdg-mime", "default", "viewer.desktop", "image/png"])
 
+
+class MergedRecentsTests(unittest.TestCase):
+    def test_merged_recents_includes_launch_files_desktop_apps_and_xbel_images(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            finder_path = root / "finder-recents.json"
+            launch_path = root / "history.jsonl"
+            xbel_path = root / "recently-used.xbel"
+            image = root / "photo #1.png"
+            launched_file = root / "opened.txt"
+            desktop = root / "demo.desktop"
+            image.write_text("image")
+            launched_file.write_text("opened")
+            desktop.write_text(
+                "\n".join([
+                    "[Desktop Entry]",
+                    "Type=Application",
+                    "Name=Demo App",
+                    "Exec=demo",
+                ]),
+                encoding="utf-8",
+            )
+            finder_path.write_text(
+                json.dumps([
+                    {"fileName": "old.txt", "filePath": str(root / "old.txt"), "lastAccessed": 10}
+                ]),
+                encoding="utf-8",
+            )
+            launch_path.write_text(
+                "\n".join([
+                    json.dumps({
+                        "timestamp_ms": 100,
+                        "kind": "desktop",
+                        "target": "demo",
+                        "argv": ["gio", "launch", str(desktop)],
+                        "status": "ok",
+                    }),
+                    json.dumps({
+                        "timestamp_ms": 200,
+                        "kind": "file",
+                        "target": str(launched_file),
+                        "argv": ["xdg-open", str(launched_file)],
+                        "status": "ok",
+                    }),
+                ]),
+                encoding="utf-8",
+            )
+            xbel_path.write_text(
+                f'''<?xml version="1.0" encoding="UTF-8"?>
+<xbel version="1.0">
+  <bookmark href="{helper._file_url(image)}" added="2026-01-01T00:00:00Z" modified="2026-01-02T00:00:00Z" visited="2026-01-03T00:00:00Z" />
+</xbel>
+''',
+                encoding="utf-8",
+            )
+
+            recents = helper.merged_recents(str(finder_path), str(launch_path), str(xbel_path), limit=10)
+
+            paths = {item["filePath"]: item for item in recents}
+            self.assertIn(str(launched_file), paths)
+            self.assertIn(str(image), paths)
+            self.assertIn(str(desktop), paths)
+            self.assertEqual(paths[str(desktop)]["fileName"], "Demo App")
+            self.assertEqual(paths[str(desktop)]["fileKind"], "Aplicativo")
+            self.assertEqual(paths[str(desktop)]["recentSource"], "launch")
+            self.assertEqual(paths[str(image)]["recentSource"], "xbel")
+            self.assertTrue(paths[str(image)]["filePreviewUrl"].endswith("photo%20%231.png"))
+
+    def test_merged_recents_dedupes_by_newest_access(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "same.txt"
+            target.write_text("x")
+            finder_path = root / "finder-recents.json"
+            launch_path = root / "history.jsonl"
+            xbel_path = root / "missing.xbel"
+            finder_path.write_text(
+                json.dumps([{"fileName": "Old Name", "filePath": str(target), "lastAccessed": 10}]),
+                encoding="utf-8",
+            )
+            launch_path.write_text(
+                json.dumps({
+                    "timestamp_ms": 300,
+                    "kind": "file",
+                    "target": str(target),
+                    "argv": ["xdg-open", str(target)],
+                    "status": "ok",
+                }) + "\n",
+                encoding="utf-8",
+            )
+
+            recents = helper.merged_recents(str(finder_path), str(launch_path), str(xbel_path), limit=10)
+
+            self.assertEqual(len([item for item in recents if item["filePath"] == str(target)]), 1)
+            self.assertEqual(recents[0]["lastAccessed"], 300)
+
+    def test_merged_recents_scans_unordered_xbel_before_limiting(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            finder_path = root / "finder-recents.json"
+            launch_path = root / "history.jsonl"
+            xbel_path = root / "recently-used.xbel"
+            finder_path.write_text("[]", encoding="utf-8")
+            launch_path.write_text("", encoding="utf-8")
+            bookmarks = []
+            for i in range(8):
+                path = root / f"old-{i}.png"
+                path.write_text("old")
+                bookmarks.append(f'<bookmark href="{helper._file_url(path)}" visited="2026-01-01T00:00:0{i}Z" />')
+            newest = root / "newest.png"
+            newest.write_text("new")
+            bookmarks.append(f'<bookmark href="{helper._file_url(newest)}" visited="2026-02-01T00:00:00Z" />')
+            xbel_path.write_text("<xbel>" + "\n".join(bookmarks) + "</xbel>", encoding="utf-8")
+
+            recents = helper.merged_recents(str(finder_path), str(launch_path), str(xbel_path), limit=3)
+
+            self.assertEqual(recents[0]["filePath"], str(newest))
+            self.assertEqual(len(recents), 3)
+
+    def test_merged_recents_skips_duplicate_launch_history_until_unique_limit(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            finder_path = root / "finder-recents.json"
+            launch_path = root / "history.jsonl"
+            xbel_path = root / "missing.xbel"
+            repeated = root / "kitty.desktop"
+            unique = root / "photo.png"
+            repeated.write_text("[Desktop Entry]\nType=Application\nName=Kitty\nExec=kitty\n", encoding="utf-8")
+            unique.write_text("png")
+            finder_path.write_text("[]", encoding="utf-8")
+            records = []
+            for i in range(20):
+                records.append(json.dumps({
+                    "timestamp_ms": 1000 + i,
+                    "kind": "desktop",
+                    "target": "kitty",
+                    "argv": ["gio", "launch", str(repeated)],
+                    "status": "ok",
+                }))
+            records.insert(0, json.dumps({
+                "timestamp_ms": 900,
+                "kind": "file",
+                "target": str(unique),
+                "argv": ["xdg-open", str(unique)],
+                "status": "ok",
+            }))
+            launch_path.write_text("\n".join(records), encoding="utf-8")
+
+            recents = helper.merged_recents(str(finder_path), str(launch_path), str(xbel_path), limit=2)
+
+            self.assertEqual({item["filePath"] for item in recents}, {str(repeated), str(unique)})
+
+    def test_merged_recents_ignores_malformed_launch_timestamp(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            target = root / "file.txt"
+            target.write_text("x")
+            finder_path = root / "finder-recents.json"
+            launch_path = root / "history.jsonl"
+            xbel_path = root / "missing.xbel"
+            finder_path.write_text("[]", encoding="utf-8")
+            launch_path.write_text(json.dumps({
+                "timestamp_ms": "not-a-number",
+                "kind": "file",
+                "target": str(target),
+                "argv": ["xdg-open", str(target)],
+                "status": "ok",
+            }) + "\n", encoding="utf-8")
+
+            recents = helper.merged_recents(str(finder_path), str(launch_path), str(xbel_path), limit=10)
+
+            self.assertEqual(recents[0]["filePath"], str(target))
+            self.assertEqual(recents[0]["lastAccessed"], target.stat().st_mtime_ns // 1_000_000)
+
 class DirectoryMonitorTests(unittest.TestCase):
     def event_bytes(self, mask):
         return struct.pack("iIII", 1, mask, 0, 0)
@@ -547,6 +722,38 @@ class ArchiveHelperTests(unittest.TestCase):
             self.assertIn("eta_seconds", progress[-1])
             self.assertIn("bytes_done", progress[-1])
             self.assertIn("bytes_total", progress[-1])
+
+    def test_tar_archives_extract_without_prelisting(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            source = root / "source"
+            source.mkdir()
+            (source / "one.txt").write_text("1", encoding="utf-8")
+            (source / "two.txt").write_text("22", encoding="utf-8")
+            archive = root / "archive.tar.bz2"
+            with tarfile.open(archive, "w:bz2") as tar:
+                tar.add(source, arcname="source")
+
+            original_lister = helper._list_archive_entries
+            helper._list_archive_entries = lambda *a, **k: (_ for _ in ()).throw(AssertionError("tar prelist called"))
+            try:
+                buf = io.StringIO()
+                with redirect_stdout(buf):
+                    helper.extract_archive(
+                        str(archive),
+                        "dest",
+                        password_probe=lambda path: False,
+                    )
+            finally:
+                helper._list_archive_entries = original_lister
+
+            self.assertEqual((root / "dest" / "source" / "one.txt").read_text(encoding="utf-8"), "1")
+            self.assertEqual((root / "dest" / "source" / "two.txt").read_text(encoding="utf-8"), "22")
+            events = [json.loads(line) for line in buf.getvalue().splitlines() if line.strip()]
+            self.assertEqual(events[0]["event"], "start")
+            self.assertEqual(events[-1]["event"], "done")
+            self.assertEqual(events[-1]["done"], 2)
+            self.assertEqual(events[-1]["total"], 2)
 
     def test_archive_progress_uses_entry_bytes_for_single_large_file(self):
         payload = helper._archive_progress_payload(

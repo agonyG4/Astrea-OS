@@ -1,4 +1,5 @@
 import QtQuick
+import Qt5Compat.GraphicalEffects
 
 Rectangle {
     id: root
@@ -30,6 +31,7 @@ Rectangle {
     border.width: hasIcon ? 0 : 1
     border.color: fallbackBorderColor
     clip: true
+    antialiasing: true
 
     function displayName(value) {
         if (!value)
@@ -129,11 +131,17 @@ Rectangle {
         reloadIcon()
     }
 
-    Image {
-        id: iconImage
+    Item {
+        id: iconFrame
 
         anchors.fill: parent
         anchors.margins: root.iconPadding
+    }
+
+    Image {
+        id: iconImage
+
+        anchors.fill: iconFrame
         source: root.iconSource(root.resolvedIconName)
         sourceSize: Qt.size(root.sourcePixelSize, root.sourcePixelSize)
         fillMode: Image.PreserveAspectFit
@@ -141,7 +149,7 @@ Rectangle {
         mipmap: true
         asynchronous: true
         cache: true
-        visible: status === Image.Ready
+        visible: status === Image.Ready && root.iconRadius <= 0
 
         onStatusChanged: {
             if (status === Image.Error && root.resolvedIconName.length > 0 && root.retryCount < 2) {
@@ -149,6 +157,23 @@ Rectangle {
                 iconRetryTimer.restart()
             }
         }
+    }
+
+    Rectangle {
+        id: iconMask
+
+        anchors.fill: iconFrame
+        radius: Math.max(0, root.iconRadius - root.iconPadding)
+        antialiasing: true
+        visible: false
+    }
+
+    OpacityMask {
+        anchors.fill: iconFrame
+        source: iconImage
+        maskSource: iconMask
+        antialiasing: true
+        visible: iconImage.status === Image.Ready && root.iconRadius > 0
     }
 
     Timer {

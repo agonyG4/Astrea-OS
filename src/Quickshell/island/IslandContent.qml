@@ -10,6 +10,7 @@ Rectangle {
 
     // ── Estado derivado ───────────────────────────────────────────
     readonly property bool isGamemodeNotify:       island.showGamemodeNotify
+    readonly property bool isEmailCodeNotify:      island.showEmailCodeNotify
     readonly property bool isMouseOver:            interaction.hovered
     readonly property bool isExpanded:             interaction.expanded
     readonly property real flipScale:              Math.abs(Math.cos(island.artFlipAngle * Math.PI / 180))
@@ -24,6 +25,7 @@ Rectangle {
         isExpanded: island.isExpanded
         showCompactMusic: island.showCompactMusic
         showGamemodeNotify: islandContent.isGamemodeNotify
+        showEmailCodeNotify: island.showEmailCodeNotify
     }
 
     width:             geometry.width
@@ -73,6 +75,7 @@ Rectangle {
 
     IslandModeHost {
         isGamemodeNotify: islandContent.isGamemodeNotify
+        isEmailCodeNotify: islandContent.isEmailCodeNotify
         isMouseOver: islandContent.isMouseOver
         flipScale: islandContent.flipScale
     }

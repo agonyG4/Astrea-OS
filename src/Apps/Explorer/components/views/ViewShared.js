@@ -126,6 +126,14 @@ function sizeGroup(size, isDir) {
     return "Grandes"
 }
 
+function padDatePart(value) {
+    return value < 10 ? "0" + value : String(value)
+}
+
+function monthYearLabel(date) {
+    return padDatePart(date.getMonth() + 1) + "/" + date.getFullYear()
+}
+
 function dateGroup(modified) {
     const date = new Date(modified)
     if (!(date instanceof Date) || isNaN(date.getTime()))
@@ -140,9 +148,9 @@ function dateGroup(modified) {
         return "Ontem"
     if (diffDays < 7)
         return "Ultimos 7 dias"
-    if (date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth())
-        return "Este mes"
-    return "Mais antigos"
+    if (diffDays < 30)
+        return "Ultimos 30 dias"
+    return monthYearLabel(date)
 }
 
 function groupLabelForItem(appState, item) {

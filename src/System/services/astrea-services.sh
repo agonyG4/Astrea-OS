@@ -13,6 +13,9 @@ xdg_portal_conf_dir="${home}/.config/xdg-desktop-portal"
 astrea_bin_dir="${astrea_root}/bin"
 weather_backend_dir="${astrea_root}/Apps/Weather/backend"
 launch_backend_dir="${astrea_root}/System/launch"
+portal_backend_dir="${astrea_root}/System/portal"
+status_backend_dir="${astrea_root}/System/statusd"
+latency_backend_dir="${astrea_root}/System/latencyd"
 
 info() { printf '[astrea-services] %s\n' "$*"; }
 warn() { printf '[astrea-services][warn] %s\n' "$*" >&2; }
@@ -48,9 +51,8 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-Environment=PYTHONUNBUFFERED=1
 Environment=XDG_CURRENT_DESKTOP=Hyprland
-ExecStart=/usr/bin/python3 ${astrea_root}/System/portal/astrea_filechooser_portal.py
+ExecStart=${astrea_bin_dir}/astrea-filechooser-portal
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=3
@@ -63,7 +65,7 @@ EOF
 	write_file_if_changed "${dbus_dir}/org.freedesktop.impl.portal.desktop.astrea.service" 0644 <<EOF
 [D-BUS Service]
 Name=org.freedesktop.impl.portal.desktop.astrea
-Exec=/usr/bin/python3 ${astrea_root}/System/portal/astrea_filechooser_portal.py
+Exec=${astrea_bin_dir}/astrea-filechooser-portal
 EOF
 
 	write_file_if_changed "${portal_dir}/astrea.portal" 0644 <<EOF
@@ -98,8 +100,7 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 ${astrea_root}/System/services/astrea_statusd.py
+ExecStart=${astrea_bin_dir}/astrea-statusd
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=3
@@ -122,8 +123,7 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-Environment=PYTHONUNBUFFERED=1
-ExecStart=/usr/bin/python3 ${astrea_root}/System/services/astrea_latencyd.py serve
+ExecStart=${astrea_bin_dir}/astrea-latencyd serve
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=3
@@ -155,6 +155,52 @@ KillMode=process
 [Install]
 WantedBy=graphical-session.target
 EOF
+}
+
+install_status_binary() {
+	if [[ ! -f "${status_backend_dir}/Cargo.toml" ]]; then
+		warn "status backend manifest not found; leaving existing astrea-statusd binary in place: ${status_backend_dir}/Cargo.toml"
+		return 1
+	fi
+	if ! command -v cargo >/dev/null 2>&1; then
+		warn 'cargo not found; leaving existing astrea-statusd binary in place'
+		return 1
+	fi
+
+	if ! cargo build --manifest-path "${status_backend_dir}/Cargo.toml" --release; then
+		warn 'failed to build astrea-statusd; leaving existing binary in place'
+		return 1
+	fi
+
+	if [[ ! -x "${status_backend_dir}/target/release/astrea-statusd" ]]; then
+		warn 'astrea-statusd build completed but expected binary is missing'
+		return 1
+	fi
+
+	install -Dm755 "${status_backend_dir}/target/release/astrea-statusd" "${astrea_bin_dir}/astrea-statusd"
+}
+
+install_latency_binary() {
+	if [[ ! -f "${latency_backend_dir}/Cargo.toml" ]]; then
+		warn "latency backend manifest not found; leaving existing astrea-latencyd binary in place: ${latency_backend_dir}/Cargo.toml"
+		return 1
+	fi
+	if ! command -v cargo >/dev/null 2>&1; then
+		warn 'cargo not found; leaving existing astrea-latencyd binary in place'
+		return 1
+	fi
+
+	if ! cargo build --manifest-path "${latency_backend_dir}/Cargo.toml" --release; then
+		warn 'failed to build astrea-latencyd; leaving existing binary in place'
+		return 1
+	fi
+
+	if [[ ! -x "${latency_backend_dir}/target/release/astrea-latencyd" ]]; then
+		warn 'astrea-latencyd build completed but expected binary is missing'
+		return 1
+	fi
+
+	install -Dm755 "${latency_backend_dir}/target/release/astrea-latencyd" "${astrea_bin_dir}/astrea-latencyd"
 }
 
 install_weather_binaries() {
@@ -239,7 +285,13 @@ reload_user_systemd() {
 
 install_services() {
 	write_portal_files
+	if ! install_status_binary; then
+		warn 'astrea-statusd was not rebuilt during install.'
+	fi
 	write_status_unit
+	if ! install_latency_binary; then
+		warn 'astrea-latencyd was not rebuilt during install.'
+	fi
 	write_latency_unit
 	if ! install_launch_binary; then
 		warn 'astrea-launch was not rebuilt during install.'
@@ -311,9 +363,41 @@ verify_core_services() {
 	bash -n "${astrea_root}/System/services/display_apply.sh" || failed=1
 	bash -n "${astrea_root}/System/services/display_night_shift_color.sh" || failed=1
 	bash -n "${astrea_root}/System/services/display_night_shift_schedule.sh" || failed=1
-	python3 -m py_compile "${astrea_root}/System/services/astrea_statusd.py" || failed=1
 	python3 -m py_compile "${astrea_root}/System/services/astrea_notify.py" || failed=1
-	python3 -m py_compile "${astrea_root}/System/services/astrea_latencyd.py" || failed=1
+
+	if [[ -f "${status_backend_dir}/Cargo.toml" ]]; then
+		if command -v cargo >/dev/null 2>&1; then
+			cargo check --manifest-path "${status_backend_dir}/Cargo.toml" --offline || failed=1
+		else
+			warn 'missing dependency for status backend verification: cargo'
+			failed=1
+		fi
+	else
+		warn "missing status backend manifest: ${status_backend_dir}/Cargo.toml"
+		failed=1
+	fi
+
+	if [[ ! -x "${astrea_bin_dir}/astrea-statusd" ]]; then
+		printf 'missing executable: %s\n' "${astrea_bin_dir}/astrea-statusd" >&2
+		failed=1
+	fi
+
+	if [[ -f "${latency_backend_dir}/Cargo.toml" ]]; then
+		if command -v cargo >/dev/null 2>&1; then
+			cargo check --manifest-path "${latency_backend_dir}/Cargo.toml" --offline || failed=1
+		else
+			warn 'missing dependency for latency backend verification: cargo'
+			failed=1
+		fi
+	else
+		warn "missing latency backend manifest: ${latency_backend_dir}/Cargo.toml"
+		failed=1
+	fi
+
+	if [[ ! -x "${astrea_bin_dir}/astrea-latencyd" ]]; then
+		printf 'missing executable: %s\n' "${astrea_bin_dir}/astrea-latencyd" >&2
+		failed=1
+	fi
 
 	if [[ -f "${launch_backend_dir}/Cargo.toml" ]]; then
 		if command -v cargo >/dev/null 2>&1; then
@@ -384,7 +468,21 @@ verify_portal_services() {
 
 	verify_paths "${files[@]}" || failed=1
 	verify_systemd_units "${units[@]}" || failed=1
-	python3 -m py_compile "${astrea_root}/System/portal/astrea_filechooser_portal.py" || failed=1
+	if [[ -f "${portal_backend_dir}/Cargo.toml" ]]; then
+		if command -v cargo >/dev/null 2>&1; then
+			cargo check --manifest-path "${portal_backend_dir}/Cargo.toml" --offline || failed=1
+		else
+			warn 'missing dependency for portal backend verification: cargo'
+			failed=1
+		fi
+	else
+		warn "missing portal backend manifest: ${portal_backend_dir}/Cargo.toml"
+		failed=1
+	fi
+	if [[ ! -x "${astrea_bin_dir}/astrea-filechooser-portal" ]]; then
+		printf 'missing executable: %s\n' "${astrea_bin_dir}/astrea-filechooser-portal" >&2
+		failed=1
+	fi
 
 	if [[ "${failed}" -eq 0 ]]; then
 		info 'Astrea portal services verified'

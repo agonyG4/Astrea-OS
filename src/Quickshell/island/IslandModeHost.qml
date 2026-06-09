@@ -1,5 +1,6 @@
 import QtQuick
 import "./modes" as Modes
+import "./modes/email" as Email
 import "./modes/gamemode" as Gamemode
 import "./modes/idle" as Idle
 import "./modes/music" as Music
@@ -8,6 +9,7 @@ Item {
     id: root
 
     property bool isGamemodeNotify: false
+    property bool isEmailCodeNotify: false
     property bool isMouseOver: false
     property real flipScale: 1
 
@@ -47,6 +49,21 @@ Item {
         Gamemode.GamemodeMode {
             anchors.fill: parent
             active: gamemodeContainer.active
+        }
+    }
+
+    Modes.ModeContainer {
+        id: emailCodeContainer
+        active: island.activeMode === "emailCode"
+        fadeInDuration: 100
+        fadeOutDuration: 180
+
+        Email.EmailCodeMode {
+            anchors.fill: parent
+            active: emailCodeContainer.active
+            code: island.emailCode
+            sender: island.emailSender
+            copied: island.emailCodeCopied
         }
     }
 }

@@ -120,14 +120,6 @@ Item {
         onTriggered: regionFile.reload()
     }
 
-    Timer {
-        id: regionPollTimer
-        interval: 15000
-        repeat: true
-        running: true
-        onTriggered: root._reloadRegionSettings()
-    }
-
     Process {
         id: regionProc
         running: false
@@ -178,10 +170,11 @@ Item {
         id: clockButton
         anchors.centerIn: parent
         popupHost: root.popupHost
+        horizontalPadding: Theme.spacingTiny
         spacing: 0
 
         Item {
-            width:  _dateText.implicitWidth + 16
+            width:  _dateText.implicitWidth + 8
             height: clockButton.height
             Text {
                 id: _dateText
@@ -212,7 +205,7 @@ Item {
         }
 
         Item {
-            width:  _clockText.implicitWidth + 20
+            width:  _clockText.implicitWidth + 16
             height: clockButton.height
             Text {
                 id: _clockText
